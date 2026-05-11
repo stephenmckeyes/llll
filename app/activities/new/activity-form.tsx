@@ -3,16 +3,19 @@
 // ---------------------------------------------------------------------------
 // Unified Add-Activity form.
 //
-// Section layout (matches user spec):
+// Section layout:
 //   1. Activity (name)
 //   2. Notes and Tags  (notes textarea + comma-separated tags input)
 //   3. Rhythm          (6 radio options + conditional config)
-//   4. Schedule        (start_date + end_date; end disabled for "Once")
-//   5. Priority        (radio, only shown for "Once" per the design)
+//                      Multi-Daily here shows a list of N time-of-day
+//                      inputs (one per occurrence), with add/remove.
+//   4. Schedule        (start_date + end_date + optional single time;
+//                       end disabled for Once; time hidden for Multi-Daily
+//                       because times live inside the rhythm config above)
+//   5. Priority        (only shown for Once)
 //
-// Phase 2 will add: time-of-day input, reminders, calendar preview.
-// Phase 1 stores priority as 2 (medium) for non-single activities by
-// default since the field isn't shown.
+// Phase 2b will add the calendar preview pane (requires lifting all form
+// state into useState; deferred to avoid a big refactor in one go).
 // ---------------------------------------------------------------------------
 
 import { useActionState, useState } from "react";
@@ -42,14 +45,33 @@ const WEEKDAYS = [
 
 const TODAY_ISO = new Date().toISOString().slice(0, 10);
 
+// Reasonable default times for a 2x-per-day rhythm — user edits as needed.
+const DEFAULT_MULTI_DAILY_TIMES = ["08:00", "18:00"];
+
 export function ActivityForm() {
   const [state, formAction, isPending] = useActionState<
     ActivityFormState,
     FormData
   >(createActivity, null);
   const [rhythm, setRhythm] = useState<RhythmKind>("single");
+  const [multiDailyTimes, setMultiDailyTimes] = useState<string[]>(
+    DEFAULT_MULTI_DAILY_TIMES
+  );
 
   const isSingle = rhythm === "single";
+  const isMultiDaily = rhythm === "multi_daily";
+
+  function updateMultiDailyTime(i: number, value: string) {
+    setMultiDailyTimes((prev) => prev.map((t, idx) => (idx === i ? value : t)));
+  }
+  function addMultiDailyTime() {
+    setMultiDailyTimes((prev) => [...prev, "12:00"]);
+  }
+  function removeMultiDailyTime(i: number) {
+    setMultiDailyTimes((prev) =>
+      prev.length === 1 ? prev : prev.filter((_, idx) => idx !== i)
+    );
+  }
 
   return (
     <form action={formAction} className="flex flex-col gap-6">
@@ -88,25 +110,15 @@ export function ActivityForm() {
       <fieldset className="flex flex-col gap-2">
         <legend className="mb-1 text-sm font-medium">Rhythm</legend>
 
-        <RhythmRadio
-          value="single"
-          current={rhythm}
-          onChange={setRhythm}
-          label="Once"
-        />
+        <RhythmRadio value="single" current={rhythm} onChange={setRhythm} label="Once" />
         <RhythmRadio
           value="multi_daily"
           current={rhythm}
           onChange={setRhythm}
           label="Multi-Daily"
-          hint="A few times every day"
+          hint="Specific times every day"
         />
-        <RhythmRadio
-          value="daily"
-          current={rhythm}
-          onChange={setRhythm}
-          label="Daily"
-        />
+        <RhythmRadio value="daily" current={rhythm} onChange={setRhythm} label="Daily" />
         <RhythmRadio
           value="weekdays"
           current={rhythm}
@@ -128,17 +140,40 @@ export function ActivityForm() {
       </fieldset>
 
       {/* Conditional rhythm config */}
-      {rhythm === "multi_daily" && (
-        <ConfigBox>
-          <input
-            type="number"
-            name="multiDailyCount"
-            min={1}
-            max={50}
-            defaultValue={2}
-            className="w-16 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-          />
-          <span className="text-sm">times per day.</span>
+      {isMultiDaily && (
+        <ConfigBox column>
+          <p className="text-xs text-zinc-500">
+            Specify each time of day. Add or remove rows as needed.
+          </p>
+          <ul className="flex flex-col gap-2">
+            {multiDailyTimes.map((t, i) => (
+              <li key={i} className="flex items-center gap-2">
+                <input
+                  type="time"
+                  name="scheduledTime"
+                  value={t}
+                  onChange={(e) => updateMultiDailyTime(i, e.target.value)}
+                  required
+                  className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeMultiDailyTime(i)}
+                  disabled={multiDailyTimes.length === 1}
+                  className="rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-30 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            onClick={addMultiDailyTime}
+            className="self-start rounded-md border border-zinc-300 px-3 py-1 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+          >
+            + Add time
+          </button>
         </ConfigBox>
       )}
 
@@ -226,7 +261,22 @@ export function ActivityForm() {
             />
           </FieldLabel>
         </div>
-        {!isSingle && (
+
+        {/* Single time-of-day for non-Multi-Daily rhythms */}
+        {!isMultiDaily && (
+          <FieldLabel
+            label={
+              <>
+                Time of day{" "}
+                <span className="font-normal text-zinc-500">(optional)</span>
+              </>
+            }
+          >
+            <input type="time" name="scheduledTime" className={inputClasses} />
+          </FieldLabel>
+        )}
+
+        {!isSingle && !isMultiDaily && (
           <p className="text-xs text-zinc-500">
             Leave end date blank for an open-ended rhythm.
           </p>

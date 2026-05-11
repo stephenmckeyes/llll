@@ -55,9 +55,17 @@ export async function createActivity(
       candidateRhythm = { type: "single" };
       break;
     case "multi_daily":
+      // For Multi-Daily the count is derived from the number of time-of-day
+      // entries the user supplied (one per occurrence).
       candidateRhythm = {
         type: "frequency",
-        count: clampInt(formData.get("multiDailyCount"), 1, 50, 2),
+        count: Math.max(
+          1,
+          formData
+            .getAll("scheduledTime")
+            .map(String)
+            .filter((s) => /^\d{2}:\d{2}$/.test(s)).length
+        ),
         period: "day",
       };
       break;
@@ -110,7 +118,16 @@ export async function createActivity(
     }
   }
 
-  // ---- 4. Insert activity --------------------------------------------------
+  // ---- 4. Scheduled times (HH:MM strings) ---------------------------------
+  // Multi-Daily: one entry per time the user added (count was derived above).
+  // Other rhythms: 0 or 1 entries (the optional single time field).
+
+  const scheduledTimes = formData
+    .getAll("scheduledTime")
+    .map(String)
+    .filter((s) => /^\d{2}:\d{2}$/.test(s));
+
+  // ---- 5. Insert activity --------------------------------------------------
 
   const supabase = await createClient();
   const {
@@ -129,6 +146,7 @@ export async function createActivity(
       end_date: endDate,
       priority,
       default_skill_tags: tags,
+      scheduled_times: scheduledTimes,
     })
     .select("id")
     .single();
@@ -137,7 +155,7 @@ export async function createActivity(
     return { error: aerr?.message ?? "Could not save activity." };
   }
 
-  // ---- 5. Pre-generate instances ------------------------------------------
+  // ---- 6. Pre-generate instances ------------------------------------------
   // Window: from start_date up to min(start_date + 30 days, end_date).
   // generateInstances is pure; same inputs → same outputs.
 

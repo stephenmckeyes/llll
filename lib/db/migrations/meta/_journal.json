@@ -22,6 +22,13 @@
       "when": 1778474697152,
       "tag": "0002_unified_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1778475397845,
+      "tag": "0003_add_scheduled_times",
+      "breakpoints": true
     }
   ]
 }

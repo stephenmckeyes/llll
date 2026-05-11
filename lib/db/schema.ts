@@ -97,6 +97,13 @@ export const activities = pgTable(
     rhythm: jsonb("rhythm").notNull(),
     startDate: date("start_date").notNull().default(sql`CURRENT_DATE`),
     endDate: date("end_date"),
+    // "HH:MM" strings. Empty for "no time specified."
+    // For Multi-Daily, one entry per occurrence (length = times-per-day).
+    // For other rhythms, 0 or 1 entries.
+    scheduledTimes: text("scheduled_times")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     priority: smallint("priority").notNull().default(2),
     defaultSkillTags: text("default_skill_tags")
       .array()

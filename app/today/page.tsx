@@ -36,6 +36,7 @@ type PendingInstance = {
     rhythm: Rhythm;
     priority: number;
     end_date: string | null;
+    scheduled_times: string[];
   } | null;
   completion_instances: Array<{ completion_id: string }> | null;
 };
@@ -64,7 +65,8 @@ export default async function TodayPage() {
         notes,
         rhythm,
         priority,
-        end_date
+        end_date,
+        scheduled_times
       ),
       completion_instances (
         completion_id
@@ -130,6 +132,7 @@ export default async function TodayPage() {
                   notes={inst.activities?.notes ?? null}
                   priority={inst.activities?.priority ?? 2}
                   scheduledFor={inst.scheduled_for}
+                  scheduledTimes={inst.activities?.scheduled_times ?? []}
                   todayStr={today}
                   isSingle={isSingle ?? false}
                   frequencyTarget={isFrequency ? r.count : null}

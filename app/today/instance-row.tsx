@@ -27,6 +27,7 @@ export function InstanceRow({
   notes,
   priority,
   scheduledFor,
+  scheduledTimes,
   todayStr,
   isSingle,
   frequencyTarget,
@@ -37,6 +38,8 @@ export function InstanceRow({
   notes: string | null;
   priority: number;
   scheduledFor: string;
+  /** "HH:MM" strings; empty if no time set. Multi-Daily has N entries. */
+  scheduledTimes: string[];
   todayStr: string;
   isSingle: boolean;
   /** null for non-frequency rhythms. */
@@ -81,6 +84,11 @@ export function InstanceRow({
               {notes}
             </p>
           )}
+          {scheduledTimes.length > 0 && (
+            <p className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-400">
+              {scheduledTimes.map(formatTime).join(" · ")}
+            </p>
+          )}
           {hint && (
             <p
               className={`mt-0.5 text-xs font-medium uppercase tracking-wide ${
@@ -108,6 +116,18 @@ export function InstanceRow({
       </button>
     </li>
   );
+}
+
+function formatTime(hhmm: string): string {
+  // Renders "08:00" as "8:00 AM" (or "08:00" in 24h locales).
+  const [h, m] = hhmm.split(":").map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return hhmm;
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  return d.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 function daysBetween(fromYmd: string, toYmd: string): number {
