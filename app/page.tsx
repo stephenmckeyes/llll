@@ -32,18 +32,22 @@ export default async function Home() {
           </p>
           <p className="font-medium">{user.email}</p>
 
-          <form action={signOut} className="mt-4">
-            <button
-              type="submit"
-              className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+          <div className="mt-4 flex items-center gap-3">
+            <Link
+              href="/today"
+              className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
             >
-              Sign out
-            </button>
-          </form>
-
-          <p className="mt-6 text-sm text-zinc-500 dark:text-zinc-500">
-            The today view and activity-creation forms come next.
-          </p>
+              Go to today →
+            </Link>
+            <form action={signOut}>
+              <button
+                type="submit"
+                className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+              >
+                Sign out
+              </button>
+            </form>
+          </div>
         </section>
       ) : (
         <section className="flex flex-col gap-3 sm:flex-row">
