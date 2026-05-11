@@ -28,7 +28,7 @@ import { createClient } from "@/lib/supabase/server";
 import { DateNavigator } from "./_components/date-navigator";
 import { InstanceRow } from "./today/instance-row";
 
-type ViewKind = "day" | "week" | "month";
+type ViewKind = "day" | "week" | "month" | "year";
 
 type Rhythm =
   | { type: "single" }
@@ -56,6 +56,7 @@ const VIEW_OPTIONS: ReadonlyArray<{ value: ViewKind; label: string }> = [
   { value: "day", label: "Day" },
   { value: "week", label: "Week" },
   { value: "month", label: "Month" },
+  { value: "year", label: "Year" },
 ];
 
 const WEEK_HEADERS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -117,6 +118,7 @@ export default async function HomePage({
       {view === "day" && <DayView startDate={date} />}
       {view === "week" && <WeekView weekDate={date} />}
       {view === "month" && <MonthView monthDate={date} />}
+      {view === "year" && <YearView yearDate={date} />}
     </main>
   );
 }
@@ -124,7 +126,7 @@ export default async function HomePage({
 // ---------------------------------------------------------------------------
 
 function parseView(raw: string | undefined): ViewKind {
-  if (raw === "month" || raw === "week") return raw;
+  if (raw === "month" || raw === "week" || raw === "year") return raw;
   return "day";
 }
 
@@ -136,8 +138,11 @@ function parseDateParam(raw: string | undefined): string {
 }
 
 function parseDate(yyyyMmDd: string): Date {
+  // LOCAL midnight (not UTC). This keeps addDays / format / startOfWeek
+  // from drifting by one day in non-UTC time zones, which was breaking
+  // the forward/back arrows on every view.
   const [y, m, d] = yyyyMmDd.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d));
+  return new Date(y, m - 1, d);
 }
 
 // ---------------------------------------------------------------------------
@@ -198,9 +203,6 @@ function ViewSwitcher({
           </Link>
         );
       })}
-      <span className="flex-1 rounded px-3 py-1 text-center text-sm font-medium text-zinc-300 dark:text-zinc-700">
-        Year
-      </span>
     </nav>
   );
 }
@@ -258,7 +260,7 @@ async function DayView({ startDate }: { startDate: string }) {
   });
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-3">
       <DateNavigator
         view="day"
         currentDate={startDate}
@@ -266,10 +268,16 @@ async function DayView({ startDate }: { startDate: string }) {
         nextDate={nextDate}
         label={dayHeaderLabel(startDate)}
       />
-
-      {days.map((d) => (
-        <DaySection key={d.dateStr} {...d} />
-      ))}
+      {/* Scroll within a viewport-relative window so the nav above stays
+          fixed. New date navigation re-renders the container, which
+          naturally starts scrolled to the top. */}
+      <div className="max-h-[65vh] min-h-[20rem] overflow-y-auto pr-2">
+        <div className="flex flex-col gap-5">
+          {days.map((d) => (
+            <DaySection key={d.dateStr} {...d} />
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -308,6 +316,7 @@ function DaySection({
               <InstanceRow
                 key={inst.id}
                 instanceId={inst.id}
+                activityId={inst.activities?.id ?? ""}
                 name={inst.activities?.name ?? "Untitled"}
                 notes={inst.activities?.notes ?? null}
                 priority={inst.activities?.priority ?? 2}
@@ -613,6 +622,130 @@ async function MonthView({ monthDate }: { monthDate: string }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Year view — 12 mini-month calendars in a 3-column grid, iPhone-Calendar
+// style. Each month is clickable → jumps to Month view for that month.
+// Days with activity are filled; today is ringed.
+// ---------------------------------------------------------------------------
+
+async function YearView({ yearDate }: { yearDate: string }) {
+  const supabase = await createClient();
+  const refDate = parseDate(yearDate);
+  const year = refDate.getFullYear();
+
+  const yearStart = `${year}-01-01`;
+  const yearEnd = `${year}-12-31`;
+
+  const { data } = await supabase
+    .from("activity_instances")
+    .select(
+      "scheduled_for, status, activities!inner(archived_at)"
+    )
+    .gte("scheduled_for", yearStart)
+    .lte("scheduled_for", yearEnd)
+    .is("activities.archived_at", null);
+
+  const byDate: Record<string, { pending: number; completed: number }> = {};
+  for (const i of (data ?? []) as Array<{
+    scheduled_for: string;
+    status: string;
+  }>) {
+    const d = (byDate[i.scheduled_for] ??= { pending: 0, completed: 0 });
+    if (i.status === "pending") d.pending++;
+    else if (i.status === "completed") d.completed++;
+  }
+
+  const months = Array.from({ length: 12 }, (_, m) => ({
+    monthIndex: m,
+    monthStart: new Date(year, m, 1),
+  }));
+
+  const dayOfYear = yearDate.slice(5); // "MM-DD"
+  const prevDate = `${year - 1}-${dayOfYear}`;
+  const nextDate = `${year + 1}-${dayOfYear}`;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <DateNavigator
+        view="year"
+        currentDate={yearDate}
+        prevDate={prevDate}
+        nextDate={nextDate}
+        label={String(year)}
+      />
+      <div className="grid grid-cols-3 gap-4 sm:grid-cols-3">
+        {months.map((m) => (
+          <MiniMonth
+            key={m.monthIndex}
+            monthStart={m.monthStart}
+            byDate={byDate}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MiniMonth({
+  monthStart,
+  byDate,
+}: {
+  monthStart: Date;
+  byDate: Record<string, { pending: number; completed: number }>;
+}) {
+  const monthEnd = endOfMonth(monthStart);
+  const gridStart = startOfWeek(monthStart, { weekStartsOn: 1 });
+  const monthDateStr = format(monthStart, "yyyy-MM-dd");
+  const monthLabel = monthStart.toLocaleString(undefined, { month: "long" });
+
+  const cells = Array.from({ length: 42 }, (_, i) => {
+    const date = addDays(gridStart, i);
+    const dateStr = format(date, "yyyy-MM-dd");
+    const inMonth = date >= monthStart && date <= monthEnd;
+    const counts = byDate[dateStr] ?? { pending: 0, completed: 0 };
+    return {
+      date,
+      dateStr,
+      inMonth,
+      isToday: dateStr === TODAY_STR,
+      hasActivity: inMonth && (counts.pending > 0 || counts.completed > 0),
+    };
+  });
+
+  return (
+    <Link
+      href={`/?view=month&date=${monthDateStr}`}
+      className="flex flex-col gap-1.5 rounded-md border border-zinc-200 p-2 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900"
+    >
+      <h3 className="text-center text-xs font-medium">{monthLabel}</h3>
+      <div className="grid grid-cols-7 gap-px">
+        {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
+          <div
+            key={i}
+            className="text-center text-[8px] font-medium text-zinc-400"
+          >
+            {d}
+          </div>
+        ))}
+        {cells.map((c) => (
+          <div
+            key={c.dateStr}
+            className={`flex aspect-square items-center justify-center rounded text-[8px] ${
+              !c.inMonth
+                ? "text-zinc-200 dark:text-zinc-800"
+                : c.hasActivity
+                  ? "bg-zinc-900 font-semibold text-white dark:bg-zinc-50 dark:text-zinc-900"
+                  : "text-zinc-600 dark:text-zinc-400"
+            } ${c.isToday ? "ring-1 ring-zinc-900 dark:ring-zinc-50" : ""}`}
+          >
+            {c.inMonth ? c.date.getDate() : ""}
+          </div>
+        ))}
+      </div>
+    </Link>
+  );
+}
+
 function MonthCell({
   date,
   dateStr,
@@ -663,7 +796,6 @@ function dayHeaderLabel(yyyyMmDd: string): string {
     month: "long",
     day: "numeric",
     year: "numeric",
-    timeZone: "UTC",
   });
 }
 
@@ -672,6 +804,5 @@ function formatDateMedium(date: Date): string {
     weekday: "short",
     month: "short",
     day: "numeric",
-    timeZone: "UTC",
   });
 }

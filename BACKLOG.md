@@ -48,6 +48,39 @@ Future direction (per user spec):
   group remaining banners by their first tag; show top N tag-counts.
 - Banners colored by first tag (when tags become first-class).
 
+## Grid / Habit-Tracker view (asked for, not started)
+
+A separate "GRID" / habit-tracker view on the dashboard:
+
+- Far-left column: every recurring activity (one row per activity).
+- Top row: dates across the chosen date range.
+- Cells: filled or struck if the user completed the activity on that day,
+  empty/red/grey if skipped or missed.
+- Far-right column: success percentage for the row over the range.
+- Range picker: default current week, jump to month / year / arbitrary
+  start-end.
+- Visual progress / accountability at a glance.
+
+Implementation notes: query completion_instances joined to
+activity_instances + activities for the range, group by activity + date,
+roll up status. Color cells by activity tag (when tag colors exist).
+Probably its own `?view=grid` entry on the home dashboard.
+
+## Permanent-delete from Archived only
+
+(Per user spec.) Active activities can only be archived (soft-delete).
+Permanent deletion is a deliberate two-step action that requires the user
+to navigate to the Archived section and confirm. The `deleteActivity`
+server action exists for this; UI is wired in the All-activities page's
+Archived section only.
+
+## Year view "scroll between years" (asked for, partial)
+
+Initial Year view renders the current year only with prev/next arrows.
+The user mentioned wanting to scroll up/down to other years (à la iPhone
+Calendar's vertical-scrolling year layout). Add as a follow-up: render
+3-5 years stacked, lazy-load more as the user scrolls.
+
 ## Phase 2c+ (planned but not started)
 
 - **Multi-Daily as a modifier** combinable with other rhythms ("every 3 days,

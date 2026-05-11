@@ -11,7 +11,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-type ViewKind = "day" | "week" | "month";
+type ViewKind = "day" | "week" | "month" | "year";
 
 export function DateNavigator({
   view,

@@ -243,6 +243,58 @@ export async function unarchiveActivity(activityId: string) {
 }
 
 // ---------------------------------------------------------------------------
+// skipInstance — flip the instance status to 'skipped'. No completion row
+// is created. Lets the user say "I won't be doing this today" without
+// pretending they did it.
+// ---------------------------------------------------------------------------
+
+export async function skipInstance(instanceId: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  await supabase
+    .from("activity_instances")
+    .update({ status: "skipped" })
+    .eq("id", instanceId);
+
+  revalidatePath("/");
+}
+
+// ---------------------------------------------------------------------------
+// deleteActivity — PERMANENT hard delete. Cascading FKs wipe instances and
+// linked completions. Only allowed for already-archived rows; the UI in
+// /activities exposes this only in the Archived section, by design.
+// ---------------------------------------------------------------------------
+
+export async function deleteActivity(activityId: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  // Belt-and-suspenders: verify the row is already archived before deleting.
+  const { data: a } = await supabase
+    .from("activities")
+    .select("archived_at")
+    .eq("id", activityId)
+    .single();
+  if (!a || !a.archived_at) {
+    // Refuse to delete a non-archived activity. UI should never trigger
+    // this path, but if it does, fail silently rather than vaporize data.
+    return;
+  }
+
+  await supabase.from("activities").delete().eq("id", activityId);
+
+  revalidatePath("/activities");
+  revalidatePath("/");
+}
+
+// ---------------------------------------------------------------------------
 
 function clampInt(
   value: FormDataEntryValue | null,

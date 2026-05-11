@@ -275,6 +275,11 @@ export function ActivityForm() {
             className="w-16 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
           />
           <span className="text-sm">days</span>
+          {intervalDays > 1 && (
+            <span className="text-xs text-zinc-500">
+              ({intervalDays - 1} day{intervalDays - 1 === 1 ? "" : "s"} rest)
+            </span>
+          )}
         </ConfigBox>
       )}
 
@@ -463,8 +468,10 @@ function derivePreviewRhythm({
 // Small UI helpers
 // ---------------------------------------------------------------------------
 
+// `w-full` so inputs always stretch to the form's max width and don't
+// re-grow as the user types — fixes the perceived horizontal jitter.
 const inputClasses =
-  "rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none disabled:cursor-not-allowed disabled:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-zinc-50 dark:disabled:bg-zinc-950";
+  "w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none disabled:cursor-not-allowed disabled:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-zinc-50 dark:disabled:bg-zinc-950";
 
 function FieldLabel({
   label,
@@ -518,8 +525,8 @@ function ConfigBox({
 }) {
   return (
     <div
-      className={`flex ${
-        column ? "flex-col" : "items-center"
+      className={`flex w-full min-w-0 ${
+        column ? "flex-col" : "flex-wrap items-center"
       } gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800`}
     >
       {children}

@@ -1,14 +1,21 @@
 "use client";
 
 // ---------------------------------------------------------------------------
-// Per-row Archive / Unarchive button for the activities list.
-// Client component because it uses useTransition for the pending state.
+// Per-row actions in the /activities Manage list.
+//
+//   Active row:   Archive
+//   Archived row: Unarchive | Delete (PERMANENT — confirms first)
+//
+// Permanent delete only lives here, by design: any active activity must
+// be archived before it can be deleted, so destructive action requires
+// the user to leave the calendar surfaces first.
 // ---------------------------------------------------------------------------
 
 import { useTransition } from "react";
 
 import {
   archiveActivity,
+  deleteActivity,
   unarchiveActivity,
 } from "@/app/actions/activities";
 
@@ -36,6 +43,24 @@ export function ActivityRowActions({
       >
         {isPending ? "…" : archived ? "Unarchive" : "Archive"}
       </button>
+      {archived && (
+        <button
+          type="button"
+          disabled={isPending}
+          onClick={() => {
+            const ok = window.confirm(
+              "Permanently delete this activity AND its entire history? This cannot be undone."
+            );
+            if (!ok) return;
+            startTransition(async () => {
+              await deleteActivity(activityId);
+            });
+          }}
+          className="rounded-md border border-red-300 px-3 py-1.5 text-sm font-medium text-red-700 transition-colors hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
+        >
+          Delete
+        </button>
+      )}
     </div>
   );
 }

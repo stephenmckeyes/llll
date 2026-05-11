@@ -13,7 +13,7 @@
 // once, group banners by tag and collapse overflow as "+N more."
 // ---------------------------------------------------------------------------
 
-import { addDays, format, parseISO, startOfWeek } from "date-fns";
+import { addDays, format, startOfWeek } from "date-fns";
 
 import { generateInstances } from "@/lib/domain/rhythms";
 import type { Rhythm } from "@/lib/validators/rhythm";
@@ -61,7 +61,9 @@ export function CalendarPreview({
 
   // Window: from startDate, 35 days forward (clamped by endDate if set).
   const from = startDate;
-  const startD = parseISO(startDate);
+  // LOCAL midnight — avoids the addDays + format off-by-one we hit on the
+  // dashboard arrows.
+  const startD = parseLocalDate(startDate);
   const windowEndStr = format(addDays(startD, WINDOW_DAYS - 1), "yyyy-MM-dd");
   const effectiveTo =
     endDate && endDate < windowEndStr ? endDate : windowEndStr;
@@ -127,8 +129,13 @@ export function CalendarPreview({
 
 function isValidDateString(s: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
-  const d = parseISO(s);
+  const d = parseLocalDate(s);
   return !Number.isNaN(d.getTime());
+}
+
+function parseLocalDate(yyyyMmDd: string): Date {
+  const [y, m, d] = yyyyMmDd.split("-").map(Number);
+  return new Date(y, m - 1, d);
 }
 
 function Pane({ children }: { children: React.ReactNode }) {
