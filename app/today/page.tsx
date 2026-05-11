@@ -1,13 +1,12 @@
 // ---------------------------------------------------------------------------
-// /today — the daily habit list.
+// /today — today's habits + tasks.
 //
-// Surfaces every pending instance whose "current period" includes today:
-//   - daily / weekdays / interval / frequency-day → scheduled_for == today
-//   - frequency-week → scheduled_for falls anywhere in this week (Mon-Sun)
-//   - frequency-month → scheduled_for falls anywhere in this calendar month
-//
-// We query a 31-day window of pending instances, then filter in app code
-// (per-row rhythm logic is awkward in pure SQL and easy in TS).
+// Two sections:
+//   1. Habits  — pending recurring_activity_instances whose current period
+//                includes today (see inCurrentPeriod() below).
+//   2. Tasks   — pending tasks. For v1 we show ALL of them sorted by due
+//                date (nulls last); finer "actionable today" filtering can
+//                land once there's enough data to warrant it.
 // ---------------------------------------------------------------------------
 
 import { startOfMonth, startOfWeek } from "date-fns";
@@ -17,6 +16,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
 import { InstanceRow } from "./instance-row";
+import { TaskRow } from "./task-row";
 
 type Recurrence =
   | { type: "daily" }
@@ -36,6 +36,15 @@ type PendingInstance = {
   completion_instances: Array<{ completion_id: string }> | null;
 };
 
+type PendingTask = {
+  id: string;
+  name: string;
+  description: string | null;
+  due_date: string | null;
+  earliest_date: string | null;
+  priority: number;
+};
+
 export default async function TodayPage() {
   const supabase = await createClient();
   const {
@@ -43,15 +52,16 @@ export default async function TodayPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // Today as a YYYY-MM-DD string in the server's TZ. (Profile-TZ-aware
-  // version lands when the settings page does.)
+  // Today as YYYY-MM-DD in server TZ. Profile-TZ-aware version lands with
+  // the settings page.
   const todayDate = new Date();
   const today = todayDate.toISOString().slice(0, 10);
   const windowStart = new Date(todayDate);
   windowStart.setDate(windowStart.getDate() - 31);
   const windowStartStr = windowStart.toISOString().slice(0, 10);
 
-  const { data } = await supabase
+  // -- Habits --------------------------------------------------------------
+  const { data: rawInstances } = await supabase
     .from("recurring_activity_instances")
     .select(
       `
@@ -73,8 +83,20 @@ export default async function TodayPage() {
     .lte("scheduled_for", today)
     .order("scheduled_for");
 
-  const raw = (data ?? []) as unknown as PendingInstance[];
-  const visible = raw.filter((inst) => inCurrentPeriod(inst, today));
+  const allInstances = (rawInstances ?? []) as unknown as PendingInstance[];
+  const visibleInstances = allInstances.filter((inst) =>
+    inCurrentPeriod(inst, today)
+  );
+
+  // -- Tasks ---------------------------------------------------------------
+  const { data: rawTasks } = await supabase
+    .from("tasks")
+    .select("id, name, description, due_date, earliest_date, priority")
+    .eq("status", "pending")
+    .order("due_date", { ascending: true, nullsFirst: false })
+    .order("priority", { ascending: true });
+
+  const tasks = (rawTasks ?? []) as unknown as PendingTask[];
 
   return (
     <main className="mx-auto flex min-h-svh max-w-2xl flex-col gap-8 p-6">
@@ -91,33 +113,32 @@ export default async function TodayPage() {
             {formatDateLong(today)}
           </p>
         </div>
-        <Link
-          href="/activities/new"
-          className="shrink-0 rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
-        >
-          + New
-        </Link>
+        <div className="flex shrink-0 gap-2">
+          <Link
+            href="/activities/new"
+            className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
+          >
+            + Habit
+          </Link>
+          <Link
+            href="/tasks/new"
+            className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+          >
+            + Task
+          </Link>
+        </div>
       </header>
 
-      <section>
-        <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-500">
-          Habits
-        </h2>
-
-        {visible.length === 0 ? (
-          <p className="rounded-md border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700">
-            Nothing for today.{" "}
-            <Link
-              href="/activities/new"
-              className="font-medium underline-offset-2 hover:underline"
-            >
-              Create your first activity
-            </Link>
-            .
-          </p>
+      <Section title="Habits">
+        {visibleInstances.length === 0 ? (
+          <EmptyHint
+            text="Nothing for today."
+            ctaHref="/activities/new"
+            ctaText="Add a habit"
+          />
         ) : (
           <ul className="flex flex-col gap-2">
-            {visible.map((inst) => {
+            {visibleInstances.map((inst) => {
               const r = inst.recurring_activities?.recurrence;
               const isFrequency = r?.type === "frequency";
               return (
@@ -135,27 +156,81 @@ export default async function TodayPage() {
             })}
           </ul>
         )}
-      </section>
+      </Section>
+
+      <Section title="Tasks">
+        {tasks.length === 0 ? (
+          <EmptyHint
+            text="No open tasks."
+            ctaHref="/tasks/new"
+            ctaText="Add a task"
+          />
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {tasks.map((t) => (
+              <TaskRow
+                key={t.id}
+                taskId={t.id}
+                name={t.name}
+                description={t.description}
+                dueDate={t.due_date}
+                earliestDate={t.earliest_date}
+                priority={t.priority}
+                todayStr={today}
+              />
+            ))}
+          </ul>
+        )}
+      </Section>
     </main>
   );
 }
 
-/**
- * Decide whether an instance "belongs to today" given its rhythm.
- *   - Non-frequency: only the exact day.
- *   - Frequency:    any day inside the current period (week / month / day).
- */
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section>
+      <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-500">
+        {title}
+      </h2>
+      {children}
+    </section>
+  );
+}
+
+function EmptyHint({
+  text,
+  ctaHref,
+  ctaText,
+}: {
+  text: string;
+  ctaHref: string;
+  ctaText: string;
+}) {
+  return (
+    <p className="rounded-md border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700">
+      {text}{" "}
+      <Link
+        href={ctaHref}
+        className="font-medium underline-offset-2 hover:underline"
+      >
+        {ctaText}
+      </Link>
+      .
+    </p>
+  );
+}
+
 function inCurrentPeriod(inst: PendingInstance, todayStr: string): boolean {
   const r = inst.recurring_activities?.recurrence;
   if (!r) return false;
-
-  if (r.type !== "frequency") {
-    return inst.scheduled_for === todayStr;
-  }
-
-  if (r.period === "day") {
-    return inst.scheduled_for === todayStr;
-  }
+  if (r.type !== "frequency") return inst.scheduled_for === todayStr;
+  if (r.period === "day") return inst.scheduled_for === todayStr;
 
   const today = parseDate(todayStr);
   const scheduled = parseDate(inst.scheduled_for);
