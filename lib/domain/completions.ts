@@ -146,17 +146,51 @@ export async function logCompletion(
 
   // -----------------------------------------------------------------------
   // 4. Update producer status.
-  //    For instances: mark `completed` (frequency rhythms will need a
-  //    smarter rule later — "completed only when N completions linked";
-  //    handled when frequency rhythms ship).
-  //    For tasks: mark `completed`.
+  //
+  //    For non-frequency rhythms (daily/weekdays/interval) and tasks:
+  //      one completion = done.
+  //    For frequency rhythms:
+  //      only mark `completed` once N completions are linked, where N
+  //      comes from the activity's `recurrence.count`. Until then the
+  //      instance stays `pending` and the today view keeps showing it
+  //      with "Goal X/N" progress.
   // -----------------------------------------------------------------------
 
   if (instanceIds.length > 0) {
-    await supabase
-      .from("recurring_activity_instances")
-      .update({ status: "completed" })
-      .in("id", instanceIds);
+    // Per-instance status decision — usually a single instance in practice.
+    for (const instId of instanceIds) {
+      const { data: row } = await supabase
+        .from("recurring_activity_instances")
+        .select(
+          `
+          recurring_activities ( recurrence ),
+          completion_instances ( completion_id )
+        `
+        )
+        .eq("id", instId)
+        .single();
+
+      const wrapper = row as {
+        recurring_activities?: { recurrence?: unknown } | null;
+        completion_instances?: Array<unknown> | null;
+      } | null;
+      const recurrence = wrapper?.recurring_activities?.recurrence as
+        | { type?: string; count?: number }
+        | undefined;
+      const linkedCount = wrapper?.completion_instances?.length ?? 0;
+
+      const shouldComplete =
+        recurrence?.type === "frequency"
+          ? linkedCount >= (recurrence.count ?? 1)
+          : true;
+
+      if (shouldComplete) {
+        await supabase
+          .from("recurring_activity_instances")
+          .update({ status: "completed" })
+          .eq("id", instId);
+      }
+    }
   }
 
   if (taskIds.length > 0) {
