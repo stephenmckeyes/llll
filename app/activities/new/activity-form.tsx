@@ -51,16 +51,26 @@ export function ActivityForm() {
   >(createActivity, null);
 
   // ---- Controlled inputs that the preview depends on --------------------
+  //
+  // Number inputs use *string* state so the user can clear the field and
+  // retype without the value snapping back to the previous number on every
+  // keystroke. We coerce to a sensible number for the preview only.
+  const [name, setName] = useState<string>("");
   const [rhythmKind, setRhythmKind] = useState<RhythmKind>("single");
   const [weekdays, setWeekdays] = useState<DayOfWeek[]>([]);
-  const [intervalDays, setIntervalDays] = useState<number>(2);
-  const [frequencyCount, setFrequencyCount] = useState<number>(3);
+  const [intervalDaysStr, setIntervalDaysStr] = useState<string>("2");
+  const [frequencyCountStr, setFrequencyCountStr] = useState<string>("3");
   const [frequencyPeriod, setFrequencyPeriod] = useState<Period>("week");
   const [multiDailyTimes, setMultiDailyTimes] = useState<string[]>(
     DEFAULT_MULTI_DAILY_TIMES
   );
   const [startDate, setStartDate] = useState<string>(TODAY_ISO);
   const [endDate, setEndDate] = useState<string>("");
+
+  // Parsed numbers for preview computation. Empty / invalid input falls
+  // back to 1 so the calendar still renders something while you're typing.
+  const intervalDays = Math.max(1, parseInt(intervalDaysStr, 10) || 1);
+  const frequencyCount = Math.max(1, parseInt(frequencyCountStr, 10) || 1);
 
   const isSingle = rhythmKind === "single";
   const isMultiDaily = rhythmKind === "multi_daily";
@@ -110,6 +120,8 @@ export function ActivityForm() {
           required
           maxLength={120}
           placeholder="Morning run"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
           className={inputClasses}
         />
       </FieldLabel>
@@ -234,10 +246,15 @@ export function ActivityForm() {
             name="intervalDays"
             min={1}
             max={365}
-            value={intervalDays}
-            onChange={(e) =>
-              setIntervalDays(Math.max(1, Number(e.target.value) || 1))
-            }
+            value={intervalDaysStr}
+            onChange={(e) => setIntervalDaysStr(e.target.value)}
+            onBlur={(e) => {
+              // Snap back to a valid number when the user leaves the field.
+              const n = parseInt(e.target.value, 10);
+              setIntervalDaysStr(
+                Number.isFinite(n) && n >= 1 ? String(Math.min(n, 365)) : "1"
+              );
+            }}
             className="w-16 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
           />
           <span className="text-sm">
@@ -253,10 +270,14 @@ export function ActivityForm() {
             name="frequencyCount"
             min={1}
             max={50}
-            value={frequencyCount}
-            onChange={(e) =>
-              setFrequencyCount(Math.max(1, Number(e.target.value) || 1))
-            }
+            value={frequencyCountStr}
+            onChange={(e) => setFrequencyCountStr(e.target.value)}
+            onBlur={(e) => {
+              const n = parseInt(e.target.value, 10);
+              setFrequencyCountStr(
+                Number.isFinite(n) && n >= 1 ? String(Math.min(n, 50)) : "1"
+              );
+            }}
             className="w-16 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
           />
           <span className="text-sm">times per</span>
@@ -343,6 +364,7 @@ export function ActivityForm() {
         rhythm={previewRhythm}
         startDate={startDate}
         endDate={effectiveEndDate}
+        activityName={name}
       />
 
       {/* Error */}

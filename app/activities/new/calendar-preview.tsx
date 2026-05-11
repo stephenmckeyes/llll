@@ -3,11 +3,14 @@
 // ---------------------------------------------------------------------------
 // Calendar preview shown below the create-activity form.
 //
-// As the user changes rhythm + dates, the form pipes the derived rhythm
-// here and we render a 5-week grid starting from the Monday of the start
-// date's week. Cells that will produce instances are filled; the rest are
-// muted. Uses the same `generateInstances()` the server will use, so what
-// you see is what you get.
+// As the user changes name + rhythm + dates, the form pipes the derived
+// rhythm and the activity name here. We render a 5-week grid starting from
+// the Monday of the start date's week. Each scheduled day fills with a
+// dark cell + the activity name as a small banner — so you literally see
+// what's about to land on your calendar.
+//
+// FUTURE (per user backlog): when multiple activities can be previewed at
+// once, group banners by tag and collapse overflow as "+N more."
 // ---------------------------------------------------------------------------
 
 import { addDays, format, parseISO, startOfWeek } from "date-fns";
@@ -23,15 +26,17 @@ export function CalendarPreview({
   rhythm,
   startDate,
   endDate,
+  activityName,
 }: {
   rhythm: Rhythm | null;
   startDate: string; // YYYY-MM-DD
   endDate: string | null; // YYYY-MM-DD or null = open-ended
+  activityName: string;
 }) {
   if (!rhythm) {
     return (
       <Pane>
-        <Header count={null} startDate={startDate} endDate={endDate} />
+        <Header count={null} endDate={endDate} startedAlready={false} />
         <p className="text-xs text-zinc-500">
           Pick a rhythm and the preview will appear here.
         </p>
@@ -70,12 +75,14 @@ export function CalendarPreview({
     };
   });
 
+  const trimmedName = activityName.trim();
+
   return (
     <Pane>
       <Header
         count={instances.length}
-        startDate={startDate}
         endDate={endDate}
+        startedAlready={!endDate && startDate < TODAY_STR}
       />
       <div className="grid grid-cols-7 gap-1">
         {WEEK_HEADERS.map((d) => (
@@ -87,15 +94,15 @@ export function CalendarPreview({
           </div>
         ))}
         {cells.map((c) => (
-          <Cell key={c.dateStr} {...c} />
+          <Cell key={c.dateStr} {...c} activityName={trimmedName} />
         ))}
       </div>
       <p className="text-[11px] leading-relaxed text-zinc-500">
-        <span className="mr-2 inline-block h-2.5 w-2.5 rounded-sm bg-zinc-900 dark:bg-zinc-50 align-middle" />
-        Scheduled occurrence ·{" "}
+        <span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-zinc-900 align-middle dark:bg-zinc-50" />
+        Scheduled ·{" "}
         <span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm border border-zinc-900 align-middle dark:border-zinc-50" />
         Today ·{" "}
-        <span className="text-zinc-400">faded</span> = outside start/end window
+        <span className="text-zinc-400">faded</span> = outside window
       </p>
     </Pane>
   );
@@ -113,12 +120,12 @@ function Pane({ children }: { children: React.ReactNode }) {
 
 function Header({
   count,
-  startDate,
   endDate,
+  startedAlready,
 }: {
   count: number | null;
-  startDate: string;
   endDate: string | null;
+  startedAlready: boolean;
 }) {
   return (
     <div className="flex items-baseline justify-between gap-3">
@@ -128,7 +135,7 @@ function Header({
           ? "—"
           : `${count} occurrence${count === 1 ? "" : "s"} in the next 5 weeks`}
         {endDate && ` · ends ${endDate}`}
-        {!endDate && startDate < TODAY_STR && " · started already"}
+        {startedAlready && " · started already"}
       </p>
     </div>
   );
@@ -140,6 +147,7 @@ function Cell({
   hasInstance,
   isToday,
   isStartDate,
+  activityName,
 }: {
   date: Date;
   dateStr: string;
@@ -147,23 +155,30 @@ function Cell({
   hasInstance: boolean;
   isToday: boolean;
   isStartDate: boolean;
+  activityName: string;
 }) {
   let cls =
-    "flex aspect-square items-center justify-center rounded text-xs select-none";
+    "flex aspect-square flex-col items-start gap-0.5 rounded p-1 text-[10px] leading-tight overflow-hidden select-none";
+
   if (hasInstance) {
     cls +=
-      " bg-zinc-900 text-white font-semibold dark:bg-zinc-50 dark:text-zinc-900";
+      " bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900";
   } else if (inRange) {
     cls += " text-zinc-700 dark:text-zinc-300";
   } else {
     cls += " text-zinc-300 dark:text-zinc-700";
   }
-  if (isToday && !hasInstance) {
-    cls += " ring-1 ring-zinc-900 dark:ring-zinc-50";
-  }
-  if (isStartDate && !hasInstance && !isToday) {
-    cls += " underline underline-offset-2";
-  }
+  if (isToday && !hasInstance) cls += " ring-1 ring-zinc-900 dark:ring-zinc-50";
+  if (isStartDate && !hasInstance && !isToday) cls += " underline underline-offset-2";
 
-  return <div className={cls}>{date.getDate()}</div>;
+  return (
+    <div className={cls} title={hasInstance ? `${activityName || "Activity"} — ${date.toDateString()}` : date.toDateString()}>
+      <span className={hasInstance ? "font-semibold" : ""}>{date.getDate()}</span>
+      {hasInstance && activityName && (
+        <span className="line-clamp-2 w-full break-words text-[9px] font-medium opacity-90">
+          {activityName}
+        </span>
+      )}
+    </div>
+  );
 }
