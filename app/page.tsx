@@ -4,13 +4,15 @@
 // Logged out: marketing-y landing with sign-in / sign-up CTAs.
 // Logged in:  calendar dashboard with a view switcher.
 //   - ?view=day   (default) — list of today's pending activities
-//   - ?view=month            — month calendar grid with counts per day
-// (?view=week and ?view=year land in Phase 2c.)
+//   - ?view=week            — 7-day grid with banners per day
+//   - ?view=month           — month calendar grid with counts per day
+// (?view=year lands in Phase 2c.)
 // ---------------------------------------------------------------------------
 
 import {
   addDays,
   endOfMonth,
+  endOfWeek,
   format,
   startOfMonth,
   startOfWeek,
@@ -22,7 +24,7 @@ import { createClient } from "@/lib/supabase/server";
 
 import { InstanceRow } from "./today/instance-row";
 
-type ViewKind = "day" | "month";
+type ViewKind = "day" | "week" | "month";
 
 type Rhythm =
   | { type: "single" }
@@ -47,6 +49,7 @@ type PendingInstance = {
 
 const VIEW_OPTIONS: ReadonlyArray<{ value: ViewKind; label: string }> = [
   { value: "day", label: "Day" },
+  { value: "week", label: "Week" },
   { value: "month", label: "Month" },
 ];
 
@@ -69,7 +72,12 @@ export default async function HomePage({
   if (!user) return <SignedOutLanding />;
 
   const params = await searchParams;
-  const view: ViewKind = params.view === "month" ? "month" : "day";
+  const view: ViewKind =
+    params.view === "month"
+      ? "month"
+      : params.view === "week"
+        ? "week"
+        : "day";
 
   return (
     <main className="mx-auto flex min-h-svh max-w-2xl flex-col gap-8 p-6">
@@ -101,6 +109,7 @@ export default async function HomePage({
       </header>
 
       {view === "day" && <DayView />}
+      {view === "week" && <WeekView />}
       {view === "month" && <MonthView />}
     </main>
   );
@@ -157,10 +166,7 @@ function ViewSwitcher({ current }: { current: ViewKind }) {
           </Link>
         );
       })}
-      {/* Week + Year buttons reserved for Phase 2c — disabled stubs. */}
-      <span className="flex-1 rounded px-3 py-1 text-center text-sm font-medium text-zinc-300 dark:text-zinc-700">
-        Week
-      </span>
+      {/* Year button reserved for the next pass — disabled stub. */}
       <span className="flex-1 rounded px-3 py-1 text-center text-sm font-medium text-zinc-300 dark:text-zinc-700">
         Year
       </span>
@@ -288,6 +294,175 @@ function compareForToday(a: PendingInstance, b: PendingInstance): number {
   const pb = b.activities?.priority ?? 2;
   if (pa !== pb) return pa - pb;
   return (a.activities?.name ?? "").localeCompare(b.activities?.name ?? "");
+}
+
+// ---------------------------------------------------------------------------
+// Week view — 7 columns, current Monday-Sunday week. Each column shows
+// the day's pending activities as banners (the format we want everywhere
+// eventually; see BACKLOG). Today's column is highlighted.
+//
+// Each banner shows: name + first scheduled time (if any) + a priority
+// dot. For frequency rhythms, the banner appears on the period's anchor
+// day only (Monday for week, 1st-of-month for month) — keeps banners
+// from duplicating across every day they're "current" for.
+// ---------------------------------------------------------------------------
+
+async function WeekView() {
+  const supabase = await createClient();
+
+  const today = new Date();
+  const weekStart = startOfWeek(today, { weekStartsOn: 1 });
+  const weekEnd = endOfWeek(today, { weekStartsOn: 1 });
+  const weekStartStr = format(weekStart, "yyyy-MM-dd");
+  const weekEndStr = format(weekEnd, "yyyy-MM-dd");
+
+  const { data } = await supabase
+    .from("activity_instances")
+    .select(
+      `
+      id,
+      scheduled_for,
+      status,
+      activities (
+        id, name, rhythm, priority, scheduled_times
+      )
+    `
+    )
+    .gte("scheduled_for", weekStartStr)
+    .lte("scheduled_for", weekEndStr);
+
+  type WeekInstance = {
+    id: string;
+    scheduled_for: string;
+    status: string;
+    activities: {
+      id: string;
+      name: string;
+      rhythm: Rhythm;
+      priority: number;
+      scheduled_times: string[];
+    } | null;
+  };
+
+  const all = (data ?? []) as unknown as WeekInstance[];
+
+  // Group by date — each banner shows on its scheduled_for cell only.
+  const byDate: Record<string, WeekInstance[]> = {};
+  for (const i of all) {
+    (byDate[i.scheduled_for] ??= []).push(i);
+  }
+
+  // Sort each day's banners: pending first, then priority high→low, then
+  // earliest scheduled time, then name.
+  for (const list of Object.values(byDate)) {
+    list.sort((a, b) => {
+      if (a.status !== b.status) return a.status === "pending" ? -1 : 1;
+      const pa = a.activities?.priority ?? 2;
+      const pb = b.activities?.priority ?? 2;
+      if (pa !== pb) return pa - pb;
+      const ta = a.activities?.scheduled_times?.[0] ?? "99:99";
+      const tb = b.activities?.scheduled_times?.[0] ?? "99:99";
+      if (ta !== tb) return ta.localeCompare(tb);
+      return (a.activities?.name ?? "").localeCompare(b.activities?.name ?? "");
+    });
+  }
+
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const date = addDays(weekStart, i);
+    const dateStr = format(date, "yyyy-MM-dd");
+    return {
+      date,
+      dateStr,
+      isToday: dateStr === TODAY_STR,
+      items: byDate[dateStr] ?? [],
+    };
+  });
+
+  return (
+    <section className="flex flex-col gap-3">
+      <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">
+        {format(weekStart, "MMM d")} – {format(weekEnd, "MMM d, yyyy")}
+      </h2>
+
+      <div className="grid grid-cols-7 gap-2">
+        {days.map((d) => (
+          <div
+            key={d.dateStr}
+            className={`flex min-h-[8rem] flex-col gap-1 rounded-md border p-2 ${
+              d.isToday
+                ? "border-zinc-900 dark:border-zinc-50"
+                : "border-zinc-200 dark:border-zinc-800"
+            }`}
+          >
+            <div className="text-center">
+              <div className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                {format(d.date, "EEE")}
+              </div>
+              <div className={d.isToday ? "font-semibold" : "text-zinc-700 dark:text-zinc-300"}>
+                {d.date.getDate()}
+              </div>
+            </div>
+            {d.items.length === 0 ? (
+              <div className="flex flex-1 items-center justify-center text-[10px] text-zinc-300 dark:text-zinc-700">
+                —
+              </div>
+            ) : (
+              <ul className="flex flex-col gap-1">
+                {d.items.map((i) => (
+                  <WeekBanner key={i.id} item={i} />
+                ))}
+              </ul>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function WeekBanner({
+  item,
+}: {
+  item: {
+    status: string;
+    activities: {
+      name: string;
+      priority: number;
+      scheduled_times: string[];
+    } | null;
+  };
+}) {
+  if (!item.activities) return null;
+  const isCompleted = item.status === "completed";
+  const dotColor =
+    item.activities.priority === 1
+      ? "bg-red-500"
+      : item.activities.priority === 2
+        ? "bg-amber-500"
+        : "bg-zinc-400";
+  const firstTime = item.activities.scheduled_times?.[0];
+
+  return (
+    <li
+      className={`flex items-start gap-1 rounded px-1.5 py-1 text-[10px] leading-tight ${
+        isCompleted
+          ? "bg-zinc-100 text-zinc-400 line-through dark:bg-zinc-900 dark:text-zinc-600"
+          : "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
+      }`}
+      title={`${item.activities.name}${firstTime ? ` @ ${firstTime}` : ""}`}
+    >
+      <span
+        aria-hidden
+        className={`mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full ${dotColor}`}
+      />
+      <span className="min-w-0 flex-1">
+        <span className="block line-clamp-2 font-medium">{item.activities.name}</span>
+        {firstTime && (
+          <span className="block opacity-75">{firstTime}</span>
+        )}
+      </span>
+    </li>
+  );
 }
 
 // ---------------------------------------------------------------------------

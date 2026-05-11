@@ -31,6 +31,23 @@ German user sees "08:00." A user override:
 - Setting lives on the settings page (which itself doesn't exist yet —
   ships with onboarding).
 
+## Banner-style calendar rendering (asked for, partial)
+
+Activities should appear as **named banners** on calendar surfaces, not
+just counts. Status now: the create-activity preview shows each
+scheduled day with the activity name banner-inside-the-cell; the home
+Week view shows full banners per day; Month view still uses counts
+(small cells make multi-banner stacking tricky).
+
+Future direction (per user spec):
+- Month view: show 1–2 activity-name banners per cell + `(+N more)`
+  overflow badge when more apply that day.
+- Year view: density heatmap; click a month → zoom.
+- **Tag-grouped overflow**: instead of just `(+5)`, say `(+5 meetings)`
+  / `(+3 fitness)` so the overflow is informative. Implementation:
+  group remaining banners by their first tag; show top N tag-counts.
+- Banners colored by first tag (when tags become first-class).
+
 ## Phase 2c+ (planned but not started)
 
 - **Multi-Daily as a modifier** combinable with other rhythms ("every 3 days,
