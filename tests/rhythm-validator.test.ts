@@ -5,6 +5,10 @@ import { describe, expect, it } from "vitest";
 import { rhythmSchema } from "@/lib/validators/rhythm";
 
 describe("rhythmSchema — accepts valid shapes", () => {
+  it("single", () => {
+    expect(() => rhythmSchema.parse({ type: "single" })).not.toThrow();
+  });
+
   it("daily", () => {
     expect(() => rhythmSchema.parse({ type: "daily" })).not.toThrow();
   });

@@ -3,17 +3,23 @@
 //
 // Design-doc rule #3:
 //   "All completion creation — habit instance, task done, ad-hoc log,
-//    future quest, future Strava import — routes through one function.
-//    Skill XP calculation, streak updates, notification clearing all live
-//    here. New sources add callers, never fork the logic."
+//    future quest, future Strava import — routes through one function."
 //
-// Architectural promises this function must keep:
-//   - Self-contained: copy skill_tags + metrics + visibility from the
-//     producer at creation, do not just link.
-//   - Append-only: a successful call creates one new row in `completions`
-//     (plus link rows). Never updates or deletes prior completions.
+// v2 (post-unification): every completion links to zero or more
+// activity_instances (M:N). The old separate task path is gone — tasks are
+// now `{type:"single"}` activities that produce one instance like everything
+// else.
+//
+// Architectural promises this function keeps:
+//   - Self-contained: skill_tags + metrics + visibility are copied from the
+//     producer at creation, not just FK-referenced.
+//   - Append-only: success = one new completion row (+ link rows). Never
+//     updates or deletes prior completions.
 //   - Soft-delete only: callers wanting to undo must call a separate
 //     softDeleteCompletion(); never reach in and DELETE.
+//   - Frequency-aware: when linking to a frequency-rhythm instance, the
+//     instance is only marked `completed` once `rhythm.count` completions
+//     are linked.
 //
 // Future additions (XP, streaks, notifications) go HERE — not in callers.
 // ---------------------------------------------------------------------------
@@ -31,14 +37,12 @@ export type LogCompletionInput = {
   note?: string;
   /** Defaults to "private". */
   visibility?: Visibility;
-  /** Instances this completion satisfies (recurring habits). */
+  /** Instances this completion satisfies (zero, one, or many). */
   instanceIds?: string[];
-  /** Tasks this completion satisfies (one-offs). */
-  taskIds?: string[];
   /**
-   * Skill tags + metrics. If linked to one producer, the caller can let
-   * logCompletion copy from that producer by leaving these undefined and
-   * passing `copyFromProducer: true`. For ad-hoc logs, pass them directly.
+   * Skill tags + metrics. If linked to one or more instances, leave these
+   * undefined to copy from the first linked instance's parent activity.
+   * For ad-hoc logs, pass them directly.
    */
   skillTags?: string[];
   metrics?: Record<string, unknown>;
@@ -54,12 +58,10 @@ export async function logCompletion(
   input: LogCompletionInput
 ): Promise<LogCompletionResult> {
   const instanceIds = input.instanceIds ?? [];
-  const taskIds = input.taskIds ?? [];
 
   // -----------------------------------------------------------------------
-  // 1. If skill_tags / metrics weren't supplied, copy from the producer.
-  //    Single linked producer is the common case; for multi-link, we take
-  //    the first one's defaults (rare; explicit override is also possible).
+  // 1. If skill_tags / metrics weren't supplied, copy from the parent
+  //    activity of the first linked instance.
   // -----------------------------------------------------------------------
 
   let skillTags = input.skillTags;
@@ -67,31 +69,18 @@ export async function logCompletion(
 
   if ((skillTags === undefined || metrics === undefined) && instanceIds[0]) {
     const { data } = await supabase
-      .from("recurring_activity_instances")
-      .select(
-        "recurring_activities ( default_skill_tags, default_metrics )"
-      )
+      .from("activity_instances")
+      .select("activities ( default_skill_tags, default_metrics )")
       .eq("id", instanceIds[0])
       .single();
-    const ra = (data as {
-      recurring_activities?: {
+    const a = (data as {
+      activities?: {
         default_skill_tags?: string[] | null;
         default_metrics?: Record<string, unknown> | null;
       };
-    } | null)?.recurring_activities;
-    skillTags ??= ra?.default_skill_tags ?? [];
-    metrics ??= ra?.default_metrics ?? {};
-  }
-
-  if ((skillTags === undefined || metrics === undefined) && taskIds[0]) {
-    const { data } = await supabase
-      .from("tasks")
-      .select("default_skill_tags")
-      .eq("id", taskIds[0])
-      .single();
-    const t = data as { default_skill_tags?: string[] | null } | null;
-    skillTags ??= t?.default_skill_tags ?? [];
-    metrics ??= {};
+    } | null)?.activities;
+    skillTags ??= a?.default_skill_tags ?? [];
+    metrics ??= a?.default_metrics ?? {};
   }
 
   // Final fallback for true ad-hoc logs.
@@ -134,70 +123,50 @@ export async function logCompletion(
     if (error) return { ok: false, error: error.message };
   }
 
-  if (taskIds.length > 0) {
-    const { error } = await supabase
-      .from("completion_tasks")
-      .insert(taskIds.map((id) => ({
-        completion_id: completion.id,
-        task_id: id,
-      })));
-    if (error) return { ok: false, error: error.message };
-  }
-
   // -----------------------------------------------------------------------
-  // 4. Update producer status.
+  // 4. Update instance status, per-instance.
   //
-  //    For non-frequency rhythms (daily/weekdays/interval) and tasks:
+  //    Non-frequency rhythms (single/daily/weekdays/interval):
   //      one completion = done.
-  //    For frequency rhythms:
+  //    Frequency rhythms:
   //      only mark `completed` once N completions are linked, where N
-  //      comes from the activity's `recurrence.count`. Until then the
-  //      instance stays `pending` and the today view keeps showing it
-  //      with "Goal X/N" progress.
+  //      comes from the activity's rhythm.count. Until then the instance
+  //      stays pending and the today view keeps showing it with the
+  //      "Goal X/N" progress display.
   // -----------------------------------------------------------------------
 
-  if (instanceIds.length > 0) {
-    // Per-instance status decision — usually a single instance in practice.
-    for (const instId of instanceIds) {
-      const { data: row } = await supabase
-        .from("recurring_activity_instances")
-        .select(
-          `
-          recurring_activities ( recurrence ),
-          completion_instances ( completion_id )
+  for (const instId of instanceIds) {
+    const { data: row } = await supabase
+      .from("activity_instances")
+      .select(
         `
-        )
-        .eq("id", instId)
-        .single();
+        activities ( rhythm ),
+        completion_instances ( completion_id )
+      `
+      )
+      .eq("id", instId)
+      .single();
 
-      const wrapper = row as {
-        recurring_activities?: { recurrence?: unknown } | null;
-        completion_instances?: Array<unknown> | null;
-      } | null;
-      const recurrence = wrapper?.recurring_activities?.recurrence as
-        | { type?: string; count?: number }
-        | undefined;
-      const linkedCount = wrapper?.completion_instances?.length ?? 0;
+    const wrapper = row as {
+      activities?: { rhythm?: unknown } | null;
+      completion_instances?: Array<unknown> | null;
+    } | null;
+    const rhythm = wrapper?.activities?.rhythm as
+      | { type?: string; count?: number }
+      | undefined;
+    const linkedCount = wrapper?.completion_instances?.length ?? 0;
 
-      const shouldComplete =
-        recurrence?.type === "frequency"
-          ? linkedCount >= (recurrence.count ?? 1)
-          : true;
+    const shouldComplete =
+      rhythm?.type === "frequency"
+        ? linkedCount >= (rhythm.count ?? 1)
+        : true;
 
-      if (shouldComplete) {
-        await supabase
-          .from("recurring_activity_instances")
-          .update({ status: "completed" })
-          .eq("id", instId);
-      }
+    if (shouldComplete) {
+      await supabase
+        .from("activity_instances")
+        .update({ status: "completed" })
+        .eq("id", instId);
     }
-  }
-
-  if (taskIds.length > 0) {
-    await supabase
-      .from("tasks")
-      .update({ status: "completed" })
-      .in("id", taskIds);
   }
 
   // -----------------------------------------------------------------------

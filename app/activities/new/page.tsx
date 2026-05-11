@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
-// /activities/new — create a recurring activity.
-// Server Component shell; the interactive form is a Client Component sibling.
+// /activities/new — add a new activity (the unified producer for what
+// used to be habits AND tasks).
 // ---------------------------------------------------------------------------
 
 import Link from "next/link";
@@ -26,11 +26,7 @@ export default async function NewActivityPage() {
         >
           ← Today
         </Link>
-        <h1 className="text-3xl font-semibold tracking-tight">New activity</h1>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Define what you want to do and how often. You can edit or archive
-          it later.
-        </p>
+        <h1 className="text-3xl font-semibold tracking-tight">Add Activity</h1>
       </header>
 
       <ActivityForm />

@@ -1,12 +1,14 @@
 // ---------------------------------------------------------------------------
-// /today — today's habits + tasks.
+// /today — today's activities (one unified list, no more habits-vs-tasks).
 //
-// Two sections:
-//   1. Habits  — pending recurring_activity_instances whose current period
-//                includes today (see inCurrentPeriod() below).
-//   2. Tasks   — pending tasks. For v1 we show ALL of them sorted by due
-//                date (nulls last); finer "actionable today" filtering can
-//                land once there's enough data to warrant it.
+// Visibility rules for the list:
+//   - single rhythm:    show on its scheduled_for AND every day after until
+//                       completed (overdue handling).
+//   - daily / weekdays / interval / frequency-day:
+//                       show only when scheduled_for == today.
+//   - frequency week:   show every day where scheduled_for falls in this
+//                       Monday-anchored week.
+//   - frequency month:  show every day in the current calendar month.
 // ---------------------------------------------------------------------------
 
 import { startOfMonth, startOfWeek } from "date-fns";
@@ -16,9 +18,9 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
 import { InstanceRow } from "./instance-row";
-import { TaskRow } from "./task-row";
 
-type Recurrence =
+type Rhythm =
+  | { type: "single" }
   | { type: "daily" }
   | { type: "weekdays"; days: string[] }
   | { type: "interval"; days: number }
@@ -27,22 +29,15 @@ type Recurrence =
 type PendingInstance = {
   id: string;
   scheduled_for: string;
-  recurring_activities: {
+  activities: {
     id: string;
     name: string;
-    description: string | null;
-    recurrence: Recurrence;
+    notes: string | null;
+    rhythm: Rhythm;
+    priority: number;
+    end_date: string | null;
   } | null;
   completion_instances: Array<{ completion_id: string }> | null;
-};
-
-type PendingTask = {
-  id: string;
-  name: string;
-  description: string | null;
-  due_date: string | null;
-  earliest_date: string | null;
-  priority: number;
 };
 
 export default async function TodayPage() {
@@ -52,26 +47,24 @@ export default async function TodayPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // Today as YYYY-MM-DD in server TZ. Profile-TZ-aware version lands with
-  // the settings page.
-  const todayDate = new Date();
-  const today = todayDate.toISOString().slice(0, 10);
-  const windowStart = new Date(todayDate);
-  windowStart.setDate(windowStart.getDate() - 31);
+  const today = new Date().toISOString().slice(0, 10);
+  const windowStart = new Date();
+  windowStart.setDate(windowStart.getDate() - 60); // wide enough for overdue singles
   const windowStartStr = windowStart.toISOString().slice(0, 10);
 
-  // -- Habits --------------------------------------------------------------
-  const { data: rawInstances } = await supabase
-    .from("recurring_activity_instances")
+  const { data } = await supabase
+    .from("activity_instances")
     .select(
       `
       id,
       scheduled_for,
-      recurring_activities (
+      activities (
         id,
         name,
-        description,
-        recurrence
+        notes,
+        rhythm,
+        priority,
+        end_date
       ),
       completion_instances (
         completion_id
@@ -83,20 +76,10 @@ export default async function TodayPage() {
     .lte("scheduled_for", today)
     .order("scheduled_for");
 
-  const allInstances = (rawInstances ?? []) as unknown as PendingInstance[];
-  const visibleInstances = allInstances.filter((inst) =>
-    inCurrentPeriod(inst, today)
-  );
-
-  // -- Tasks ---------------------------------------------------------------
-  const { data: rawTasks } = await supabase
-    .from("tasks")
-    .select("id, name, description, due_date, earliest_date, priority")
-    .eq("status", "pending")
-    .order("due_date", { ascending: true, nullsFirst: false })
-    .order("priority", { ascending: true });
-
-  const tasks = (rawTasks ?? []) as unknown as PendingTask[];
+  const raw = (data ?? []) as unknown as PendingInstance[];
+  const visible = raw
+    .filter((inst) => visibleOnToday(inst, today))
+    .sort(compareForToday);
 
   return (
     <main className="mx-auto flex min-h-svh max-w-2xl flex-col gap-8 p-6">
@@ -113,40 +96,42 @@ export default async function TodayPage() {
             {formatDateLong(today)}
           </p>
         </div>
-        <div className="flex shrink-0 gap-2">
-          <Link
-            href="/activities/new"
-            className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
-          >
-            + Habit
-          </Link>
-          <Link
-            href="/tasks/new"
-            className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-          >
-            + Task
-          </Link>
-        </div>
+        <Link
+          href="/activities/new"
+          className="shrink-0 rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
+        >
+          + Add Activity
+        </Link>
       </header>
 
-      <Section title="Habits">
-        {visibleInstances.length === 0 ? (
-          <EmptyHint
-            text="Nothing for today."
-            ctaHref="/activities/new"
-            ctaText="Add a habit"
-          />
+      <section>
+        {visible.length === 0 ? (
+          <p className="rounded-md border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700">
+            Nothing for today.{" "}
+            <Link
+              href="/activities/new"
+              className="font-medium underline-offset-2 hover:underline"
+            >
+              Add your first activity
+            </Link>
+            .
+          </p>
         ) : (
           <ul className="flex flex-col gap-2">
-            {visibleInstances.map((inst) => {
-              const r = inst.recurring_activities?.recurrence;
+            {visible.map((inst) => {
+              const r = inst.activities?.rhythm;
               const isFrequency = r?.type === "frequency";
+              const isSingle = r?.type === "single";
               return (
                 <InstanceRow
                   key={inst.id}
                   instanceId={inst.id}
-                  name={inst.recurring_activities?.name ?? "Untitled"}
-                  description={inst.recurring_activities?.description ?? null}
+                  name={inst.activities?.name ?? "Untitled"}
+                  notes={inst.activities?.notes ?? null}
+                  priority={inst.activities?.priority ?? 2}
+                  scheduledFor={inst.scheduled_for}
+                  todayStr={today}
+                  isSingle={isSingle ?? false}
                   frequencyTarget={isFrequency ? r.count : null}
                   frequencyProgress={
                     isFrequency ? inst.completion_instances?.length ?? 0 : null
@@ -156,80 +141,25 @@ export default async function TodayPage() {
             })}
           </ul>
         )}
-      </Section>
-
-      <Section title="Tasks">
-        {tasks.length === 0 ? (
-          <EmptyHint
-            text="No open tasks."
-            ctaHref="/tasks/new"
-            ctaText="Add a task"
-          />
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {tasks.map((t) => (
-              <TaskRow
-                key={t.id}
-                taskId={t.id}
-                name={t.name}
-                description={t.description}
-                dueDate={t.due_date}
-                earliestDate={t.earliest_date}
-                priority={t.priority}
-                todayStr={today}
-              />
-            ))}
-          </ul>
-        )}
-      </Section>
+      </section>
     </main>
   );
 }
 
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section>
-      <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-500">
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
-}
+// ---------------------------------------------------------------------------
 
-function EmptyHint({
-  text,
-  ctaHref,
-  ctaText,
-}: {
-  text: string;
-  ctaHref: string;
-  ctaText: string;
-}) {
-  return (
-    <p className="rounded-md border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700">
-      {text}{" "}
-      <Link
-        href={ctaHref}
-        className="font-medium underline-offset-2 hover:underline"
-      >
-        {ctaText}
-      </Link>
-      .
-    </p>
-  );
-}
-
-function inCurrentPeriod(inst: PendingInstance, todayStr: string): boolean {
-  const r = inst.recurring_activities?.recurrence;
+function visibleOnToday(inst: PendingInstance, todayStr: string): boolean {
+  const r = inst.activities?.rhythm;
   if (!r) return false;
-  if (r.type !== "frequency") return inst.scheduled_for === todayStr;
+
+  if (r.type === "single") {
+    return inst.scheduled_for <= todayStr; // today OR overdue
+  }
+
+  if (r.type !== "frequency") {
+    return inst.scheduled_for === todayStr;
+  }
+
   if (r.period === "day") return inst.scheduled_for === todayStr;
 
   const today = parseDate(todayStr);
@@ -241,14 +171,34 @@ function inCurrentPeriod(inst: PendingInstance, todayStr: string): boolean {
   return scheduled >= periodStart && scheduled <= today;
 }
 
+/** Overdue singles first, then by priority (1=high), then by name. */
+function compareForToday(a: PendingInstance, b: PendingInstance): number {
+  const aOverdue = a.activities?.rhythm.type === "single" && a.scheduled_for < todayStrCache();
+  const bOverdue = b.activities?.rhythm.type === "single" && b.scheduled_for < todayStrCache();
+  if (aOverdue !== bOverdue) return aOverdue ? -1 : 1;
+
+  const pa = a.activities?.priority ?? 2;
+  const pb = b.activities?.priority ?? 2;
+  if (pa !== pb) return pa - pb;
+
+  return (a.activities?.name ?? "").localeCompare(b.activities?.name ?? "");
+}
+
+let _todayCache: string | null = null;
+function todayStrCache(): string {
+  if (_todayCache === null) {
+    _todayCache = new Date().toISOString().slice(0, 10);
+  }
+  return _todayCache;
+}
+
 function parseDate(yyyyMmDd: string): Date {
   const [y, m, d] = yyyyMmDd.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d));
 }
 
 function formatDateLong(yyyyMmDd: string): string {
-  const date = parseDate(yyyyMmDd);
-  return date.toLocaleDateString(undefined, {
+  return parseDate(yyyyMmDd).toLocaleDateString(undefined, {
     weekday: "long",
     month: "long",
     day: "numeric",

@@ -3,6 +3,35 @@
 import { describe, expect, it } from "vitest";
 import { generateInstances } from "@/lib/domain/rhythms";
 
+describe("generateInstances — single rhythm", () => {
+  it("produces exactly one instance on range.from", () => {
+    expect(
+      generateInstances(
+        { type: "single" },
+        { from: "2026-03-15", to: "2026-03-15" }
+      )
+    ).toEqual([{ scheduledFor: "2026-03-15" }]);
+  });
+
+  it("uses range.from even when range.to is later (singles ignore the window)", () => {
+    expect(
+      generateInstances(
+        { type: "single" },
+        { from: "2026-03-15", to: "2026-12-31" }
+      )
+    ).toEqual([{ scheduledFor: "2026-03-15" }]);
+  });
+
+  it("returns empty for an inverted range", () => {
+    expect(
+      generateInstances(
+        { type: "single" },
+        { from: "2026-03-15", to: "2026-03-14" }
+      )
+    ).toEqual([]);
+  });
+});
+
 describe("generateInstances — daily rhythm", () => {
   it("produces one instance per day across a multi-day range", () => {
     expect(
