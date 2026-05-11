@@ -43,6 +43,7 @@ type PendingInstance = {
     rhythm: Rhythm;
     priority: number;
     scheduled_times: string[];
+    archived_at: string | null;
   } | null;
   completion_instances: Array<{ completion_id: string }> | null;
 };
@@ -93,6 +94,12 @@ export default async function HomePage({
               className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
             >
               + Add Activity
+            </Link>
+            <Link
+              href="/activities"
+              className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            >
+              Manage
             </Link>
             <form action={signOut}>
               <button
@@ -198,7 +205,8 @@ async function DayView() {
         notes,
         rhythm,
         priority,
-        scheduled_times
+        scheduled_times,
+        archived_at
       ),
       completion_instances (
         completion_id
@@ -212,6 +220,7 @@ async function DayView() {
 
   const raw = (data ?? []) as unknown as PendingInstance[];
   const visible = raw
+    .filter((inst) => inst.activities && !inst.activities.archived_at)
     .filter((inst) => visibleOnToday(inst, today))
     .sort(compareForToday);
 
@@ -324,7 +333,7 @@ async function WeekView() {
       scheduled_for,
       status,
       activities (
-        id, name, rhythm, priority, scheduled_times
+        id, name, rhythm, priority, scheduled_times, archived_at
       )
     `
     )
@@ -341,14 +350,17 @@ async function WeekView() {
       rhythm: Rhythm;
       priority: number;
       scheduled_times: string[];
+      archived_at: string | null;
     } | null;
   };
 
   const all = (data ?? []) as unknown as WeekInstance[];
 
   // Group by date — each banner shows on its scheduled_for cell only.
+  // Skip instances whose activity has been archived.
   const byDate: Record<string, WeekInstance[]> = {};
   for (const i of all) {
+    if (!i.activities || i.activities.archived_at) continue;
     (byDate[i.scheduled_for] ??= []).push(i);
   }
 
@@ -479,9 +491,12 @@ async function MonthView() {
 
   const { data } = await supabase
     .from("activity_instances")
-    .select("id, scheduled_for, status")
+    .select(
+      "id, scheduled_for, status, activities!inner(archived_at)"
+    )
     .gte("scheduled_for", format(monthStart, "yyyy-MM-dd"))
-    .lte("scheduled_for", format(monthEnd, "yyyy-MM-dd"));
+    .lte("scheduled_for", format(monthEnd, "yyyy-MM-dd"))
+    .is("activities.archived_at", null);
 
   const pendingByDate: Record<string, number> = {};
   const completedByDate: Record<string, number> = {};

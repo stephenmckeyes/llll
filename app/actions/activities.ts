@@ -205,6 +205,44 @@ export async function completeInstance(instanceId: string) {
 }
 
 // ---------------------------------------------------------------------------
+// archiveActivity — soft-delete. The row stays for history; today/week
+// queries filter on archived_at IS NULL so it disappears from active
+// surfaces. RLS already scopes to the owning user.
+// ---------------------------------------------------------------------------
+
+export async function archiveActivity(activityId: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  await supabase
+    .from("activities")
+    .update({ archived_at: new Date().toISOString() })
+    .eq("id", activityId);
+
+  revalidatePath("/");
+  revalidatePath("/activities");
+}
+
+export async function unarchiveActivity(activityId: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  await supabase
+    .from("activities")
+    .update({ archived_at: null })
+    .eq("id", activityId);
+
+  revalidatePath("/");
+  revalidatePath("/activities");
+}
+
+// ---------------------------------------------------------------------------
 
 function clampInt(
   value: FormDataEntryValue | null,

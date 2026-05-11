@@ -33,6 +33,21 @@ export function CalendarPreview({
   endDate: string | null; // YYYY-MM-DD or null = open-ended
   activityName: string;
 }) {
+  // Guard: a date input mid-edit can hand us "" or partial strings like
+  // "2026-05-" — these used to bubble Invalid Date through addDays/format
+  // and crash the whole page. If start date isn't a clean YYYY-MM-DD, just
+  // render a placeholder.
+  if (!isValidDateString(startDate)) {
+    return (
+      <Pane>
+        <Header count={null} endDate={endDate} startedAlready={false} />
+        <p className="text-xs text-zinc-500">
+          Finish entering a start date to see the preview.
+        </p>
+      </Pane>
+    );
+  }
+
   if (!rhythm) {
     return (
       <Pane>
@@ -109,6 +124,12 @@ export function CalendarPreview({
 }
 
 // ---------------------------------------------------------------------------
+
+function isValidDateString(s: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = parseISO(s);
+  return !Number.isNaN(d.getTime());
+}
 
 function Pane({ children }: { children: React.ReactNode }) {
   return (

@@ -111,7 +111,24 @@ export function ActivityForm() {
   }
 
   return (
-    <form action={formAction} className="flex flex-col gap-6">
+    <form
+      action={formAction}
+      onKeyDown={(e) => {
+        // Don't let Enter inside an input submit the form. Only the
+        // explicit "Add Activity" button should submit. Textareas keep
+        // their normal newline behavior; the submit button still
+        // activates on Enter when focused.
+        const target = e.target as HTMLElement;
+        if (
+          e.key === "Enter" &&
+          target.tagName !== "TEXTAREA" &&
+          target.tagName !== "BUTTON"
+        ) {
+          e.preventDefault();
+        }
+      }}
+      className="flex flex-col gap-6"
+    >
       {/* --- 1. Activity (name) ---------------------------------------- */}
       <FieldLabel label="Activity">
         <input
@@ -177,7 +194,10 @@ export function ActivityForm() {
         />
       </fieldset>
 
-      {/* Conditional rhythm config */}
+      {/* Conditional rhythm config — wrapped in a stable-height slot so
+          switching between rhythm types doesn't make the form jump. The
+          slot grows only when the user actively adds Multi-Daily times. */}
+      <div className="min-h-[8rem] flex flex-col">
       {isMultiDaily && (
         <ConfigBox column>
           <p className="text-xs text-zinc-500">
@@ -292,6 +312,7 @@ export function ActivityForm() {
           </select>
         </ConfigBox>
       )}
+      </div>
 
       {/* --- 4. Schedule ----------------------------------------------- */}
       <fieldset className="flex flex-col gap-3">
@@ -348,16 +369,20 @@ export function ActivityForm() {
       </fieldset>
 
       {/* --- 5. Priority (only for Once) ------------------------------- */}
-      {isSingle && (
-        <fieldset className="flex flex-col gap-2">
-          <legend className="mb-1 text-sm font-medium">Priority</legend>
-          <div className="flex gap-2">
-            <PriorityRadio value="1" label="High" />
-            <PriorityRadio value="2" label="Medium" defaultChecked />
-            <PriorityRadio value="3" label="Low" />
-          </div>
-        </fieldset>
-      )}
+      {/* Wrapped in a min-height slot too, so toggling between Once and
+          recurring rhythms doesn't push the calendar preview up/down. */}
+      <div className="min-h-[5rem]">
+        {isSingle && (
+          <fieldset className="flex flex-col gap-2">
+            <legend className="mb-1 text-sm font-medium">Priority</legend>
+            <div className="flex gap-2">
+              <PriorityRadio value="1" label="High" />
+              <PriorityRadio value="2" label="Medium" defaultChecked />
+              <PriorityRadio value="3" label="Low" />
+            </div>
+          </fieldset>
+        )}
+      </div>
 
       {/* --- Calendar preview ------------------------------------------ */}
       <CalendarPreview
