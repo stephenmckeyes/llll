@@ -2,18 +2,21 @@
 // Home — the Mission dashboard.
 //
 // Logged out: marketing-y landing with sign-in / sign-up CTAs.
-// Logged in:  calendar dashboard with a view switcher.
-//   - ?view=day   (default) — list of today's pending activities
-//   - ?view=week            — 7-day grid with banners per day
-//   - ?view=month           — month calendar grid with counts per day
-// (?view=year lands in Phase 2c.)
+// Logged in:  calendar dashboard with a view switcher + a date param.
+//   - ?view=day&date=YYYY-MM-DD    — that date plus the next 6, rolling
+//   - ?view=week&date=YYYY-MM-DD   — the week containing that date
+//   - ?view=month&date=YYYY-MM-DD  — the month containing that date
+//   - ?date omitted → today.
+//   - Click any day cell in Week or Month → jumps to Day view at that date.
 // ---------------------------------------------------------------------------
 
 import {
   addDays,
+  addMonths,
   endOfMonth,
   endOfWeek,
   format,
+  parseISO,
   startOfMonth,
   startOfWeek,
 } from "date-fns";
@@ -22,6 +25,7 @@ import Link from "next/link";
 import { signOut } from "@/app/actions/auth";
 import { createClient } from "@/lib/supabase/server";
 
+import { DateNavigator } from "./_components/date-navigator";
 import { InstanceRow } from "./today/instance-row";
 
 type ViewKind = "day" | "week" | "month";
@@ -56,29 +60,24 @@ const VIEW_OPTIONS: ReadonlyArray<{ value: ViewKind; label: string }> = [
 
 const WEEK_HEADERS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const TODAY_STR = new Date().toISOString().slice(0, 10);
+const DAY_VIEW_HORIZON = 7; // sections shown stacked vertically
 
 // ---------------------------------------------------------------------------
 
 export default async function HomePage({
   searchParams,
 }: {
-  // Next.js 16: searchParams is async.
-  searchParams: Promise<{ view?: string }>;
+  searchParams: Promise<{ view?: string; date?: string }>;
 }) {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-
   if (!user) return <SignedOutLanding />;
 
   const params = await searchParams;
-  const view: ViewKind =
-    params.view === "month"
-      ? "month"
-      : params.view === "week"
-        ? "week"
-        : "day";
+  const view = parseView(params.view);
+  const date = parseDateParam(params.date);
 
   return (
     <main className="mx-auto flex min-h-svh max-w-2xl flex-col gap-8 p-6">
@@ -112,14 +111,33 @@ export default async function HomePage({
           </div>
         </div>
 
-        <ViewSwitcher current={view} />
+        <ViewSwitcher current={view} date={date} />
       </header>
 
-      {view === "day" && <DayView />}
-      {view === "week" && <WeekView />}
-      {view === "month" && <MonthView />}
+      {view === "day" && <DayView startDate={date} />}
+      {view === "week" && <WeekView weekDate={date} />}
+      {view === "month" && <MonthView monthDate={date} />}
     </main>
   );
+}
+
+// ---------------------------------------------------------------------------
+
+function parseView(raw: string | undefined): ViewKind {
+  if (raw === "month" || raw === "week") return raw;
+  return "day";
+}
+
+function parseDateParam(raw: string | undefined): string {
+  if (!raw || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return TODAY_STR;
+  const d = parseISO(raw);
+  if (Number.isNaN(d.getTime())) return TODAY_STR;
+  return raw;
+}
+
+function parseDate(yyyyMmDd: string): Date {
+  const [y, m, d] = yyyyMmDd.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d));
 }
 
 // ---------------------------------------------------------------------------
@@ -151,7 +169,13 @@ function SignedOutLanding() {
   );
 }
 
-function ViewSwitcher({ current }: { current: ViewKind }) {
+function ViewSwitcher({
+  current,
+  date,
+}: {
+  current: ViewKind;
+  date: string;
+}) {
   return (
     <nav
       className="flex gap-1 rounded-md border border-zinc-200 p-1 dark:border-zinc-800"
@@ -159,10 +183,11 @@ function ViewSwitcher({ current }: { current: ViewKind }) {
     >
       {VIEW_OPTIONS.map((opt) => {
         const active = opt.value === current;
+        const href = `/?view=${opt.value}&date=${date}`;
         return (
           <Link
             key={opt.value}
-            href={opt.value === "day" ? "/" : `/?view=${opt.value}`}
+            href={href}
             className={`flex-1 rounded px-3 py-1 text-center text-sm font-medium transition-colors ${
               active
                 ? "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
@@ -173,7 +198,6 @@ function ViewSwitcher({ current }: { current: ViewKind }) {
           </Link>
         );
       })}
-      {/* Year button reserved for the next pass — disabled stub. */}
       <span className="flex-1 rounded px-3 py-1 text-center text-sm font-medium text-zinc-300 dark:text-zinc-700">
         Year
       </span>
@@ -182,16 +206,16 @@ function ViewSwitcher({ current }: { current: ViewKind }) {
 }
 
 // ---------------------------------------------------------------------------
-// Day view — replicates the old /today page.
+// Day view — target date + the next 6 days stacked. Scroll for more.
 // ---------------------------------------------------------------------------
 
-async function DayView() {
+async function DayView({ startDate }: { startDate: string }) {
   const supabase = await createClient();
 
-  const today = TODAY_STR;
-  const windowStart = new Date();
-  windowStart.setDate(windowStart.getDate() - 60);
-  const windowStartStr = windowStart.toISOString().slice(0, 10);
+  const startD = parseDate(startDate);
+  const endStr = format(addDays(startD, DAY_VIEW_HORIZON - 1), "yyyy-MM-dd");
+  // Look back enough to catch any overdue singles surfacing on "today".
+  const lookbackStr = format(addDays(startD, -60), "yyyy-MM-dd");
 
   const { data } = await supabase
     .from("activity_instances")
@@ -214,91 +238,124 @@ async function DayView() {
     `
     )
     .eq("status", "pending")
-    .gte("scheduled_for", windowStartStr)
-    .lte("scheduled_for", today)
+    .gte("scheduled_for", lookbackStr)
+    .lte("scheduled_for", endStr)
     .order("scheduled_for");
 
   const raw = (data ?? []) as unknown as PendingInstance[];
-  const visible = raw
-    .filter((inst) => inst.activities && !inst.activities.archived_at)
-    .filter((inst) => visibleOnToday(inst, today))
-    .sort(compareForToday);
+  const live = raw.filter((i) => i.activities && !i.activities.archived_at);
 
-  if (visible.length === 0) {
-    return (
-      <section>
-        <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-500">
-          {formatDateLong(today)}
-        </h2>
-        <p className="rounded-md border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700">
-          Nothing for today.{" "}
-          <Link
-            href="/activities/new"
-            className="font-medium underline-offset-2 hover:underline"
-          >
-            Add your first activity
-          </Link>
-          .
-        </p>
-      </section>
-    );
-  }
+  const prevDate = format(addDays(startD, -1), "yyyy-MM-dd");
+  const nextDate = format(addDays(startD, 1), "yyyy-MM-dd");
+
+  const days = Array.from({ length: DAY_VIEW_HORIZON }, (_, i) => {
+    const date = addDays(startD, i);
+    const dateStr = format(date, "yyyy-MM-dd");
+    const visible = live
+      .filter((inst) => visibleOnDay(inst, dateStr))
+      .sort(compareForDay);
+    return { date, dateStr, visible };
+  });
 
   return (
+    <div className="flex flex-col gap-5">
+      <DateNavigator
+        view="day"
+        currentDate={startDate}
+        prevDate={prevDate}
+        nextDate={nextDate}
+        label={dayHeaderLabel(startDate)}
+      />
+
+      {days.map((d) => (
+        <DaySection key={d.dateStr} {...d} />
+      ))}
+    </div>
+  );
+}
+
+function DaySection({
+  date,
+  dateStr,
+  visible,
+}: {
+  date: Date;
+  dateStr: string;
+  visible: PendingInstance[];
+}) {
+  const isToday = dateStr === TODAY_STR;
+  return (
     <section>
-      <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-500">
-        {formatDateLong(today)}
+      <h2 className="mb-2 flex items-baseline gap-2 text-sm font-medium uppercase tracking-wide text-zinc-500">
+        <span>{formatDateMedium(date)}</span>
+        {isToday && (
+          <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-white dark:bg-zinc-50 dark:text-zinc-900">
+            Today
+          </span>
+        )}
       </h2>
-      <ul className="flex flex-col gap-2">
-        {visible.map((inst) => {
-          const r = inst.activities?.rhythm;
-          const isFrequency = r?.type === "frequency";
-          const isSingle = r?.type === "single";
-          return (
-            <InstanceRow
-              key={inst.id}
-              instanceId={inst.id}
-              name={inst.activities?.name ?? "Untitled"}
-              notes={inst.activities?.notes ?? null}
-              priority={inst.activities?.priority ?? 2}
-              scheduledFor={inst.scheduled_for}
-              scheduledTimes={inst.activities?.scheduled_times ?? []}
-              todayStr={today}
-              isSingle={isSingle ?? false}
-              frequencyTarget={isFrequency ? r.count : null}
-              frequencyProgress={
-                isFrequency ? inst.completion_instances?.length ?? 0 : null
-              }
-            />
-          );
-        })}
-      </ul>
+      {visible.length === 0 ? (
+        <p className="rounded-md border border-dashed border-zinc-300 p-3 text-center text-xs text-zinc-500 dark:border-zinc-700">
+          Free.
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {visible.map((inst) => {
+            const r = inst.activities?.rhythm;
+            const isFrequency = r?.type === "frequency";
+            const isSingle = r?.type === "single";
+            return (
+              <InstanceRow
+                key={inst.id}
+                instanceId={inst.id}
+                name={inst.activities?.name ?? "Untitled"}
+                notes={inst.activities?.notes ?? null}
+                priority={inst.activities?.priority ?? 2}
+                scheduledFor={inst.scheduled_for}
+                scheduledTimes={inst.activities?.scheduled_times ?? []}
+                todayStr={TODAY_STR}
+                isSingle={isSingle ?? false}
+                frequencyTarget={isFrequency ? r.count : null}
+                frequencyProgress={
+                  isFrequency ? inst.completion_instances?.length ?? 0 : null
+                }
+              />
+            );
+          })}
+        </ul>
+      )}
     </section>
   );
 }
 
-function visibleOnToday(inst: PendingInstance, todayStr: string): boolean {
+function visibleOnDay(inst: PendingInstance, dayStr: string): boolean {
   const r = inst.activities?.rhythm;
   if (!r) return false;
-  if (r.type === "single") return inst.scheduled_for <= todayStr;
-  if (r.type !== "frequency") return inst.scheduled_for === todayStr;
-  if (r.period === "day") return inst.scheduled_for === todayStr;
 
-  const today = parseDate(todayStr);
+  if (r.type === "single") {
+    // Overdue singles surface on TODAY only (so the user can act on them
+    // without time-traveling); other days show their own scheduled singles.
+    if (inst.scheduled_for < TODAY_STR) return dayStr === TODAY_STR;
+    return inst.scheduled_for === dayStr;
+  }
+
+  if (r.type !== "frequency") return inst.scheduled_for === dayStr;
+  if (r.period === "day") return inst.scheduled_for === dayStr;
+
+  const day = parseDate(dayStr);
   const scheduled = parseDate(inst.scheduled_for);
   const periodStart =
     r.period === "week"
-      ? startOfWeek(today, { weekStartsOn: 1 })
-      : startOfMonth(today);
-  return scheduled >= periodStart && scheduled <= today;
+      ? startOfWeek(day, { weekStartsOn: 1 })
+      : startOfMonth(day);
+  return scheduled >= periodStart && scheduled <= day;
 }
 
-function compareForToday(a: PendingInstance, b: PendingInstance): number {
-  const aOverdue =
-    a.activities?.rhythm.type === "single" && a.scheduled_for < TODAY_STR;
-  const bOverdue =
-    b.activities?.rhythm.type === "single" && b.scheduled_for < TODAY_STR;
-  if (aOverdue !== bOverdue) return aOverdue ? -1 : 1;
+function compareForDay(a: PendingInstance, b: PendingInstance): number {
+  // Time-of-day first if known, then priority high→low, then name.
+  const ta = a.activities?.scheduled_times?.[0] ?? "99:99";
+  const tb = b.activities?.scheduled_times?.[0] ?? "99:99";
+  if (ta !== tb) return ta.localeCompare(tb);
   const pa = a.activities?.priority ?? 2;
   const pb = b.activities?.priority ?? 2;
   if (pa !== pb) return pa - pb;
@@ -306,22 +363,16 @@ function compareForToday(a: PendingInstance, b: PendingInstance): number {
 }
 
 // ---------------------------------------------------------------------------
-// Week view — 7 columns, current Monday-Sunday week. Each column shows
-// the day's pending activities as banners (the format we want everywhere
-// eventually; see BACKLOG). Today's column is highlighted.
-//
-// Each banner shows: name + first scheduled time (if any) + a priority
-// dot. For frequency rhythms, the banner appears on the period's anchor
-// day only (Monday for week, 1st-of-month for month) — keeps banners
-// from duplicating across every day they're "current" for.
+// Week view — 7 columns. Each column = a Link to that day's Day view.
+// Banners inside each column show that day's activities.
 // ---------------------------------------------------------------------------
 
-async function WeekView() {
+async function WeekView({ weekDate }: { weekDate: string }) {
   const supabase = await createClient();
 
-  const today = new Date();
-  const weekStart = startOfWeek(today, { weekStartsOn: 1 });
-  const weekEnd = endOfWeek(today, { weekStartsOn: 1 });
+  const refDate = parseDate(weekDate);
+  const weekStart = startOfWeek(refDate, { weekStartsOn: 1 });
+  const weekEnd = endOfWeek(refDate, { weekStartsOn: 1 });
   const weekStartStr = format(weekStart, "yyyy-MM-dd");
   const weekEndStr = format(weekEnd, "yyyy-MM-dd");
 
@@ -355,17 +406,11 @@ async function WeekView() {
   };
 
   const all = (data ?? []) as unknown as WeekInstance[];
-
-  // Group by date — each banner shows on its scheduled_for cell only.
-  // Skip instances whose activity has been archived.
   const byDate: Record<string, WeekInstance[]> = {};
   for (const i of all) {
     if (!i.activities || i.activities.archived_at) continue;
     (byDate[i.scheduled_for] ??= []).push(i);
   }
-
-  // Sort each day's banners: pending first, then priority high→low, then
-  // earliest scheduled time, then name.
   for (const list of Object.values(byDate)) {
     list.sort((a, b) => {
       if (a.status !== b.status) return a.status === "pending" ? -1 : 1;
@@ -390,17 +435,25 @@ async function WeekView() {
     };
   });
 
+  const prevDate = format(addDays(weekStart, -7), "yyyy-MM-dd");
+  const nextDate = format(addDays(weekStart, 7), "yyyy-MM-dd");
+
   return (
-    <section className="flex flex-col gap-3">
-      <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">
-        {format(weekStart, "MMM d")} – {format(weekEnd, "MMM d, yyyy")}
-      </h2>
+    <div className="flex flex-col gap-3">
+      <DateNavigator
+        view="week"
+        currentDate={weekDate}
+        prevDate={prevDate}
+        nextDate={nextDate}
+        label={`${format(weekStart, "MMM d")} – ${format(weekEnd, "MMM d, yyyy")}`}
+      />
 
       <div className="grid grid-cols-7 gap-2">
         {days.map((d) => (
-          <div
+          <Link
             key={d.dateStr}
-            className={`flex min-h-[8rem] flex-col gap-1 rounded-md border p-2 ${
+            href={`/?view=day&date=${d.dateStr}`}
+            className={`flex min-h-[8rem] flex-col gap-1 rounded-md border p-2 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-900 ${
               d.isToday
                 ? "border-zinc-900 dark:border-zinc-50"
                 : "border-zinc-200 dark:border-zinc-800"
@@ -425,10 +478,10 @@ async function WeekView() {
                 ))}
               </ul>
             )}
-          </div>
+          </Link>
         ))}
       </div>
-    </section>
+    </div>
   );
 }
 
@@ -468,7 +521,9 @@ function WeekBanner({
         className={`mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full ${dotColor}`}
       />
       <span className="min-w-0 flex-1">
-        <span className="block line-clamp-2 font-medium">{item.activities.name}</span>
+        <span className="block line-clamp-2 font-medium break-words">
+          {item.activities.name}
+        </span>
         {firstTime && (
           <span className="block opacity-75">{firstTime}</span>
         )}
@@ -478,24 +533,28 @@ function WeekBanner({
 }
 
 // ---------------------------------------------------------------------------
-// Month view — calendar grid for the current month, with per-day pending
-// counts. Click a date to jump to that day's view (deferred to 2c).
+// Month view — calendar grid with per-day counts. Each cell is a Link to
+// that day's Day view. Out-of-month cells are also clickable (jump to that
+// day in its native month).
 // ---------------------------------------------------------------------------
 
-async function MonthView() {
+async function MonthView({ monthDate }: { monthDate: string }) {
   const supabase = await createClient();
 
-  const todayDate = new Date();
-  const monthStart = startOfMonth(todayDate);
-  const monthEnd = endOfMonth(todayDate);
+  const refDate = parseDate(monthDate);
+  const monthStart = startOfMonth(refDate);
+  const monthEnd = endOfMonth(refDate);
+  const gridStart = startOfWeek(monthStart, { weekStartsOn: 1 });
 
+  // Fetch over the visible grid (might include neighbor-month days)
+  const gridEnd = addDays(gridStart, 41);
   const { data } = await supabase
     .from("activity_instances")
     .select(
       "id, scheduled_for, status, activities!inner(archived_at)"
     )
-    .gte("scheduled_for", format(monthStart, "yyyy-MM-dd"))
-    .lte("scheduled_for", format(monthEnd, "yyyy-MM-dd"))
+    .gte("scheduled_for", format(gridStart, "yyyy-MM-dd"))
+    .lte("scheduled_for", format(gridEnd, "yyyy-MM-dd"))
     .is("activities.archived_at", null);
 
   const pendingByDate: Record<string, number> = {};
@@ -511,7 +570,6 @@ async function MonthView() {
     }
   }
 
-  const gridStart = startOfWeek(monthStart, { weekStartsOn: 1 });
   const cells = Array.from({ length: 42 }, (_, i) => {
     const date = addDays(gridStart, i);
     const dateStr = format(date, "yyyy-MM-dd");
@@ -525,11 +583,18 @@ async function MonthView() {
     };
   });
 
+  const prevDate = format(addMonths(monthStart, -1), "yyyy-MM-dd");
+  const nextDate = format(addMonths(monthStart, 1), "yyyy-MM-dd");
+
   return (
-    <section className="flex flex-col gap-3">
-      <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">
-        {format(todayDate, "MMMM yyyy")}
-      </h2>
+    <div className="flex flex-col gap-3">
+      <DateNavigator
+        view="month"
+        currentDate={monthDate}
+        prevDate={prevDate}
+        nextDate={nextDate}
+        label={format(refDate, "MMMM yyyy")}
+      />
 
       <div className="grid grid-cols-7 gap-1">
         {WEEK_HEADERS.map((d) => (
@@ -544,17 +609,13 @@ async function MonthView() {
           <MonthCell key={c.dateStr} {...c} />
         ))}
       </div>
-
-      <p className="text-xs text-zinc-500">
-        Numbers in each cell show pending (top) and completed (bottom) for
-        that day. Click navigation per day arrives in the next pass.
-      </p>
-    </section>
+    </div>
   );
 }
 
 function MonthCell({
   date,
+  dateStr,
   inMonth,
   isToday,
   pendingCount,
@@ -569,14 +630,15 @@ function MonthCell({
 }) {
   const hasAny = pendingCount > 0 || completedCount > 0;
   let cls =
-    "flex aspect-square flex-col items-center justify-start gap-0.5 rounded p-1 text-xs";
-  if (!inMonth) cls += " text-zinc-300 dark:text-zinc-700";
+    "flex aspect-square flex-col items-center justify-start gap-0.5 rounded p-1 text-xs transition-colors";
+  if (!inMonth) cls += " text-zinc-400 dark:text-zinc-600";
   else cls += " text-zinc-700 dark:text-zinc-300";
   if (isToday) cls += " ring-1 ring-zinc-900 dark:ring-zinc-50";
   if (hasAny && inMonth) cls += " bg-zinc-100 dark:bg-zinc-900";
+  cls += " hover:bg-zinc-200 dark:hover:bg-zinc-800";
 
   return (
-    <div className={cls}>
+    <Link href={`/?view=day&date=${dateStr}`} className={cls}>
       <span className={isToday ? "font-semibold" : ""}>{date.getDate()}</span>
       {inMonth && pendingCount > 0 && (
         <span className="text-[10px] font-semibold text-zinc-900 dark:text-zinc-50">
@@ -588,21 +650,27 @@ function MonthCell({
           ✓{completedCount}
         </span>
       )}
-    </div>
+    </Link>
   );
 }
 
 // ---------------------------------------------------------------------------
 
-function parseDate(yyyyMmDd: string): Date {
-  const [y, m, d] = yyyyMmDd.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d));
-}
-
-function formatDateLong(yyyyMmDd: string): string {
-  return parseDate(yyyyMmDd).toLocaleDateString(undefined, {
+function dayHeaderLabel(yyyyMmDd: string): string {
+  const date = parseDate(yyyyMmDd);
+  return date.toLocaleDateString(undefined, {
     weekday: "long",
     month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function formatDateMedium(date: Date): string {
+  return date.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
     day: "numeric",
     timeZone: "UTC",
   });

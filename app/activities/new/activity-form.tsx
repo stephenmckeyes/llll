@@ -194,10 +194,7 @@ export function ActivityForm() {
         />
       </fieldset>
 
-      {/* Conditional rhythm config — wrapped in a stable-height slot so
-          switching between rhythm types doesn't make the form jump. The
-          slot grows only when the user actively adds Multi-Daily times. */}
-      <div className="min-h-[8rem] flex flex-col">
+      {/* Conditional rhythm config */}
       {isMultiDaily && (
         <ConfigBox column>
           <p className="text-xs text-zinc-500">
@@ -277,9 +274,7 @@ export function ActivityForm() {
             }}
             className="w-16 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
           />
-          <span className="text-sm">
-            days, counting from the last time done.
-          </span>
+          <span className="text-sm">days</span>
         </ConfigBox>
       )}
 
@@ -312,7 +307,6 @@ export function ActivityForm() {
           </select>
         </ConfigBox>
       )}
-      </div>
 
       {/* --- 4. Schedule ----------------------------------------------- */}
       <fieldset className="flex flex-col gap-3">
@@ -369,20 +363,16 @@ export function ActivityForm() {
       </fieldset>
 
       {/* --- 5. Priority (only for Once) ------------------------------- */}
-      {/* Wrapped in a min-height slot too, so toggling between Once and
-          recurring rhythms doesn't push the calendar preview up/down. */}
-      <div className="min-h-[5rem]">
-        {isSingle && (
-          <fieldset className="flex flex-col gap-2">
-            <legend className="mb-1 text-sm font-medium">Priority</legend>
-            <div className="flex gap-2">
-              <PriorityRadio value="1" label="High" />
-              <PriorityRadio value="2" label="Medium" defaultChecked />
-              <PriorityRadio value="3" label="Low" />
-            </div>
-          </fieldset>
-        )}
-      </div>
+      {isSingle && (
+        <fieldset className="flex flex-col gap-2">
+          <legend className="mb-1 text-sm font-medium">Priority</legend>
+          <div className="flex gap-2">
+            <PriorityRadio value="1" label="High" />
+            <PriorityRadio value="2" label="Medium" defaultChecked />
+            <PriorityRadio value="3" label="Low" />
+          </div>
+        </fieldset>
+      )}
 
       {/* --- Calendar preview ------------------------------------------ */}
       <CalendarPreview

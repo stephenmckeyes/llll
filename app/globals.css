@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* Reserve space for the vertical scrollbar even when nothing's scrolling.
+   Prevents the page (and the form inside it) from jumping a few pixels
+   wider/narrower when content grows past the viewport height. */
+html {
+  scrollbar-gutter: stable;
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
