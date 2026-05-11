@@ -8,6 +8,13 @@
       "when": 1778467434038,
       "tag": "0000_last_darwin",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1778470081467,
+      "tag": "0001_auth_setup",
+      "breakpoints": true
     }
   ]
 }
