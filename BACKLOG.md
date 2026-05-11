@@ -48,6 +48,19 @@ Future direction (per user spec):
   group remaining banners by their first tag; show top N tag-counts.
 - Banners colored by first tag (when tags become first-class).
 
+## Wording / UX reminders
+
+- **"Drop and save"** label currently appears on the details-bar archive
+  button. The user wants to revisit this wording (eventually replace with
+  something more on-tone like "Set aside," "Park," "Retire," etc.).
+- **Future-date complete warning** is currently a hard `window.confirm`
+  every time. Eventually add a per-user setting:
+  `profiles.confirm_future_complete bool default true`. When the user
+  unchecks it in settings, the confirmation is suppressed.
+- **Uncomplete from Month view** — green ✓ boxes are currently read-only.
+  Add a `revertCompletion(instanceId)` server action and make green boxes
+  click-to-revert (with `window.confirm("Mark this as not done?")`).
+
 ## Grid / Habit-Tracker view (asked for, not started)
 
 A separate "GRID" / habit-tracker view on the dashboard:

@@ -2,9 +2,18 @@
 
 /* Reserve space for the vertical scrollbar even when nothing's scrolling.
    Prevents the page (and the form inside it) from jumping a few pixels
-   wider/narrower when content grows past the viewport height. */
+   wider/narrower when content grows past the viewport height.
+
+   The body overflow-x is a belt-and-suspenders fix: even if some child
+   somehow has a min-content larger than the viewport, the page won't
+   widen sideways; the overflow is clipped at the body. Inputs and rows
+   still get truncate / line-clamp on their content. */
 html {
   scrollbar-gutter: stable;
+}
+
+body {
+  overflow-x: hidden;
 }
 
 :root {

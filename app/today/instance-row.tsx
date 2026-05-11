@@ -3,21 +3,20 @@
 // ---------------------------------------------------------------------------
 // One row on the day list.
 //
-//   - Complete (or +1 for frequency rhythms) is the primary quick-action.
-//   - Edit opens an actions panel below the row with:
-//       Complete · Skip · Edit Activity · Edit Rhythm · Archive
-//     Permanent deletion is intentionally NOT here — to delete for good,
-//     you go to Manage → Archived → Delete.
+//   - The whole row is a click target → navigates to the activity details
+//     page (/activities/[id]?instance=...).
+//   - The Complete (or "+1" for frequency) button sits on top of the row's
+//     link and stops propagation, so clicking it logs the completion
+//     without leaving the day list.
+//   - When the instance is scheduled in the future, completing prompts a
+//     window.confirm first. (Captured in BACKLOG for a future user-setting
+//     toggle.)
 // ---------------------------------------------------------------------------
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useTransition } from "react";
 
-import {
-  archiveActivity,
-  completeInstance,
-  skipInstance,
-} from "@/app/actions/activities";
+import { completeInstance } from "@/app/actions/activities";
 
 const PRIORITY_LABEL: Record<number, string> = {
   1: "High",
@@ -57,7 +56,6 @@ export function InstanceRow({
   frequencyProgress: number | null;
 }) {
   const [isPending, startTransition] = useTransition();
-  const [showActions, setShowActions] = useState(false);
 
   const isFrequency = frequencyTarget !== null;
   const overdueDays =
@@ -76,16 +74,27 @@ export function InstanceRow({
         : { text: "Due today", tone: "muted" };
   }
 
-  function run(action: () => Promise<unknown>) {
+  function handleComplete() {
+    if (scheduledFor > todayStr) {
+      const ok = window.confirm(
+        `This is scheduled for ${scheduledFor}, in the future. Mark complete anyway?`
+      );
+      if (!ok) return;
+    }
     startTransition(async () => {
-      await action();
-      setShowActions(false);
+      await completeInstance(instanceId);
     });
   }
 
+  const detailsHref = `/activities/${activityId}?instance=${instanceId}`;
+
   return (
-    <li className="overflow-hidden rounded-md border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
-      <div className="flex min-w-0 items-center justify-between gap-3 p-3">
+    <li className="relative">
+      {/* Whole-row click target — sits behind the Complete button. */}
+      <Link
+        href={detailsHref}
+        className="block min-w-0 rounded-md border border-zinc-200 bg-white p-3 pr-24 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900"
+      >
         <div className="flex min-w-0 items-start gap-2.5">
           <span
             aria-hidden
@@ -94,7 +103,7 @@ export function InstanceRow({
               PRIORITY_DOT_CLASS[priority] ?? PRIORITY_DOT_CLASS[2]
             }`}
           />
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="truncate font-medium">{name}</p>
             {notes && (
               <p className="truncate text-sm text-zinc-500 dark:text-zinc-500">
@@ -119,93 +128,22 @@ export function InstanceRow({
             )}
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <button
-            type="button"
-            disabled={isPending}
-            onClick={() => run(() => completeInstance(instanceId))}
-            className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
-          >
-            {isPending ? "…" : isFrequency ? "+1" : "Complete"}
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowActions((v) => !v)}
-            aria-label={showActions ? "Hide options" : "Show options"}
-            className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-          >
-            Edit
-          </button>
-        </div>
-      </div>
+      </Link>
 
-      {showActions && (
-        <div className="grid grid-cols-2 gap-1 border-t border-zinc-200 bg-zinc-50 p-2 sm:grid-cols-3 dark:border-zinc-800 dark:bg-zinc-950">
-          <ActionButton
-            label="Complete"
-            disabled={isPending}
-            onClick={() => run(() => completeInstance(instanceId))}
-          />
-          <ActionButton
-            label="Skip"
-            disabled={isPending}
-            onClick={() => run(() => skipInstance(instanceId))}
-          />
-          <ActionLink
-            label="Edit activity"
-            href={`/activities/${activityId}/edit?section=activity`}
-          />
-          <ActionLink
-            label="Edit rhythm"
-            href={`/activities/${activityId}/edit?section=rhythm`}
-          />
-          <ActionButton
-            label="Archive"
-            disabled={isPending}
-            onClick={() => run(() => archiveActivity(activityId))}
-            tone="danger"
-          />
-        </div>
-      )}
+      {/* Complete button — absolutely positioned over the row's right
+          edge. stopPropagation so its click doesn't bubble to the Link. */}
+      <button
+        type="button"
+        disabled={isPending}
+        onClick={(e) => {
+          e.stopPropagation();
+          handleComplete();
+        }}
+        className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
+      >
+        {isPending ? "…" : isFrequency ? "+1" : "Complete"}
+      </button>
     </li>
-  );
-}
-
-function ActionButton({
-  label,
-  disabled,
-  onClick,
-  tone = "default",
-}: {
-  label: string;
-  disabled?: boolean;
-  onClick: () => void;
-  tone?: "default" | "danger";
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className={`rounded-md border px-2 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 ${
-        tone === "danger"
-          ? "border-red-300 text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
-          : "border-zinc-300 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
-      }`}
-    >
-      {label}
-    </button>
-  );
-}
-
-function ActionLink({ label, href }: { label: string; href: string }) {
-  return (
-    <Link
-      href={href}
-      className="rounded-md border border-zinc-300 px-2 py-1.5 text-center text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
-    >
-      {label}
-    </Link>
   );
 }
 

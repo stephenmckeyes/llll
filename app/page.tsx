@@ -26,6 +26,7 @@ import { signOut } from "@/app/actions/auth";
 import { createClient } from "@/lib/supabase/server";
 
 import { DateNavigator } from "./_components/date-navigator";
+import { MonthInstanceBox } from "./_components/month-instance-box";
 import { InstanceRow } from "./today/instance-row";
 
 type ViewKind = "day" | "week" | "month" | "year";
@@ -61,7 +62,11 @@ const VIEW_OPTIONS: ReadonlyArray<{ value: ViewKind; label: string }> = [
 
 const WEEK_HEADERS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const TODAY_STR = new Date().toISOString().slice(0, 10);
-const DAY_VIEW_HORIZON = 7; // sections shown stacked vertically
+// Day view window: how many days back / forward from the selected date.
+// The user can scroll within this whole range, iPhone-Calendar-list style.
+// Past days are reachable by scrolling up; future days by scrolling down.
+const DAY_VIEW_BACK = 7;
+const DAY_VIEW_AHEAD = 21;
 
 // ---------------------------------------------------------------------------
 
@@ -215,9 +220,13 @@ async function DayView({ startDate }: { startDate: string }) {
   const supabase = await createClient();
 
   const startD = parseDate(startDate);
-  const endStr = format(addDays(startD, DAY_VIEW_HORIZON - 1), "yyyy-MM-dd");
-  // Look back enough to catch any overdue singles surfacing on "today".
-  const lookbackStr = format(addDays(startD, -60), "yyyy-MM-dd");
+  const windowStartD = addDays(startD, -DAY_VIEW_BACK);
+  const windowEndD = addDays(startD, DAY_VIEW_AHEAD);
+  const windowStartStr = format(windowStartD, "yyyy-MM-dd");
+  const windowEndStr = format(windowEndD, "yyyy-MM-dd");
+  // Extra lookback so any overdue singles surface on TODAY's section even
+  // when the user navigates to a future date.
+  const lookbackStr = format(addDays(windowStartD, -60), "yyyy-MM-dd");
 
   const { data } = await supabase
     .from("activity_instances")
@@ -241,7 +250,7 @@ async function DayView({ startDate }: { startDate: string }) {
     )
     .eq("status", "pending")
     .gte("scheduled_for", lookbackStr)
-    .lte("scheduled_for", endStr)
+    .lte("scheduled_for", windowEndStr)
     .order("scheduled_for");
 
   const raw = (data ?? []) as unknown as PendingInstance[];
@@ -250,8 +259,9 @@ async function DayView({ startDate }: { startDate: string }) {
   const prevDate = format(addDays(startD, -1), "yyyy-MM-dd");
   const nextDate = format(addDays(startD, 1), "yyyy-MM-dd");
 
-  const days = Array.from({ length: DAY_VIEW_HORIZON }, (_, i) => {
-    const date = addDays(startD, i);
+  const totalDays = DAY_VIEW_BACK + 1 + DAY_VIEW_AHEAD;
+  const days = Array.from({ length: totalDays }, (_, i) => {
+    const date = addDays(windowStartD, i);
     const dateStr = format(date, "yyyy-MM-dd");
     const visible = live
       .filter((inst) => visibleOnDay(inst, dateStr))
@@ -566,17 +576,14 @@ async function MonthView({ monthDate }: { monthDate: string }) {
     .lte("scheduled_for", format(gridEnd, "yyyy-MM-dd"))
     .is("activities.archived_at", null);
 
-  const pendingByDate: Record<string, number> = {};
-  const completedByDate: Record<string, number> = {};
+  type CellInstance = { id: string; status: string };
+  const byDate: Record<string, CellInstance[]> = {};
   for (const i of (data ?? []) as Array<{
+    id: string;
     scheduled_for: string;
     status: string;
   }>) {
-    if (i.status === "pending") {
-      pendingByDate[i.scheduled_for] = (pendingByDate[i.scheduled_for] ?? 0) + 1;
-    } else if (i.status === "completed") {
-      completedByDate[i.scheduled_for] = (completedByDate[i.scheduled_for] ?? 0) + 1;
-    }
+    (byDate[i.scheduled_for] ??= []).push({ id: i.id, status: i.status });
   }
 
   const cells = Array.from({ length: 42 }, (_, i) => {
@@ -587,8 +594,7 @@ async function MonthView({ monthDate }: { monthDate: string }) {
       dateStr,
       inMonth: date >= monthStart && date <= monthEnd,
       isToday: dateStr === TODAY_STR,
-      pendingCount: pendingByDate[dateStr] ?? 0,
-      completedCount: completedByDate[dateStr] ?? 0,
+      instances: byDate[dateStr] ?? [],
     };
   });
 
@@ -751,39 +757,56 @@ function MonthCell({
   dateStr,
   inMonth,
   isToday,
-  pendingCount,
-  completedCount,
+  instances,
 }: {
   date: Date;
   dateStr: string;
   inMonth: boolean;
   isToday: boolean;
-  pendingCount: number;
-  completedCount: number;
+  instances: Array<{ id: string; status: string }>;
 }) {
-  const hasAny = pendingCount > 0 || completedCount > 0;
+  const hasAny = instances.length > 0;
+  const MAX_BOXES = 5;
+  const shown = instances.slice(0, MAX_BOXES);
+  const extra = Math.max(0, instances.length - MAX_BOXES);
+
   let cls =
-    "flex aspect-square flex-col items-center justify-start gap-0.5 rounded p-1 text-xs transition-colors";
+    "relative flex aspect-square flex-col items-center gap-0.5 rounded p-1 text-xs transition-colors";
   if (!inMonth) cls += " text-zinc-400 dark:text-zinc-600";
   else cls += " text-zinc-700 dark:text-zinc-300";
   if (isToday) cls += " ring-1 ring-zinc-900 dark:ring-zinc-50";
-  if (hasAny && inMonth) cls += " bg-zinc-100 dark:bg-zinc-900";
-  cls += " hover:bg-zinc-200 dark:hover:bg-zinc-800";
+  if (hasAny && inMonth) cls += " bg-zinc-50 dark:bg-zinc-950";
 
   return (
-    <Link href={`/?view=day&date=${dateStr}`} className={cls}>
-      <span className={isToday ? "font-semibold" : ""}>{date.getDate()}</span>
-      {inMonth && pendingCount > 0 && (
-        <span className="text-[10px] font-semibold text-zinc-900 dark:text-zinc-50">
-          {pendingCount}
-        </span>
+    <div className={cls}>
+      {/* Whole-cell click target → day view. Boxes layered on top capture
+          their own clicks. */}
+      <Link
+        href={`/?view=day&date=${dateStr}`}
+        aria-label={`Open ${dateStr}`}
+        className="absolute inset-0 z-0 rounded hover:bg-zinc-100 dark:hover:bg-zinc-900"
+      />
+      <span className={`relative z-10 pointer-events-none ${isToday ? "font-semibold" : ""}`}>
+        {date.getDate()}
+      </span>
+      {inMonth && hasAny && (
+        <div className="relative z-10 mt-0.5 flex flex-wrap items-center justify-center gap-px">
+          {shown.map((inst) => (
+            <MonthInstanceBox
+              key={inst.id}
+              instanceId={inst.id}
+              status={inst.status}
+              scheduledFor={dateStr}
+            />
+          ))}
+          {extra > 0 && (
+            <span className="pointer-events-none text-[8px] font-medium text-zinc-500">
+              +{extra}
+            </span>
+          )}
+        </div>
       )}
-      {inMonth && completedCount > 0 && (
-        <span className="text-[10px] text-emerald-600 dark:text-emerald-400">
-          ✓{completedCount}
-        </span>
-      )}
-    </Link>
+    </div>
   );
 }
 
