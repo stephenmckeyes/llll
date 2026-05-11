@@ -21,10 +21,10 @@ export default async function NewActivityPage() {
     <main className="mx-auto flex min-h-svh max-w-xl flex-col gap-6 p-6">
       <header className="space-y-1">
         <Link
-          href="/today"
+          href="/"
           className="text-sm text-zinc-500 underline-offset-2 hover:underline"
         >
-          ← Today
+          ← Mission
         </Link>
         <h1 className="text-3xl font-semibold tracking-tight">Add Activity</h1>
       </header>

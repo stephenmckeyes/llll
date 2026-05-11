@@ -186,11 +186,11 @@ export async function createActivity(
     }
   }
 
-  redirect("/today");
+  redirect("/");
 }
 
 // ---------------------------------------------------------------------------
-// completeInstance — wraps logCompletion() for the today-list tap.
+// completeInstance — wraps logCompletion() for the day-list tap on home.
 // ---------------------------------------------------------------------------
 
 export async function completeInstance(instanceId: string) {
@@ -201,7 +201,7 @@ export async function completeInstance(instanceId: string) {
   if (!user) redirect("/login");
 
   await logCompletion(supabase, user.id, { instanceIds: [instanceId] });
-  revalidatePath("/today");
+  revalidatePath("/");
 }
 
 // ---------------------------------------------------------------------------

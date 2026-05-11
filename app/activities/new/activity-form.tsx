@@ -1,21 +1,11 @@
 "use client";
 
 // ---------------------------------------------------------------------------
-// Unified Add-Activity form.
+// Unified Add-Activity form with live calendar preview.
 //
-// Section layout:
-//   1. Activity (name)
-//   2. Notes and Tags  (notes textarea + comma-separated tags input)
-//   3. Rhythm          (6 radio options + conditional config)
-//                      Multi-Daily here shows a list of N time-of-day
-//                      inputs (one per occurrence), with add/remove.
-//   4. Schedule        (start_date + end_date + optional single time;
-//                       end disabled for Once; time hidden for Multi-Daily
-//                       because times live inside the rhythm config above)
-//   5. Priority        (only shown for Once)
-//
-// Phase 2b will add the calendar preview pane (requires lifting all form
-// state into useState; deferred to avoid a big refactor in one go).
+// All rhythm/date inputs are controlled so the preview can recompute on
+// every keystroke. Submission still uses Server Action FormData — the
+// controlled value attributes flow through naturally.
 // ---------------------------------------------------------------------------
 
 import { useActionState, useState } from "react";
@@ -24,6 +14,13 @@ import {
   createActivity,
   type ActivityFormState,
 } from "@/app/actions/activities";
+import type {
+  DayOfWeek,
+  Period,
+  Rhythm,
+} from "@/lib/validators/rhythm";
+
+import { CalendarPreview } from "./calendar-preview";
 
 type RhythmKind =
   | "single"
@@ -33,7 +30,7 @@ type RhythmKind =
   | "interval"
   | "frequency";
 
-const WEEKDAYS = [
+const WEEKDAYS: ReadonlyArray<{ value: DayOfWeek; label: string }> = [
   { value: "mon", label: "Mon" },
   { value: "tue", label: "Tue" },
   { value: "wed", label: "Wed" },
@@ -41,11 +38,10 @@ const WEEKDAYS = [
   { value: "fri", label: "Fri" },
   { value: "sat", label: "Sat" },
   { value: "sun", label: "Sun" },
-] as const;
+];
 
 const TODAY_ISO = new Date().toISOString().slice(0, 10);
 
-// Reasonable default times for a 2x-per-day rhythm — user edits as needed.
 const DEFAULT_MULTI_DAILY_TIMES = ["08:00", "18:00"];
 
 export function ActivityForm() {
@@ -53,16 +49,40 @@ export function ActivityForm() {
     ActivityFormState,
     FormData
   >(createActivity, null);
-  const [rhythm, setRhythm] = useState<RhythmKind>("single");
+
+  // ---- Controlled inputs that the preview depends on --------------------
+  const [rhythmKind, setRhythmKind] = useState<RhythmKind>("single");
+  const [weekdays, setWeekdays] = useState<DayOfWeek[]>([]);
+  const [intervalDays, setIntervalDays] = useState<number>(2);
+  const [frequencyCount, setFrequencyCount] = useState<number>(3);
+  const [frequencyPeriod, setFrequencyPeriod] = useState<Period>("week");
   const [multiDailyTimes, setMultiDailyTimes] = useState<string[]>(
     DEFAULT_MULTI_DAILY_TIMES
   );
+  const [startDate, setStartDate] = useState<string>(TODAY_ISO);
+  const [endDate, setEndDate] = useState<string>("");
 
-  const isSingle = rhythm === "single";
-  const isMultiDaily = rhythm === "multi_daily";
+  const isSingle = rhythmKind === "single";
+  const isMultiDaily = rhythmKind === "multi_daily";
 
+  // Force end_date == start_date for singles (the server enforces this too).
+  const effectiveEndDate = isSingle ? startDate : endDate || null;
+
+  // Compute the rhythm shape the preview should render.
+  const previewRhythm = derivePreviewRhythm({
+    kind: rhythmKind,
+    weekdays,
+    intervalDays,
+    frequencyCount,
+    frequencyPeriod,
+    multiDailyTimes,
+  });
+
+  // ---- Multi-Daily times handlers ---------------------------------------
   function updateMultiDailyTime(i: number, value: string) {
-    setMultiDailyTimes((prev) => prev.map((t, idx) => (idx === i ? value : t)));
+    setMultiDailyTimes((prev) =>
+      prev.map((t, idx) => (idx === i ? value : t))
+    );
   }
   function addMultiDailyTime() {
     setMultiDailyTimes((prev) => [...prev, "12:00"]);
@@ -70,6 +90,13 @@ export function ActivityForm() {
   function removeMultiDailyTime(i: number) {
     setMultiDailyTimes((prev) =>
       prev.length === 1 ? prev : prev.filter((_, idx) => idx !== i)
+    );
+  }
+
+  // ---- Weekday checkbox handler -----------------------------------------
+  function toggleWeekday(day: DayOfWeek) {
+    setWeekdays((prev) =>
+      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
     );
   }
 
@@ -109,32 +136,31 @@ export function ActivityForm() {
       {/* --- 3. Rhythm ------------------------------------------------- */}
       <fieldset className="flex flex-col gap-2">
         <legend className="mb-1 text-sm font-medium">Rhythm</legend>
-
-        <RhythmRadio value="single" current={rhythm} onChange={setRhythm} label="Once" />
+        <RhythmRadio value="single" current={rhythmKind} onChange={setRhythmKind} label="Once" />
         <RhythmRadio
           value="multi_daily"
-          current={rhythm}
-          onChange={setRhythm}
+          current={rhythmKind}
+          onChange={setRhythmKind}
           label="Multi-Daily"
           hint="Specific times every day"
         />
-        <RhythmRadio value="daily" current={rhythm} onChange={setRhythm} label="Daily" />
+        <RhythmRadio value="daily" current={rhythmKind} onChange={setRhythmKind} label="Daily" />
         <RhythmRadio
           value="weekdays"
-          current={rhythm}
-          onChange={setRhythm}
+          current={rhythmKind}
+          onChange={setRhythmKind}
           label="Specific Weekdays"
         />
         <RhythmRadio
           value="interval"
-          current={rhythm}
-          onChange={setRhythm}
+          current={rhythmKind}
+          onChange={setRhythmKind}
           label="Every N Days"
         />
         <RhythmRadio
           value="frequency"
-          current={rhythm}
-          onChange={setRhythm}
+          current={rhythmKind}
+          onChange={setRhythmKind}
           label="N times per period"
         />
       </fieldset>
@@ -177,7 +203,7 @@ export function ActivityForm() {
         </ConfigBox>
       )}
 
-      {rhythm === "weekdays" && (
+      {rhythmKind === "weekdays" && (
         <ConfigBox column>
           <p className="text-xs text-zinc-500">Pick at least one.</p>
           <div className="flex flex-wrap gap-2">
@@ -186,7 +212,13 @@ export function ActivityForm() {
                 key={d.value}
                 className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-2.5 py-1 text-sm dark:border-zinc-700"
               >
-                <input type="checkbox" name="weekday" value={d.value} />
+                <input
+                  type="checkbox"
+                  name="weekday"
+                  value={d.value}
+                  checked={weekdays.includes(d.value)}
+                  onChange={() => toggleWeekday(d.value)}
+                />
                 {d.label}
               </label>
             ))}
@@ -194,7 +226,7 @@ export function ActivityForm() {
         </ConfigBox>
       )}
 
-      {rhythm === "interval" && (
+      {rhythmKind === "interval" && (
         <ConfigBox>
           <span className="text-sm">Every</span>
           <input
@@ -202,27 +234,36 @@ export function ActivityForm() {
             name="intervalDays"
             min={1}
             max={365}
-            defaultValue={2}
+            value={intervalDays}
+            onChange={(e) =>
+              setIntervalDays(Math.max(1, Number(e.target.value) || 1))
+            }
             className="w-16 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
           />
-          <span className="text-sm">days, counting from the last time done.</span>
+          <span className="text-sm">
+            days, counting from the last time done.
+          </span>
         </ConfigBox>
       )}
 
-      {rhythm === "frequency" && (
+      {rhythmKind === "frequency" && (
         <ConfigBox>
           <input
             type="number"
             name="frequencyCount"
             min={1}
             max={50}
-            defaultValue={3}
+            value={frequencyCount}
+            onChange={(e) =>
+              setFrequencyCount(Math.max(1, Number(e.target.value) || 1))
+            }
             className="w-16 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
           />
           <span className="text-sm">times per</span>
           <select
             name="frequencyPeriod"
-            defaultValue="week"
+            value={frequencyPeriod}
+            onChange={(e) => setFrequencyPeriod(e.target.value as Period)}
             className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
           >
             <option value="week">week</option>
@@ -239,7 +280,8 @@ export function ActivityForm() {
             <input
               type="date"
               name="startDate"
-              defaultValue={TODAY_ISO}
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
               className={inputClasses}
             />
           </FieldLabel>
@@ -256,13 +298,14 @@ export function ActivityForm() {
             <input
               type="date"
               name="endDate"
+              value={isSingle ? "" : endDate}
+              onChange={(e) => setEndDate(e.target.value)}
               disabled={isSingle}
               className={inputClasses}
             />
           </FieldLabel>
         </div>
 
-        {/* Single time-of-day for non-Multi-Daily rhythms */}
         {!isMultiDaily && (
           <FieldLabel
             label={
@@ -295,6 +338,13 @@ export function ActivityForm() {
         </fieldset>
       )}
 
+      {/* --- Calendar preview ------------------------------------------ */}
+      <CalendarPreview
+        rhythm={previewRhythm}
+        startDate={startDate}
+        endDate={effectiveEndDate}
+      />
+
       {/* Error */}
       {state && "error" in state && (
         <p
@@ -314,6 +364,62 @@ export function ActivityForm() {
       </button>
     </form>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Derive a valid Rhythm object from current form state, or null if the
+// shape isn't complete enough yet (e.g. weekdays with no day selected).
+// ---------------------------------------------------------------------------
+
+function derivePreviewRhythm({
+  kind,
+  weekdays,
+  intervalDays,
+  frequencyCount,
+  frequencyPeriod,
+  multiDailyTimes,
+}: {
+  kind: RhythmKind;
+  weekdays: DayOfWeek[];
+  intervalDays: number;
+  frequencyCount: number;
+  frequencyPeriod: Period;
+  multiDailyTimes: string[];
+}): Rhythm | null {
+  switch (kind) {
+    case "single":
+      return { type: "single" };
+    case "daily":
+      return { type: "daily" };
+    case "weekdays":
+      return weekdays.length === 0
+        ? null
+        : { type: "weekdays", days: weekdays };
+    case "interval":
+      return intervalDays >= 1
+        ? { type: "interval", days: intervalDays }
+        : null;
+    case "frequency":
+      return frequencyCount >= 1
+        ? {
+            type: "frequency",
+            count: frequencyCount,
+            period: frequencyPeriod,
+          }
+        : null;
+    case "multi_daily": {
+      const validTimes = multiDailyTimes.filter((t) =>
+        /^\d{2}:\d{2}$/.test(t)
+      );
+      return validTimes.length === 0
+        ? null
+        : {
+            type: "frequency",
+            count: validTimes.length,
+            period: "day",
+          };
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
