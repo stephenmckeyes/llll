@@ -243,12 +243,14 @@ export async function unarchiveActivity(activityId: string) {
 }
 
 // ---------------------------------------------------------------------------
-// skipInstance — flip the instance status to 'skipped'. No completion row
-// is created. Lets the user say "I won't be doing this today" without
-// pretending they did it.
+// missInstance — flip the instance status to 'missed'. No completion row
+// is created. The button is labeled "Missed" in the UI; semantically the
+// user is acknowledging they didn't do this occurrence. (Phase 2c+ could
+// add a separate "skip" action if the user wants to distinguish "missed
+// by accident" from "intentionally skipped.")
 // ---------------------------------------------------------------------------
 
-export async function skipInstance(instanceId: string) {
+export async function missInstance(instanceId: string) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -257,10 +259,16 @@ export async function skipInstance(instanceId: string) {
 
   await supabase
     .from("activity_instances")
-    .update({ status: "skipped" })
+    .update({ status: "missed" })
     .eq("id", instanceId);
 
   revalidatePath("/");
+}
+
+// Kept as an alias for any older imports while we transition. UI no
+// longer calls this; safe to delete in a follow-up cleanup.
+export async function skipInstance(instanceId: string) {
+  return missInstance(instanceId);
 }
 
 // ---------------------------------------------------------------------------

@@ -111,6 +111,11 @@ export function ActivityForm() {
   }
 
   return (
+    // w-full forces the form to always occupy the full max-w-xl of its
+    // parent, regardless of its children's intrinsic width. Without this,
+    // a flex-col form sizes to its max-content — so when wider conditional
+    // sections appeared/disappeared (Weekdays chips, long typed names),
+    // the form's width changed and mx-auto centering shifted it sideways.
     <form
       action={formAction}
       onKeyDown={(e) => {
@@ -127,7 +132,7 @@ export function ActivityForm() {
           e.preventDefault();
         }
       }}
-      className="flex flex-col gap-6"
+      className="flex w-full max-w-full min-w-0 flex-col gap-6"
     >
       {/* --- 1. Activity (name) ---------------------------------------- */}
       <FieldLabel label="Activity">
@@ -468,10 +473,12 @@ function derivePreviewRhythm({
 // Small UI helpers
 // ---------------------------------------------------------------------------
 
-// `w-full` so inputs always stretch to the form's max width and don't
-// re-grow as the user types — fixes the perceived horizontal jitter.
+// `w-full` so inputs always stretch to the form's max width.
+// `min-w-0` is critical — inputs have an intrinsic min-width based on
+// their `size` attribute or content; without min-w-0 they can refuse to
+// shrink and push the parent wider.
 const inputClasses =
-  "w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none disabled:cursor-not-allowed disabled:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-zinc-50 dark:disabled:bg-zinc-950";
+  "w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none disabled:cursor-not-allowed disabled:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-zinc-50 dark:disabled:bg-zinc-950";
 
 function FieldLabel({
   label,
@@ -480,8 +487,11 @@ function FieldLabel({
   label: React.ReactNode;
   children: React.ReactNode;
 }) {
+  // min-w-0 so this label, when nested in a grid (e.g. the 2-col Schedule
+  // section), can shrink below its content's intrinsic width instead of
+  // forcing the grid to widen.
   return (
-    <label className="flex flex-col gap-1.5">
+    <label className="flex min-w-0 flex-col gap-1.5">
       <span className="text-sm font-medium">{label}</span>
       {children}
     </label>

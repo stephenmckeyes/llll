@@ -26,8 +26,8 @@ import { signOut } from "@/app/actions/auth";
 import { createClient } from "@/lib/supabase/server";
 
 import { DateNavigator } from "./_components/date-navigator";
+import { DayList, type DayInstance } from "./_components/day-list";
 import { MonthInstanceBox } from "./_components/month-instance-box";
-import { InstanceRow } from "./today/instance-row";
 
 type ViewKind = "day" | "week" | "month" | "year";
 
@@ -38,20 +38,8 @@ type Rhythm =
   | { type: "interval"; days: number }
   | { type: "frequency"; count: number; period: "day" | "week" | "month" };
 
-type PendingInstance = {
-  id: string;
-  scheduled_for: string;
-  activities: {
-    id: string;
-    name: string;
-    notes: string | null;
-    rhythm: Rhythm;
-    priority: number;
-    scheduled_times: string[];
-    archived_at: string | null;
-  } | null;
-  completion_instances: Array<{ completion_id: string }> | null;
-};
+// DayInstance (the shape passed to DayList) is imported from
+// _components/day-list. WeekView still uses its own internal type below.
 
 const VIEW_OPTIONS: ReadonlyArray<{ value: ViewKind; label: string }> = [
   { value: "day", label: "Day" },
@@ -63,10 +51,9 @@ const VIEW_OPTIONS: ReadonlyArray<{ value: ViewKind; label: string }> = [
 const WEEK_HEADERS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const TODAY_STR = new Date().toISOString().slice(0, 10);
 // Day view window: how many days back / forward from the selected date.
-// The user can scroll within this whole range, iPhone-Calendar-list style.
-// Past days are reachable by scrolling up; future days by scrolling down.
-const DAY_VIEW_BACK = 7;
-const DAY_VIEW_AHEAD = 21;
+// Matches DayList's constants; controls how wide a slice we fetch.
+const DAY_VIEW_BACK = 90;
+const DAY_VIEW_AHEAD = 180;
 
 // ---------------------------------------------------------------------------
 
@@ -86,7 +73,7 @@ export default async function HomePage({
   const date = parseDateParam(params.date);
 
   return (
-    <main className="mx-auto flex min-h-svh max-w-2xl flex-col gap-8 p-6">
+    <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-8 p-6">
       <header className="flex flex-col gap-4">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -224,9 +211,6 @@ async function DayView({ startDate }: { startDate: string }) {
   const windowEndD = addDays(startD, DAY_VIEW_AHEAD);
   const windowStartStr = format(windowStartD, "yyyy-MM-dd");
   const windowEndStr = format(windowEndD, "yyyy-MM-dd");
-  // Extra lookback so any overdue singles surface on TODAY's section even
-  // when the user navigates to a future date.
-  const lookbackStr = format(addDays(windowStartD, -60), "yyyy-MM-dd");
 
   const { data } = await supabase
     .from("activity_instances")
@@ -234,6 +218,7 @@ async function DayView({ startDate }: { startDate: string }) {
       `
       id,
       scheduled_for,
+      status,
       activities (
         id,
         name,
@@ -241,6 +226,9 @@ async function DayView({ startDate }: { startDate: string }) {
         rhythm,
         priority,
         scheduled_times,
+        default_skill_tags,
+        start_date,
+        end_date,
         archived_at
       ),
       completion_instances (
@@ -249,136 +237,36 @@ async function DayView({ startDate }: { startDate: string }) {
     `
     )
     .eq("status", "pending")
-    .gte("scheduled_for", lookbackStr)
+    .gte("scheduled_for", windowStartStr)
     .lte("scheduled_for", windowEndStr)
     .order("scheduled_for");
 
-  const raw = (data ?? []) as unknown as PendingInstance[];
-  const live = raw.filter((i) => i.activities && !i.activities.archived_at);
+  type RawInstance = {
+    id: string;
+    scheduled_for: string;
+    activities: DayInstance["activity"] | null;
+    completion_instances: Array<{ completion_id: string }> | null;
+  };
+  const raw = (data ?? []) as unknown as RawInstance[];
 
-  const prevDate = format(addDays(startD, -1), "yyyy-MM-dd");
-  const nextDate = format(addDays(startD, 1), "yyyy-MM-dd");
-
-  const totalDays = DAY_VIEW_BACK + 1 + DAY_VIEW_AHEAD;
-  const days = Array.from({ length: totalDays }, (_, i) => {
-    const date = addDays(windowStartD, i);
-    const dateStr = format(date, "yyyy-MM-dd");
-    const visible = live
-      .filter((inst) => visibleOnDay(inst, dateStr))
-      .sort(compareForDay);
-    return { date, dateStr, visible };
-  });
+  const instances: DayInstance[] = raw
+    .filter((r): r is RawInstance & { activities: DayInstance["activity"] } =>
+      Boolean(r.activities)
+    )
+    .map((r) => ({
+      id: r.id,
+      scheduled_for: r.scheduled_for,
+      activity: r.activities,
+      completionCount: r.completion_instances?.length ?? 0,
+    }));
 
   return (
-    <div className="flex flex-col gap-3">
-      <DateNavigator
-        view="day"
-        currentDate={startDate}
-        prevDate={prevDate}
-        nextDate={nextDate}
-        label={dayHeaderLabel(startDate)}
-      />
-      {/* Scroll within a viewport-relative window so the nav above stays
-          fixed. New date navigation re-renders the container, which
-          naturally starts scrolled to the top. */}
-      <div className="max-h-[65vh] min-h-[20rem] overflow-y-auto pr-2">
-        <div className="flex flex-col gap-5">
-          {days.map((d) => (
-            <DaySection key={d.dateStr} {...d} />
-          ))}
-        </div>
-      </div>
-    </div>
+    <DayList
+      initialDate={startDate}
+      instances={instances}
+      todayStr={TODAY_STR}
+    />
   );
-}
-
-function DaySection({
-  date,
-  dateStr,
-  visible,
-}: {
-  date: Date;
-  dateStr: string;
-  visible: PendingInstance[];
-}) {
-  const isToday = dateStr === TODAY_STR;
-  return (
-    <section>
-      <h2 className="mb-2 flex items-baseline gap-2 text-sm font-medium uppercase tracking-wide text-zinc-500">
-        <span>{formatDateMedium(date)}</span>
-        {isToday && (
-          <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-white dark:bg-zinc-50 dark:text-zinc-900">
-            Today
-          </span>
-        )}
-      </h2>
-      {visible.length === 0 ? (
-        <p className="rounded-md border border-dashed border-zinc-300 p-3 text-center text-xs text-zinc-500 dark:border-zinc-700">
-          Free.
-        </p>
-      ) : (
-        <ul className="flex flex-col gap-2">
-          {visible.map((inst) => {
-            const r = inst.activities?.rhythm;
-            const isFrequency = r?.type === "frequency";
-            const isSingle = r?.type === "single";
-            return (
-              <InstanceRow
-                key={inst.id}
-                instanceId={inst.id}
-                activityId={inst.activities?.id ?? ""}
-                name={inst.activities?.name ?? "Untitled"}
-                notes={inst.activities?.notes ?? null}
-                priority={inst.activities?.priority ?? 2}
-                scheduledFor={inst.scheduled_for}
-                scheduledTimes={inst.activities?.scheduled_times ?? []}
-                todayStr={TODAY_STR}
-                isSingle={isSingle ?? false}
-                frequencyTarget={isFrequency ? r.count : null}
-                frequencyProgress={
-                  isFrequency ? inst.completion_instances?.length ?? 0 : null
-                }
-              />
-            );
-          })}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-function visibleOnDay(inst: PendingInstance, dayStr: string): boolean {
-  const r = inst.activities?.rhythm;
-  if (!r) return false;
-
-  if (r.type === "single") {
-    // Overdue singles surface on TODAY only (so the user can act on them
-    // without time-traveling); other days show their own scheduled singles.
-    if (inst.scheduled_for < TODAY_STR) return dayStr === TODAY_STR;
-    return inst.scheduled_for === dayStr;
-  }
-
-  if (r.type !== "frequency") return inst.scheduled_for === dayStr;
-  if (r.period === "day") return inst.scheduled_for === dayStr;
-
-  const day = parseDate(dayStr);
-  const scheduled = parseDate(inst.scheduled_for);
-  const periodStart =
-    r.period === "week"
-      ? startOfWeek(day, { weekStartsOn: 1 })
-      : startOfMonth(day);
-  return scheduled >= periodStart && scheduled <= day;
-}
-
-function compareForDay(a: PendingInstance, b: PendingInstance): number {
-  // Time-of-day first if known, then priority high→low, then name.
-  const ta = a.activities?.scheduled_times?.[0] ?? "99:99";
-  const tb = b.activities?.scheduled_times?.[0] ?? "99:99";
-  if (ta !== tb) return ta.localeCompare(tb);
-  const pa = a.activities?.priority ?? 2;
-  const pb = b.activities?.priority ?? 2;
-  if (pa !== pb) return pa - pb;
-  return (a.activities?.name ?? "").localeCompare(b.activities?.name ?? "");
 }
 
 // ---------------------------------------------------------------------------
@@ -812,20 +700,3 @@ function MonthCell({
 
 // ---------------------------------------------------------------------------
 
-function dayHeaderLabel(yyyyMmDd: string): string {
-  const date = parseDate(yyyyMmDd);
-  return date.toLocaleDateString(undefined, {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function formatDateMedium(date: Date): string {
-  return date.toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
-}

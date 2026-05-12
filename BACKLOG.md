@@ -48,6 +48,35 @@ Future direction (per user spec):
   group remaining banners by their first tag; show top N tag-counts.
 - Banners colored by first tag (when tags become first-class).
 
+## NEXT TURN: mobile pass
+
+The web layout is significantly better than iPhone Safari per user
+testing. Audit and polish for mobile:
+
+- Touch-target sizes (44×44 minimum for everything tappable). Many
+  buttons currently smaller.
+- Modal should slide up from the bottom on phones (it already does
+  with `items-end sm:items-center`) — verify it's actually usable, not
+  cut off behind the address bar. Test with `100svh` everywhere a
+  viewport-height is used.
+- Day-list scroll container's `max-h-[68svh]` might fight the mobile
+  keyboard; test with the date input focused.
+- Activity form: the multi-daily times rows likely wrap awkwardly;
+  Schedule grid-cols-2 might be cramped on small phones.
+- Week view's 7-column banners are illegible on phones — consider
+  collapsing to a horizontal-scroll list on narrow viewports.
+- Year view's 3-up mini-month grid is probably tiny; switch to 2-up
+  or 1-up on `sm:` breakpoint.
+- Add a hamburger or bottom-tab nav on mobile (currently header
+  buttons wrap onto two lines).
+- `text-[10px]` and `text-[9px]` font sizes might be unreadable on
+  high-DPI phones; bump or rely on `text-xs` minimum.
+
+Also still pending from prior rounds (defer until mobile polish):
+- Real /activities/[id]/edit page with rhythm-change-future option.
+- Reminders.
+- Year view "scroll between years."
+
 ## Wording / UX reminders
 
 - **"Drop and save"** label currently appears on the details-bar archive
