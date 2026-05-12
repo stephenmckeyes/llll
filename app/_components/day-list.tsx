@@ -9,14 +9,13 @@
 //     inside an internal scroll container.
 //   - As the user scrolls, an IntersectionObserver tracks the topmost
 //     visible date and updates the header. The date input + arrows do
-//     not navigate the URL — they scroll within the list. If the user
-//     picks a date outside the window, *then* we do a URL navigation.
+//     not navigate the URL — they scroll within the list. The "Today"
+//     button scrolls back to today inside the window.
 //   - Clicking a row opens the activity modal in place; it does NOT
 //     navigate away. Hit Escape, click outside, or press × to close.
 // ---------------------------------------------------------------------------
 
 import { addDays, format } from "date-fns";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   useCallback,
@@ -194,18 +193,23 @@ export function DayList({
           }}
           className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
         />
-        <Link
-          href="/?view=day"
+        <button
+          type="button"
+          onClick={() => jumpTo(todayStr)}
           className="rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
         >
           Today
-        </Link>
+        </button>
       </div>
 
-      {/* Scrollable list */}
+      {/* Scrollable list.
+          `h-[60vh]` (with vh, not svh) is intentional: iOS Safari before
+          15.4 doesn't support svh; without an explicit height the container
+          grows to its content and the whole page scrolls instead of the
+          list — which is what was making rows un-tappable on mobile. */}
       <div
         ref={containerRef}
-        className="max-h-[68svh] min-h-[20rem] overflow-y-auto pr-2"
+        className="h-[60vh] min-h-[20rem] overflow-y-auto overscroll-contain pr-2 sm:h-[68vh]"
       >
         <div className="flex flex-col gap-4">
           {days.map((d) => (

@@ -80,6 +80,12 @@ export function InstanceRow({
 
   function handleMissed(e: React.MouseEvent) {
     e.stopPropagation();
+    if (instance.scheduled_for > todayStr) {
+      const ok = window.confirm(
+        `This is scheduled for ${instance.scheduled_for}, in the future. Mark missed anyway?`
+      );
+      if (!ok) return;
+    }
     startTransition(async () => {
       await missInstance(instance.id);
     });
@@ -98,7 +104,7 @@ export function InstanceRow({
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={handleKeyDown}
-      className="flex w-full min-w-0 cursor-pointer items-center justify-between gap-3 rounded-md border border-zinc-200 bg-white p-3 transition-colors hover:bg-zinc-50 focus:bg-zinc-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900 dark:focus:bg-zinc-900 dark:focus-visible:ring-zinc-50"
+      className="flex w-full min-w-0 cursor-pointer touch-manipulation items-center justify-between gap-3 rounded-md border border-zinc-200 bg-white p-3 transition-colors hover:bg-zinc-50 active:bg-zinc-100 focus:bg-zinc-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900 dark:active:bg-zinc-800 dark:focus:bg-zinc-900 dark:focus-visible:ring-zinc-50"
     >
       <div className="flex min-w-0 flex-1 items-start gap-2.5">
         <span

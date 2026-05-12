@@ -51,7 +51,7 @@ export default async function ActivitiesPage() {
   const archived = rows.filter((r) => r.archived_at !== null);
 
   return (
-    <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-8 p-6">
+    <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-6 p-4 sm:gap-8 sm:p-6">
       <header className="flex items-start justify-between gap-3">
         <div>
           <Link

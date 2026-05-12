@@ -73,7 +73,7 @@ export default async function HomePage({
   const date = parseDateParam(params.date);
 
   return (
-    <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-8 p-6">
+    <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-6 p-4 sm:gap-8 sm:p-6">
       <header className="flex flex-col gap-4">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -141,7 +141,7 @@ function parseDate(yyyyMmDd: string): Date {
 
 function SignedOutLanding() {
   return (
-    <main className="mx-auto flex min-h-svh max-w-2xl flex-col justify-center gap-8 p-6">
+    <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col justify-center gap-6 p-4 sm:gap-8 sm:p-6">
       <header className="space-y-2">
         <h1 className="text-4xl font-semibold tracking-tight">Mission</h1>
         <p className="text-base text-zinc-600 dark:text-zinc-400">
@@ -355,31 +355,37 @@ async function WeekView({ weekDate }: { weekDate: string }) {
         label={`${format(weekStart, "MMM d")} – ${format(weekEnd, "MMM d, yyyy")}`}
       />
 
-      <div className="grid grid-cols-7 gap-2">
+      {/* Mobile: stack each day as a horizontal row (date label + banners).
+          sm+: original 7-column grid. */}
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-7">
         {days.map((d) => (
           <Link
             key={d.dateStr}
             href={`/?view=day&date=${d.dateStr}`}
-            className={`flex min-h-[8rem] flex-col gap-1 rounded-md border p-2 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-900 ${
+            className={`flex touch-manipulation gap-3 rounded-md border p-3 transition-colors hover:bg-zinc-50 active:bg-zinc-100 dark:hover:bg-zinc-900 dark:active:bg-zinc-800 sm:min-h-[8rem] sm:flex-col sm:gap-1 sm:p-2 ${
               d.isToday
                 ? "border-zinc-900 dark:border-zinc-50"
                 : "border-zinc-200 dark:border-zinc-800"
             }`}
           >
-            <div className="text-center">
+            <div className="flex w-14 shrink-0 flex-col text-center sm:w-auto">
               <div className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
                 {format(d.date, "EEE")}
               </div>
-              <div className={d.isToday ? "font-semibold" : "text-zinc-700 dark:text-zinc-300"}>
+              <div
+                className={`text-2xl sm:text-base ${
+                  d.isToday ? "font-semibold" : "text-zinc-700 dark:text-zinc-300"
+                }`}
+              >
                 {d.date.getDate()}
               </div>
             </div>
             {d.items.length === 0 ? (
-              <div className="flex flex-1 items-center justify-center text-[10px] text-zinc-300 dark:text-zinc-700">
+              <div className="flex flex-1 items-center text-xs text-zinc-300 dark:text-zinc-700 sm:justify-center">
                 —
               </div>
             ) : (
-              <ul className="flex flex-col gap-1">
+              <ul className="flex flex-1 flex-col gap-1">
                 {d.items.map((i) => (
                   <WeekBanner key={i.id} item={i} />
                 ))}
@@ -416,7 +422,7 @@ function WeekBanner({
 
   return (
     <li
-      className={`flex items-start gap-1 rounded px-1.5 py-1 text-[10px] leading-tight ${
+      className={`flex items-start gap-2 rounded px-2 py-1.5 text-sm leading-tight sm:gap-1 sm:px-1.5 sm:py-1 sm:text-[10px] ${
         isCompleted
           ? "bg-zinc-100 text-zinc-400 line-through dark:bg-zinc-900 dark:text-zinc-600"
           : "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
@@ -425,15 +431,13 @@ function WeekBanner({
     >
       <span
         aria-hidden
-        className={`mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full ${dotColor}`}
+        className={`mt-1.5 inline-block h-2 w-2 shrink-0 rounded-full sm:mt-1 sm:h-1.5 sm:w-1.5 ${dotColor}`}
       />
       <span className="min-w-0 flex-1">
-        <span className="block line-clamp-2 font-medium break-words">
+        <span className="block line-clamp-2 break-words font-medium">
           {item.activities.name}
         </span>
-        {firstTime && (
-          <span className="block opacity-75">{firstTime}</span>
-        )}
+        {firstTime && <span className="block opacity-75">{firstTime}</span>}
       </span>
     </li>
   );
@@ -567,7 +571,7 @@ async function YearView({ yearDate }: { yearDate: string }) {
         nextDate={nextDate}
         label={String(year)}
       />
-      <div className="grid grid-cols-3 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
         {months.map((m) => (
           <MiniMonth
             key={m.monthIndex}

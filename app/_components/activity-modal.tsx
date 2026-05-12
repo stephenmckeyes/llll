@@ -75,6 +75,12 @@ export function ActivityModal({
   }
 
   function handleMissed() {
+    if (instance.scheduled_for > todayStr) {
+      const ok = window.confirm(
+        `This is scheduled for ${instance.scheduled_for}, in the future. Mark missed anyway?`
+      );
+      if (!ok) return;
+    }
     onClose();
     startTransition(async () => {
       await missInstance(instance.id);

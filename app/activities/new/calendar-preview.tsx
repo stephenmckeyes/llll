@@ -101,7 +101,7 @@ export function CalendarPreview({
         endDate={endDate}
         startedAlready={!endDate && startDate < TODAY_STR}
       />
-      <div className="grid grid-cols-7 gap-1">
+      <div className="grid w-full min-w-0 grid-cols-7 gap-1">
         {WEEK_HEADERS.map((d) => (
           <div
             key={d}
@@ -140,7 +140,7 @@ function parseLocalDate(yyyyMmDd: string): Date {
 
 function Pane({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-3 rounded-md border border-zinc-200 p-4 dark:border-zinc-800">
+    <div className="flex w-full min-w-0 flex-col gap-3 overflow-hidden rounded-md border border-zinc-200 p-3 dark:border-zinc-800 sm:p-4">
       {children}
     </div>
   );
@@ -186,7 +186,7 @@ function Cell({
   activityName: string;
 }) {
   let cls =
-    "flex aspect-square flex-col items-start gap-0.5 rounded p-1 text-[10px] leading-tight overflow-hidden select-none";
+    "flex aspect-square min-w-0 flex-col items-start gap-0.5 overflow-hidden rounded p-1 text-[11px] leading-tight select-none";
 
   if (hasInstance) {
     cls +=
@@ -203,7 +203,7 @@ function Cell({
     <div className={cls} title={hasInstance ? `${activityName || "Activity"} — ${date.toDateString()}` : date.toDateString()}>
       <span className={hasInstance ? "font-semibold" : ""}>{date.getDate()}</span>
       {hasInstance && activityName && (
-        <span className="line-clamp-2 w-full break-words text-[9px] font-medium opacity-90">
+        <span className="line-clamp-2 w-full break-words text-[10px] font-medium opacity-90">
           {activityName}
         </span>
       )}

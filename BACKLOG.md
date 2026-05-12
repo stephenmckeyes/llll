@@ -48,7 +48,29 @@ Future direction (per user spec):
   group remaining banners by their first tag; show top N tag-counts.
 - Banners colored by first tag (when tags become first-class).
 
-## NEXT TURN: mobile pass
+## NEXT TURN: Edit-Activity / Edit-Rhythm as in-place modals (not new pages)
+
+Per user spec: tapping "Edit activity" / "Edit rhythm" on a Day row should
+swap the modal's content from details → edit form, without navigating
+away (so you don't lose scroll position in the day list).
+
+Build:
+- `updateActivity` server action (mirror of `createActivity`, scoped to
+  one row).
+- A reusable `ActivityFormBody` component extracted from the existing
+  create form, that accepts `initialValues`. Used in both /activities/new
+  (create) and the new edit modal (edit).
+- Activity-modal grows a `mode` state: `'details' | 'edit-activity' |
+  'edit-rhythm'`. Buttons switch mode instead of navigating.
+- Rhythm change branch: when the rhythm changes, ask "Apply to all
+  future occurrences?" (modal confirm). Delete pending future instances
+  for this activity and regenerate from the new rhythm + today's date.
+  Past instances + their completions are never touched (design doc
+  rule).
+- Once the in-place editor lands, the `/activities/[id]/edit` placeholder
+  page can be deleted.
+
+## Pending mobile follow-ups (post Phase 2c)
 
 The web layout is significantly better than iPhone Safari per user
 testing. Audit and polish for mobile:
