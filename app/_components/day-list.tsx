@@ -91,10 +91,14 @@ export function DayList({
   const windowEnd = days[days.length - 1]?.dateStr ?? initialDate;
 
   // On mount and on every initialDate change, snap the scroll to that
-  // section. behavior:"instant" so we don't animate a 90-day jump.
+  // section. The setTimeout is critical on iOS Safari — without it, the
+  // call fires before layout is fully painted and silently does nothing,
+  // which made "the calendar isn't defaulted to today" feel broken.
   useEffect(() => {
-    const el = document.getElementById(`day-${initialDate}`);
-    el?.scrollIntoView({ block: "start" });
+    const t = setTimeout(() => {
+      scrollContainerTo(containerRef.current, initialDate);
+    }, 30);
+    return () => clearTimeout(t);
   }, [initialDate]);
 
   // Sync the date input with the URL's initial date if it changes
@@ -148,8 +152,10 @@ export function DayList({
         router.push(`/?view=day&date=${dateStr}`);
         return;
       }
-      const el = document.getElementById(`day-${dateStr}`);
-      el?.scrollIntoView({ block: "start", behavior: "smooth" });
+      // Use container.scrollTo on the actual scroll element. iOS Safari
+      // handles native scrollTo reliably; scrollIntoView({behavior:"smooth"})
+      // does not always animate / scroll inside an internal container.
+      scrollContainerTo(containerRef.current, dateStr, "smooth");
     },
     [router, windowStart, windowEnd]
   );
@@ -289,6 +295,27 @@ function DaySection({
 // ---------------------------------------------------------------------------
 // Date / rhythm helpers (kept local so the file is self-contained).
 // ---------------------------------------------------------------------------
+
+function scrollContainerTo(
+  container: HTMLDivElement | null,
+  dateStr: string,
+  behavior: ScrollBehavior = "auto"
+) {
+  if (!container) return;
+  const target = container.querySelector<HTMLElement>(`#day-${cssEscape(dateStr)}`);
+  if (!target) return;
+  // Compute the target's offset relative to the container's scroll origin.
+  const containerTop = container.getBoundingClientRect().top;
+  const targetTop = target.getBoundingClientRect().top;
+  const top = container.scrollTop + (targetTop - containerTop);
+  container.scrollTo({ top, behavior });
+}
+
+// CSS.escape with a tiny fallback for older Safari.
+function cssEscape(s: string): string {
+  if (typeof CSS !== "undefined" && CSS.escape) return CSS.escape(s);
+  return s.replace(/[^a-zA-Z0-9_-]/g, "\\$&");
+}
 
 function parseLocalDate(yyyyMmDd: string): Date {
   const [y, m, d] = yyyyMmDd.split("-").map(Number);

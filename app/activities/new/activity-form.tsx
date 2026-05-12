@@ -168,6 +168,12 @@ export function ActivityForm() {
       </fieldset>
 
       {/* --- 3. Rhythm ------------------------------------------------- */}
+      {/* Hidden input mirrors React state for FormData. The visible
+          controls below are buttons (not native <input type=radio>) because
+          iOS Safari has been unreliable about firing onChange when a label-
+          wrapped radio gets tapped, so the conditional rhythm config wasn't
+          appearing on phones. Buttons + state-driven highlight always work. */}
+      <input type="hidden" name="rhythmType" value={rhythmKind} />
       <fieldset className="flex flex-col gap-2">
         <legend className="mb-1 text-sm font-medium">Rhythm</legend>
         <RhythmRadio value="single" current={rhythmKind} onChange={setRhythmKind} label="Once" />
@@ -240,22 +246,28 @@ export function ActivityForm() {
       {rhythmKind === "weekdays" && (
         <ConfigBox column>
           <p className="text-xs text-zinc-500">Pick at least one.</p>
+          {/* Hidden inputs mirror state for FormData (server reads getAll("weekday")). */}
+          {weekdays.map((day) => (
+            <input key={day} type="hidden" name="weekday" value={day} />
+          ))}
           <div className="flex flex-wrap gap-2">
-            {WEEKDAYS.map((d) => (
-              <label
-                key={d.value}
-                className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-2.5 py-1 text-sm dark:border-zinc-700"
-              >
-                <input
-                  type="checkbox"
-                  name="weekday"
-                  value={d.value}
-                  checked={weekdays.includes(d.value)}
-                  onChange={() => toggleWeekday(d.value)}
-                />
-                {d.label}
-              </label>
-            ))}
+            {WEEKDAYS.map((d) => {
+              const selected = weekdays.includes(d.value);
+              return (
+                <button
+                  key={d.value}
+                  type="button"
+                  onClick={() => toggleWeekday(d.value)}
+                  className={`touch-manipulation rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                    selected
+                      ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                      : "border-zinc-300 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                  }`}
+                >
+                  {d.label}
+                </button>
+              );
+            })}
           </div>
         </ConfigBox>
       )}
@@ -511,18 +523,36 @@ function RhythmRadio({
   label: string;
   hint?: string;
 }) {
+  const selected = current === value;
   return (
-    <label className="inline-flex cursor-pointer items-baseline gap-2 text-sm">
-      <input
-        type="radio"
-        name="rhythmType"
-        value={value}
-        checked={current === value}
-        onChange={() => onChange(value)}
-      />
-      <span>{label}</span>
-      {hint && <span className="text-xs text-zinc-500">— {hint}</span>}
-    </label>
+    <button
+      type="button"
+      onClick={() => onChange(value)}
+      className={`flex w-full touch-manipulation items-center justify-between gap-2 rounded-md border px-3 py-2.5 text-left text-sm font-medium transition-colors ${
+        selected
+          ? "border-zinc-900 bg-zinc-100 dark:border-zinc-50 dark:bg-zinc-900"
+          : "border-zinc-200 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900"
+      }`}
+    >
+      <span className="flex items-center gap-2">
+        <span
+          aria-hidden
+          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 ${
+            selected
+              ? "border-zinc-900 dark:border-zinc-50"
+              : "border-zinc-300 dark:border-zinc-700"
+          }`}
+        >
+          {selected && (
+            <span className="h-2 w-2 rounded-full bg-zinc-900 dark:bg-zinc-50" />
+          )}
+        </span>
+        <span>{label}</span>
+      </span>
+      {hint && (
+        <span className="text-xs font-normal text-zinc-500">{hint}</span>
+      )}
+    </button>
   );
 }
 
@@ -553,16 +583,21 @@ function PriorityRadio({
   label: string;
   defaultChecked?: boolean;
 }) {
+  // Native radio kept (just visually hidden) so FormData picks up the value
+  // without needing extra React state for this 1-of-3 choice. The visible
+  // button beside it is what receives taps reliably on iOS.
   return (
-    <label className="inline-flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-md border border-zinc-300 px-3 py-1.5 text-sm has-[input:checked]:border-zinc-900 has-[input:checked]:bg-zinc-900 has-[input:checked]:text-white dark:border-zinc-700 dark:has-[input:checked]:border-zinc-50 dark:has-[input:checked]:bg-zinc-50 dark:has-[input:checked]:text-zinc-900">
+    <label className="relative flex-1 cursor-pointer">
       <input
         type="radio"
         name="priority"
         value={value}
         defaultChecked={defaultChecked}
-        className="sr-only"
+        className="peer sr-only"
       />
-      {label}
+      <span className="block touch-manipulation rounded-md border border-zinc-300 px-3 py-2 text-center text-sm font-medium peer-checked:border-zinc-900 peer-checked:bg-zinc-900 peer-checked:text-white dark:border-zinc-700 dark:peer-checked:border-zinc-50 dark:peer-checked:bg-zinc-50 dark:peer-checked:text-zinc-900">
+        {label}
+      </span>
     </label>
   );
 }
