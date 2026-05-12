@@ -17,7 +17,7 @@ export default function LoginPage() {
   );
 
   return (
-    <main className="mx-auto flex min-h-svh w-full max-w-sm flex-col justify-center gap-6 p-4 sm:p-6">
+    <main className="mx-auto flex min-h-svh w-full max-w-sm flex-col justify-center gap-6 p-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Log in</h1>
         <p className="text-sm text-zinc-600 dark:text-zinc-400">

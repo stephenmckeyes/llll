@@ -18,7 +18,7 @@ export default async function NewActivityPage() {
   if (!user) redirect("/login");
 
   return (
-    <main className="mx-auto flex min-h-svh w-full max-w-xl flex-col gap-5 p-4 sm:gap-6 sm:p-6">
+    <main className="mx-auto flex min-h-svh w-full max-w-xl flex-col gap-6 p-6">
       <header className="space-y-1">
         <Link
           href="/"

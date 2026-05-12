@@ -302,13 +302,25 @@ function scrollContainerTo(
   behavior: ScrollBehavior = "auto"
 ) {
   if (!container) return;
-  const target = container.querySelector<HTMLElement>(`#day-${cssEscape(dateStr)}`);
+  const target = container.querySelector<HTMLElement>(
+    `#day-${cssEscape(dateStr)}`
+  );
   if (!target) return;
   // Compute the target's offset relative to the container's scroll origin.
   const containerTop = container.getBoundingClientRect().top;
   const targetTop = target.getBoundingClientRect().top;
   const top = container.scrollTop + (targetTop - containerTop);
-  container.scrollTo({ top, behavior });
+  // scrollTo({behavior:'smooth'}) on internal containers is hit-or-miss on
+  // iOS Safari. Direct scrollTop assignment is universally supported.
+  if (behavior === "smooth" && "scrollTo" in container) {
+    try {
+      container.scrollTo({ top, behavior: "smooth" });
+      return;
+    } catch {
+      // fallthrough to assignment
+    }
+  }
+  container.scrollTop = top;
 }
 
 // CSS.escape with a tiny fallback for older Safari.

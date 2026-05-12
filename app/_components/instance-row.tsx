@@ -3,11 +3,11 @@
 // ---------------------------------------------------------------------------
 // A single activity row inside the Day view list.
 //
-//   - Whole row is clickable → opens the activity modal (via onOpen prop).
-//   - Complete and Missed are quick-action buttons that stop propagation;
-//     pressing them runs the server action without opening the modal.
-//   - Future-dated Complete prompts a window.confirm (the future-warning
-//     setting lives in BACKLOG).
+// The row is **three sibling <button>s** (not a clickable div with nested
+// buttons). On iOS Safari, a nested-button structure with stopPropagation
+// has been flaky — taps on Complete/Missed sometimes did nothing or
+// double-fired. Three siblings sidestep that entirely: each button has its
+// own onClick, no event-bubbling games required.
 // ---------------------------------------------------------------------------
 
 import { useTransition } from "react";
@@ -65,8 +65,7 @@ export function InstanceRow({
         : null;
   }
 
-  function handleComplete(e: React.MouseEvent) {
-    e.stopPropagation();
+  function handleComplete() {
     if (instance.scheduled_for > todayStr) {
       const ok = window.confirm(
         `This is scheduled for ${instance.scheduled_for}, in the future. Mark complete anyway?`
@@ -78,8 +77,7 @@ export function InstanceRow({
     });
   }
 
-  function handleMissed(e: React.MouseEvent) {
-    e.stopPropagation();
+  function handleMissed() {
     if (instance.scheduled_for > todayStr) {
       const ok = window.confirm(
         `This is scheduled for ${instance.scheduled_for}, in the future. Mark missed anyway?`
@@ -91,22 +89,14 @@ export function InstanceRow({
     });
   }
 
-  function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      onOpen();
-    }
-  }
-
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={onOpen}
-      onKeyDown={handleKeyDown}
-      className="flex w-full min-w-0 cursor-pointer touch-manipulation items-center justify-between gap-3 rounded-md border border-zinc-200 bg-white p-3 transition-colors hover:bg-zinc-50 active:bg-zinc-100 focus:bg-zinc-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900 dark:active:bg-zinc-800 dark:focus:bg-zinc-900 dark:focus-visible:ring-zinc-50"
-    >
-      <div className="flex min-w-0 flex-1 items-start gap-2.5">
+    <li className="flex w-full min-w-0 items-center justify-between gap-2 rounded-md border border-zinc-200 bg-white p-3 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900">
+      {/* Body — clickable area that opens the modal. */}
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex min-w-0 flex-1 cursor-pointer touch-manipulation items-start gap-2.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900 dark:focus-visible:ring-zinc-50"
+      >
         <span
           aria-hidden
           title={`${PRIORITY_LABEL[activity.priority] ?? "Medium"} priority`}
@@ -138,26 +128,26 @@ export function InstanceRow({
             </p>
           )}
         </div>
-      </div>
-      <div className="flex shrink-0 items-center gap-1.5">
-        <button
-          type="button"
-          disabled={isPending}
-          onClick={handleComplete}
-          className="touch-manipulation rounded-md bg-zinc-900 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-zinc-700 active:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
-        >
-          {isPending ? "…" : isFrequency ? "+1" : "Complete"}
-        </button>
-        <button
-          type="button"
-          disabled={isPending}
-          onClick={handleMissed}
-          className="touch-manipulation rounded-md border border-zinc-300 px-3 py-2 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-100 active:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
-        >
-          Missed
-        </button>
-      </div>
-    </div>
+      </button>
+
+      {/* Complete + Missed as TRUE siblings, not nested. */}
+      <button
+        type="button"
+        disabled={isPending}
+        onClick={handleComplete}
+        className="shrink-0 touch-manipulation rounded-md bg-zinc-900 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-zinc-700 active:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
+      >
+        {isPending ? "…" : isFrequency ? "+1" : "Complete"}
+      </button>
+      <button
+        type="button"
+        disabled={isPending}
+        onClick={handleMissed}
+        className="shrink-0 touch-manipulation rounded-md border border-zinc-300 px-3 py-2 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-100 active:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+      >
+        Missed
+      </button>
+    </li>
   );
 }
 
