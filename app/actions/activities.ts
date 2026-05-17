@@ -239,23 +239,33 @@ export async function archiveActivity(activityId: string) {
 
 export type UpdateActivityState = { error: string } | { ok: true } | null;
 
-const editFieldsSchema = z.object({
-  name: z.string().trim().min(1, "Name can't be empty.").max(120),
-  notes: z.string().trim().max(500),
-  tags: z.string().trim().max(300),
-  priority: z.number().int().min(1).max(3),
-});
+const editFieldsSchema = z
+  .object({
+    name: z.string().trim().min(1, "Name can't be empty.").max(120),
+    notes: z.string().trim().max(500),
+    tags: z.string().trim().max(300),
+    priority: z.number().int().min(1).max(3),
+    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  })
+  .refine(
+    (d) => !d.endDate || d.endDate >= d.startDate,
+    { error: "End date must be on or after the start date." }
+  );
 
 export async function updateActivityFields(
   activityId: string,
   _prev: UpdateActivityState,
   formData: FormData
 ): Promise<UpdateActivityState> {
+  const endDateRaw = String(formData.get("endDate") ?? "").trim();
   const parsed = editFieldsSchema.safeParse({
     name: formData.get("name"),
     notes: formData.get("notes") ?? "",
     tags: formData.get("tags") ?? "",
     priority: Number(formData.get("priority") ?? 2),
+    startDate: formData.get("startDate"),
+    endDate: endDateRaw.length > 0 ? endDateRaw : undefined,
   });
 
   if (!parsed.success) {
@@ -273,6 +283,8 @@ export async function updateActivityFields(
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  const newEndDate = parsed.data.endDate ?? null;
+
   const { error } = await supabase
     .from("activities")
     .update({
@@ -280,10 +292,33 @@ export async function updateActivityFields(
       notes: parsed.data.notes.length === 0 ? null : parsed.data.notes,
       default_skill_tags: tags,
       priority: parsed.data.priority,
+      start_date: parsed.data.startDate,
+      end_date: newEndDate,
     })
     .eq("id", activityId);
 
   if (error) return { error: error.message };
+
+  // Keep generated instances in sync with the new date range. We only
+  // touch *pending* instances — completions stay in history regardless.
+  // - If end_date moved earlier: drop pending instances past it.
+  // - If start_date moved later: drop pending instances before it.
+  // Rhythm changes (which can require regeneration mid-range) ship in the
+  // dedicated edit-rhythm turn.
+  if (newEndDate) {
+    await supabase
+      .from("activity_instances")
+      .delete()
+      .eq("activity_id", activityId)
+      .eq("status", "pending")
+      .gt("scheduled_for", newEndDate);
+  }
+  await supabase
+    .from("activity_instances")
+    .delete()
+    .eq("activity_id", activityId)
+    .eq("status", "pending")
+    .lt("scheduled_for", parsed.data.startDate);
 
   revalidatePath("/");
   revalidatePath("/activities");

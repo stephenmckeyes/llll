@@ -40,6 +40,9 @@ const PRIORITY_LABEL: Record<number, string> = {
 
 type Mode = "details" | "edit-activity";
 
+const inputClasses =
+  "w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none disabled:cursor-not-allowed disabled:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-zinc-50 dark:disabled:bg-zinc-950";
+
 export function ActivityModal({
   instance,
   todayStr,
@@ -282,6 +285,7 @@ function EditActivityBody({
   >(boundAction, null);
 
   const [priority, setPriority] = useState<number>(activity.priority);
+  const isSingle = activity.rhythm.type === "single";
 
   // If the action returns ok, close the modal so the user sees the refreshed
   // data when they reopen it.
@@ -318,7 +322,7 @@ function EditActivityBody({
             required
             maxLength={120}
             defaultValue={activity.name}
-            className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-zinc-50"
+            className={inputClasses}
           />
         </label>
 
@@ -331,7 +335,7 @@ function EditActivityBody({
             rows={3}
             maxLength={500}
             defaultValue={activity.notes ?? ""}
-            className="mt-1 w-full resize-none rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-zinc-50"
+            className={`${inputClasses} resize-none`}
           />
         </label>
 
@@ -343,9 +347,45 @@ function EditActivityBody({
             maxLength={300}
             defaultValue={activity.default_skill_tags.join(", ")}
             placeholder="comma, separated, tags"
-            className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-zinc-50"
+            className={inputClasses}
           />
         </label>
+
+        {/* Dates. Editing these does NOT change the rhythm itself — for that
+            use Edit rhythm. Pending future instances outside the new range
+            are cleaned up server-side. */}
+        <fieldset className="mt-4">
+          <legend className="text-sm font-medium">Schedule</legend>
+          <div className="mt-1 grid grid-cols-2 gap-3">
+            <label className="block">
+              <span className="text-xs font-medium text-zinc-500">
+                Start date
+              </span>
+              <input
+                type="date"
+                name="startDate"
+                required
+                defaultValue={activity.start_date}
+                className={`${inputClasses} mt-1`}
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs font-medium text-zinc-500">
+                End date{" "}
+                <span className="font-normal">
+                  {isSingle ? "(n/a for Once)" : "(optional)"}
+                </span>
+              </span>
+              <input
+                type="date"
+                name="endDate"
+                defaultValue={activity.end_date ?? ""}
+                disabled={isSingle}
+                className={`${inputClasses} mt-1`}
+              />
+            </label>
+          </div>
+        </fieldset>
 
         <fieldset className="mt-4">
           <legend className="text-sm font-medium">Priority</legend>
@@ -366,6 +406,11 @@ function EditActivityBody({
             ))}
           </div>
         </fieldset>
+
+        {/* Reminders intentionally absent from this turn — the migration
+            that adds the `reminders` jsonb column is currently blocked on
+            the Supabase pooler resetting connections. Once that's working
+            we'll add the reminders UI here AND in the create form. */}
 
         {state && "error" in state && (
           <p

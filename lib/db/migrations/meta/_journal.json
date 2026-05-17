@@ -29,6 +29,13 @@
       "when": 1778475397845,
       "tag": "0003_add_scheduled_times",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1779056821248,
+      "tag": "0004_add_reminders",
+      "breakpoints": true
     }
   ]
 }
