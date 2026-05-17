@@ -139,6 +139,8 @@ export function InstanceRow({
           instanceId={instance.id}
           current={frequencyProgress}
           target={frequencyTarget}
+          scheduledFor={instance.scheduled_for}
+          todayStr={todayStr}
           className={FREQUENCY_BADGE_CLASSES}
         />
       )}

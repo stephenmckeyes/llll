@@ -19,11 +19,16 @@ export function EditableProgressBadge({
   instanceId,
   current,
   target,
+  scheduledFor,
+  todayStr,
   className,
 }: {
   instanceId: string;
   current: number;
   target: number;
+  /** YYYY-MM-DD — used to confirm before increasing a future instance. */
+  scheduledFor: string;
+  todayStr: string;
   className?: string;
 }) {
   const [editing, setEditing] = useState(false);
@@ -54,6 +59,18 @@ export function EditableProgressBadge({
     }
     const clamped = Math.max(0, Math.min(target, n));
     if (clamped === current) return;
+    // Same confirmation as the Complete button for future-dated rows. We
+    // only warn when *increasing* — decreasing is always allowed (it's an
+    // undo, can't accidentally do work in the future).
+    if (clamped > current && scheduledFor > todayStr) {
+      const ok = window.confirm(
+        `This is scheduled for ${scheduledFor}, in the future. Mark progress anyway?`
+      );
+      if (!ok) {
+        setDraft(String(current));
+        return;
+      }
+    }
     startTransition(async () => {
       await setInstanceProgress(instanceId, clamped);
     });

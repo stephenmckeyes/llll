@@ -25,7 +25,10 @@ import {
   useState,
 } from "react";
 
-import type { Rhythm } from "@/lib/validators/rhythm";
+import {
+  normalizeFrequencyPeriod,
+  type Rhythm,
+} from "@/lib/validators/rhythm";
 
 import { ActivityModal } from "./activity-modal";
 import { InstanceRow } from "./instance-row";
@@ -371,20 +374,22 @@ function visibleOnDay(
     return inst.scheduled_for === dayStr;
   }
   if (r.type !== "frequency") return inst.scheduled_for === dayStr;
-  if (r.period === "day") return inst.scheduled_for === dayStr;
 
-  const day = parseLocalDate(dayStr);
+  // Frequency periods are anchored to scheduled_for and last for
+  // perCount * perUnit. Show the instance on any day inside that range.
+  const { perCount, perUnit } = normalizeFrequencyPeriod(r);
   const scheduled = parseLocalDate(inst.scheduled_for);
-  if (r.period === "week") {
-    const dayOfWeek = day.getDay(); // 0=Sun, 1=Mon...
-    const offset = (dayOfWeek + 6) % 7; // days since Monday
-    const monday = new Date(day);
-    monday.setDate(day.getDate() - offset);
-    return scheduled >= monday && scheduled <= day;
-  }
-  // month
-  const monthStart = new Date(day.getFullYear(), day.getMonth(), 1);
-  return scheduled >= monthStart && scheduled <= day;
+  const periodEnd = advanceLocalDate(scheduled, perCount, perUnit);
+  const day = parseLocalDate(dayStr);
+  return day >= scheduled && day < periodEnd;
+}
+
+function advanceLocalDate(d: Date, count: number, unit: string): Date {
+  const out = new Date(d);
+  if (unit === "days") out.setDate(out.getDate() + count);
+  else if (unit === "weeks") out.setDate(out.getDate() + count * 7);
+  else if (unit === "months") out.setMonth(out.getMonth() + count);
+  return out;
 }
 
 function compareForDay(a: DayInstance, b: DayInstance): number {

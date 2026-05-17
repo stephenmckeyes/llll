@@ -21,8 +21,6 @@ import {
   isAfter,
   isBefore,
   parseISO,
-  startOfMonth,
-  startOfWeek,
 } from "date-fns";
 
 import {
@@ -146,28 +144,16 @@ function generateFrequency(
   from: Date,
   to: Date
 ): Instance[] {
+  // Anchor periods to `from` (i.e. the activity's start_date) — not to
+  // Mon-of-week or 1st-of-month. So if the user starts a "3× per week"
+  // activity on a Wednesday, the periods are Wed → Tue, not Mon → Sun.
   const out: Instance[] = [];
-  let cursor = startOfPeriodUnit(perUnit, from);
-  // Step forward (by perCount * perUnit) until we land on/after `from`.
-  while (isBefore(cursor, from)) {
-    cursor = advancePeriod(cursor, perCount, perUnit);
-  }
+  let cursor = from;
   while (!isAfter(cursor, to)) {
     out.push({ scheduledFor: toString(cursor) });
     cursor = advancePeriod(cursor, perCount, perUnit);
   }
   return out;
-}
-
-function startOfPeriodUnit(unit: PeriodUnit, d: Date): Date {
-  switch (unit) {
-    case "days":
-      return d;
-    case "weeks":
-      return startOfWeek(d, { weekStartsOn: 1 }); // Monday
-    case "months":
-      return startOfMonth(d);
-  }
 }
 
 function advancePeriod(d: Date, count: number, unit: PeriodUnit): Date {

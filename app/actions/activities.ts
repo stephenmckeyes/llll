@@ -222,6 +222,156 @@ export async function completeInstance(instanceId: string) {
 }
 
 // ---------------------------------------------------------------------------
+// updateActivityRhythm — change an activity's rhythm + scheduled_times
+// mid-life. Past instances + their completions are PRESERVED (design doc
+// rule: never mutate history). Pending future instances are wiped and
+// re-generated from today using the new rhythm.
+// ---------------------------------------------------------------------------
+
+export type UpdateActivityRhythmState =
+  | { error: string }
+  | { ok: true }
+  | null;
+
+export async function updateActivityRhythm(
+  activityId: string,
+  _prev: UpdateActivityRhythmState,
+  formData: FormData
+): Promise<UpdateActivityRhythmState> {
+  // ---- 1. Reconstruct + validate the rhythm (same parser as create) ------
+
+  const rhythmType = String(formData.get("rhythmType") ?? "single");
+  let candidateRhythm: unknown;
+  switch (rhythmType) {
+    case "single":
+      candidateRhythm = { type: "single" };
+      break;
+    case "multi_daily":
+      candidateRhythm = {
+        type: "frequency",
+        count: Math.max(
+          1,
+          formData
+            .getAll("scheduledTime")
+            .map(String)
+            .filter((s) => /^\d{2}:\d{2}$/.test(s)).length
+        ),
+        perCount: 1,
+        perUnit: "days",
+      };
+      break;
+    case "daily":
+      candidateRhythm = { type: "daily" };
+      break;
+    case "weekdays":
+      candidateRhythm = {
+        type: "weekdays",
+        days: formData.getAll("weekday").map(String),
+      };
+      break;
+    case "interval":
+      candidateRhythm = {
+        type: "interval",
+        days: clampInt(formData.get("intervalDays"), 1, 365, 2),
+      };
+      break;
+    case "frequency":
+      candidateRhythm = {
+        type: "frequency",
+        count: clampInt(formData.get("frequencyCount"), 1, 99, 3),
+        perCount: clampInt(formData.get("frequencyPerCount"), 1, 99, 1),
+        perUnit: String(formData.get("frequencyPerUnit") ?? "weeks"),
+      };
+      break;
+    default:
+      return { error: `Unknown rhythm type: ${rhythmType}` };
+  }
+
+  const parsed = rhythmSchema.safeParse(candidateRhythm);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid rhythm." };
+  }
+  const newRhythm: Rhythm = parsed.data;
+
+  // ---- 2. Scheduled times -------------------------------------------------
+
+  const scheduledTimes = formData
+    .getAll("scheduledTime")
+    .map(String)
+    .filter((s) => /^\d{2}:\d{2}$/.test(s));
+
+  // ---- 3. Auth + fetch the activity (need start_date, end_date) ----------
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: existing, error: ferr } = await supabase
+    .from("activities")
+    .select("start_date, end_date")
+    .eq("id", activityId)
+    .single();
+  if (ferr || !existing) {
+    return { error: ferr?.message ?? "Activity not found." };
+  }
+
+  // ---- 4. Persist the new rhythm + times ---------------------------------
+
+  const { error: uerr } = await supabase
+    .from("activities")
+    .update({
+      rhythm: newRhythm,
+      scheduled_times: scheduledTimes,
+    })
+    .eq("id", activityId);
+  if (uerr) return { error: uerr.message };
+
+  // ---- 5. Wipe pending future instances ----------------------------------
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  await supabase
+    .from("activity_instances")
+    .delete()
+    .eq("activity_id", activityId)
+    .eq("status", "pending")
+    .gte("scheduled_for", todayStr);
+
+  // ---- 6. Regenerate from max(today, start_date) up to horizon ------------
+
+  const startDate =
+    existing.start_date > todayStr ? existing.start_date : todayStr;
+  const horizonStr = addDays(
+    parseISODate(startDate),
+    INSTANCE_HORIZON_DAYS
+  )
+    .toISOString()
+    .slice(0, 10);
+  const endDate = existing.end_date;
+  const generationTo =
+    endDate !== null && endDate < horizonStr ? endDate : horizonStr;
+
+  const instances = generateInstances(newRhythm, {
+    from: startDate,
+    to: generationTo,
+  });
+  if (instances.length > 0) {
+    const rows = instances.map((i) => ({
+      activity_id: activityId,
+      scheduled_for: i.scheduledFor,
+      status: "pending" as const,
+    }));
+    await supabase.from("activity_instances").insert(rows);
+  }
+
+  revalidatePath("/");
+  revalidatePath("/activities");
+  revalidatePath(`/activities/${activityId}`);
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
 // setInstanceProgress — set the completion count for an instance to a
 // specific number, then sync status. Used by the editable X/Y badge on
 // frequency rows (for "I miss-clicked +1" undo, or "I did 3 of them at
@@ -530,11 +680,11 @@ function parseRemindersFromForm(formData: FormData): Reminder[] {
   const n = Math.min(days.length, hours.length, mins.length);
   const out: Reminder[] = [];
   for (let i = 0; i < n; i++) {
-    const d = clampFormInt(days[i], 0, 30);
-    const h = clampFormInt(hours[i], 0, 23);
-    const m = clampFormInt(mins[i], 0, 59);
-    if (d + h + m === 0) continue; // drop empty rows
-    out.push({ days: d, hours: h, minutes: m });
+    out.push({
+      days: clampFormInt(days[i], 0, 30),
+      hours: clampFormInt(hours[i], 0, 23),
+      minutes: clampFormInt(mins[i], 0, 59),
+    });
   }
   return out;
 }

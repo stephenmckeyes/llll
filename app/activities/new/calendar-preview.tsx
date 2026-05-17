@@ -15,7 +15,9 @@
 
 import { addDays, format, startOfWeek } from "date-fns";
 
+import { formatReminder } from "@/app/_components/reminders-field";
 import { generateInstances } from "@/lib/domain/rhythms";
+import type { Reminder } from "@/lib/validators/reminder";
 import type { Rhythm } from "@/lib/validators/rhythm";
 
 const WINDOW_DAYS = 35; // 5 weeks
@@ -27,11 +29,13 @@ export function CalendarPreview({
   startDate,
   endDate,
   activityName,
+  reminders = [],
 }: {
   rhythm: Rhythm | null;
   startDate: string; // YYYY-MM-DD
   endDate: string | null; // YYYY-MM-DD or null = open-ended
   activityName: string;
+  reminders?: Reminder[];
 }) {
   // Guard: a date input mid-edit can hand us "" or partial strings like
   // "2026-05-" — these used to bubble Invalid Date through addDays/format
@@ -121,6 +125,21 @@ export function CalendarPreview({
         Today ·{" "}
         <span className="text-zinc-400">faded</span> = outside window
       </p>
+      {reminders.length > 0 && (
+        <div className="border-t border-zinc-200 pt-2 text-xs text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
+          <span className="font-medium uppercase tracking-wide text-zinc-500">
+            Reminders:
+          </span>{" "}
+          <span>
+            {reminders.map((r, i) => (
+              <span key={i}>
+                {i > 0 && <span className="text-zinc-400"> · </span>}
+                {formatReminder(r)}
+              </span>
+            ))}
+          </span>
+        </div>
+      )}
     </Pane>
   );
 }

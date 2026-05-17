@@ -183,21 +183,20 @@ describe("generateInstances — interval rhythm", () => {
 });
 
 describe("generateInstances — flexible frequency (perCount + perUnit)", () => {
-  it("'3 times per 2 weeks' produces one instance every 14 days, anchored to Monday", () => {
-    // 2026-01-01 is Thursday → start-of-week is Mon 2025-12-29 (before from),
-    // so the first emitted Monday IN range is +2 weeks: Mon Jan 12. Next is
-    // Jan 26. Jan 12 → Feb 9 exceeds the Jan 31 boundary.
+  it("'3 times per 2 weeks' steps every 14 days from start_date", () => {
+    // Anchored to `from`. Jan 1 + 14 = Jan 15, + 14 = Jan 29, + 14 = Feb 12.
     const result = generateInstances(
       { type: "frequency", count: 3, perCount: 2, perUnit: "weeks" },
       { from: "2026-01-01", to: "2026-01-31" }
     );
     expect(result.map((i) => i.scheduledFor)).toEqual([
-      "2026-01-12",
-      "2026-01-26",
+      "2026-01-01",
+      "2026-01-15",
+      "2026-01-29",
     ]);
   });
 
-  it("'1 time per 3 days' steps in 3-day chunks", () => {
+  it("'1 time per 3 days' steps in 3-day chunks from start_date", () => {
     const result = generateInstances(
       { type: "frequency", count: 1, perCount: 3, perUnit: "days" },
       { from: "2026-01-01", to: "2026-01-10" }
@@ -210,22 +209,23 @@ describe("generateInstances — flexible frequency (perCount + perUnit)", () => 
     ]);
   });
 
-  it("'1 time per 2 months' steps in 2-month chunks anchored to 1st", () => {
+  it("'1 time per 2 months' steps in 2-month chunks from start_date", () => {
     const result = generateInstances(
       { type: "frequency", count: 1, perCount: 2, perUnit: "months" },
-      { from: "2026-01-01", to: "2026-12-31" }
+      { from: "2026-01-15", to: "2026-12-31" }
     );
+    // addMonths from Jan 15 → Mar 15, May 15, Jul 15, Sep 15, Nov 15.
     expect(result.map((i) => i.scheduledFor)).toEqual([
-      "2026-01-01",
-      "2026-03-01",
-      "2026-05-01",
-      "2026-07-01",
-      "2026-09-01",
-      "2026-11-01",
+      "2026-01-15",
+      "2026-03-15",
+      "2026-05-15",
+      "2026-07-15",
+      "2026-09-15",
+      "2026-11-15",
     ]);
   });
 
-  it("backwards-compat: legacy { count, period: 'week' } still maps to perCount=1, perUnit=weeks", () => {
+  it("backwards-compat: legacy { count, period: 'week' } anchors to from too", () => {
     const newShape = generateInstances(
       { type: "frequency", count: 3, perCount: 1, perUnit: "weeks" },
       { from: "2026-01-01", to: "2026-01-31" }
@@ -238,22 +238,23 @@ describe("generateInstances — flexible frequency (perCount + perUnit)", () => 
   });
 });
 
-describe("generateInstances — frequency rhythm", () => {
-  it("weekly: one instance per week, anchored to Monday", () => {
-    // Mondays in Jan 2026: Jan 5, 12, 19, 26.
+describe("generateInstances — frequency rhythm (legacy period shape)", () => {
+  it("weekly: one instance per week from start_date", () => {
+    // from = Thu Jan 1 → Jan 1, Jan 8, Jan 15, Jan 22, Jan 29.
     const result = generateInstances(
       { type: "frequency", count: 3, period: "week" },
       { from: "2026-01-01", to: "2026-01-31" }
     );
     expect(result.map((i) => i.scheduledFor)).toEqual([
-      "2026-01-05",
-      "2026-01-12",
-      "2026-01-19",
-      "2026-01-26",
+      "2026-01-01",
+      "2026-01-08",
+      "2026-01-15",
+      "2026-01-22",
+      "2026-01-29",
     ]);
   });
 
-  it("monthly: one instance per month, anchored to the 1st", () => {
+  it("monthly: one instance per month from start_date", () => {
     const result = generateInstances(
       { type: "frequency", count: 1, period: "month" },
       { from: "2026-01-01", to: "2026-04-30" }
@@ -278,23 +279,8 @@ describe("generateInstances — frequency rhythm", () => {
     ]);
   });
 
-  it("excludes a period whose anchor predates range.from", () => {
-    // Range starts Tue Jan 6. That week's Monday (Jan 5) is BEFORE range.from
-    // so it must not appear. Next week's Monday (Jan 12) is the first.
-    const result = generateInstances(
-      { type: "frequency", count: 3, period: "week" },
-      { from: "2026-01-06", to: "2026-01-31" }
-    );
-    expect(result.map((i) => i.scheduledFor)).toEqual([
-      "2026-01-12",
-      "2026-01-19",
-      "2026-01-26",
-    ]);
-  });
-
   it("count is metadata only — does not multiply the instance list", () => {
-    // count=3 vs count=10 should not change the number of instances; both
-    // produce one anchor per week.
+    // count=3 vs count=10 should not change the number of instances.
     const three = generateInstances(
       { type: "frequency", count: 3, period: "week" },
       { from: "2026-01-05", to: "2026-01-18" }

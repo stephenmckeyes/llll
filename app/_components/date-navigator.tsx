@@ -39,7 +39,10 @@ export function DateNavigator({
       >
         ←
       </Link>
-      <span className="min-w-0 flex-1 text-center text-sm font-medium text-zinc-700 dark:text-zinc-300 sm:flex-none sm:px-2">
+      {/* Fixed-width label keeps the ← / → arrows in the same screen
+          position regardless of which date is selected (long strings like
+          "Wednesday, November 19, 2026" used to push the arrows around). */}
+      <span className="inline-block min-w-[14rem] flex-1 text-center text-sm font-medium text-zinc-700 dark:text-zinc-300 sm:flex-none">
         {label}
       </span>
       <Link

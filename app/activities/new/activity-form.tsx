@@ -434,6 +434,7 @@ export function ActivityForm() {
         startDate={startDate}
         endDate={effectiveEndDate}
         activityName={name}
+        reminders={reminders}
       />
 
       {/* Error */}

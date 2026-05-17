@@ -14,7 +14,6 @@
 // Closes on: outside click, Escape, or the explicit ×.
 // ---------------------------------------------------------------------------
 
-import Link from "next/link";
 import { useActionState, useEffect, useState, useTransition } from "react";
 
 import {
@@ -22,6 +21,8 @@ import {
   completeInstance,
   missInstance,
   updateActivityFields,
+  updateActivityRhythm,
+  type UpdateActivityRhythmState,
   type UpdateActivityState,
 } from "@/app/actions/activities";
 import {
@@ -33,6 +34,11 @@ import {
   normalizeReminder,
   type Reminder,
 } from "@/lib/validators/reminder";
+import {
+  normalizeFrequencyPeriod,
+  type DayOfWeek,
+  type PeriodUnit,
+} from "@/lib/validators/rhythm";
 
 import type { DayInstance } from "./day-list";
 import { formatReminder, RemindersField } from "./reminders-field";
@@ -43,7 +49,25 @@ const PRIORITY_LABEL: Record<number, string> = {
   3: "Low",
 };
 
-type Mode = "details" | "edit-activity";
+type Mode = "details" | "edit-activity" | "edit-rhythm";
+
+type RhythmKind =
+  | "single"
+  | "multi_daily"
+  | "daily"
+  | "weekdays"
+  | "interval"
+  | "frequency";
+
+const WEEKDAYS: ReadonlyArray<{ value: DayOfWeek; label: string }> = [
+  { value: "mon", label: "Mon" },
+  { value: "tue", label: "Tue" },
+  { value: "wed", label: "Wed" },
+  { value: "thu", label: "Thu" },
+  { value: "fri", label: "Fri" },
+  { value: "sat", label: "Sat" },
+  { value: "sun", label: "Sun" },
+];
 
 const inputClasses =
   "w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none disabled:cursor-not-allowed disabled:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-zinc-50 dark:disabled:bg-zinc-950";
@@ -137,12 +161,16 @@ export function ActivityModal({
             id="activity-modal-title"
             className="break-words text-xl font-semibold tracking-tight"
           >
-            {mode === "edit-activity" ? "Edit activity" : activity.name}
+            {mode === "edit-activity"
+              ? "Edit activity"
+              : mode === "edit-rhythm"
+                ? "Edit rhythm"
+                : activity.name}
           </h2>
           <button
             type="button"
-            onClick={mode === "edit-activity" ? () => setMode("details") : onClose}
-            aria-label={mode === "edit-activity" ? "Cancel edit" : "Close"}
+            onClick={mode !== "details" ? () => setMode("details") : onClose}
+            aria-label={mode !== "details" ? "Cancel edit" : "Close"}
             className="-mr-1 shrink-0 rounded-md p-1 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900"
           >
             <span className="text-xl leading-none">×</span>
@@ -155,8 +183,14 @@ export function ActivityModal({
             instance={instance}
             isSingle={isSingle}
           />
-        ) : (
+        ) : mode === "edit-activity" ? (
           <EditActivityBody
+            activity={activity}
+            onDone={() => onClose()}
+            onCancel={() => setMode("details")}
+          />
+        ) : (
+          <EditRhythmBody
             activity={activity}
             onDone={() => onClose()}
             onCancel={() => setMode("details")}
@@ -180,9 +214,10 @@ export function ActivityModal({
               disabled={isPending}
               onClick={() => setMode("edit-activity")}
             />
-            <SecondaryLink
+            <Secondary
               label="Edit rhythm"
-              href={`/activities/${activity.id}/edit?section=rhythm`}
+              disabled={isPending}
+              onClick={() => setMode("edit-rhythm")}
             />
             <Danger
               label="Drop and save"
@@ -230,6 +265,11 @@ function DetailsBody({
         <DetailRow label="Priority">
           {PRIORITY_LABEL[activity.priority] ?? "Medium"}
         </DetailRow>
+        {activity.rhythm.type === "frequency" && (
+          <DetailRow label="Progress">
+            {instance.completionCount} / {activity.rhythm.count}
+          </DetailRow>
+        )}
         <DetailRow label="This occurrence">
           {instance.scheduled_for}
         </DetailRow>
@@ -475,6 +515,387 @@ function EditActivityBody({
 }
 
 // ---------------------------------------------------------------------------
+// Edit-rhythm body — full rhythm picker UI inline in the modal. On save,
+// regenerates pending future instances via the updateActivityRhythm action.
+// ---------------------------------------------------------------------------
+
+function EditRhythmBody({
+  activity,
+  onDone,
+  onCancel,
+}: {
+  activity: DayInstance["activity"];
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const init = initRhythmKindFromActivity(activity);
+  const [rhythmKind, setRhythmKind] = useState<RhythmKind>(init.kind);
+  const [weekdays, setWeekdays] = useState<DayOfWeek[]>(init.weekdays);
+  const [intervalDaysStr, setIntervalDaysStr] = useState<string>(
+    init.intervalDaysStr
+  );
+  const [frequencyCountStr, setFrequencyCountStr] = useState<string>(
+    init.frequencyCountStr
+  );
+  const [frequencyPerCountStr, setFrequencyPerCountStr] = useState<string>(
+    init.frequencyPerCountStr
+  );
+  const [frequencyPerUnit, setFrequencyPerUnit] = useState<PeriodUnit>(
+    init.frequencyPerUnit
+  );
+  const [multiDailyTimes, setMultiDailyTimes] = useState<string[]>(
+    init.multiDailyTimes
+  );
+  const [scheduledTime, setScheduledTime] = useState<string>(
+    init.scheduledTime
+  );
+
+  const boundAction = updateActivityRhythm.bind(null, activity.id);
+  const [state, formAction, isPending] = useActionState<
+    UpdateActivityRhythmState,
+    FormData
+  >(boundAction, null);
+
+  useEffect(() => {
+    if (state && "ok" in state && state.ok) onDone();
+  }, [state, onDone]);
+
+  function toggleWeekday(day: DayOfWeek) {
+    setWeekdays((prev) =>
+      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
+    );
+  }
+  function updateMultiDailyTime(i: number, value: string) {
+    setMultiDailyTimes((prev) =>
+      prev.map((t, idx) => (idx === i ? value : t))
+    );
+  }
+  function addMultiDailyTime() {
+    setMultiDailyTimes((prev) => [...prev, "12:00"]);
+  }
+  function removeMultiDailyTime(i: number) {
+    setMultiDailyTimes((prev) =>
+      prev.length === 1 ? prev : prev.filter((_, idx) => idx !== i)
+    );
+  }
+
+  const intervalDays = Math.max(1, parseInt(intervalDaysStr, 10) || 1);
+  const isMultiDaily = rhythmKind === "multi_daily";
+
+  return (
+    <form
+      action={(fd) => {
+        // Confirmation popup before destructive regenerate.
+        const ok = window.confirm(
+          "Changing the rhythm will replace all future pending occurrences for this activity. Past occurrences and their completions are kept. Continue?"
+        );
+        if (!ok) return;
+        return formAction(fd);
+      }}
+      onKeyDown={(e) => {
+        const target = e.target as HTMLElement;
+        if (
+          e.key === "Enter" &&
+          target.tagName !== "TEXTAREA" &&
+          target.tagName !== "BUTTON"
+        ) {
+          e.preventDefault();
+        }
+      }}
+      className="flex flex-1 flex-col overflow-hidden"
+    >
+      <div className="flex-1 overflow-y-auto px-5 py-4">
+        <input type="hidden" name="rhythmType" value={rhythmKind} />
+
+        {/* Rhythm kind selector */}
+        <fieldset className="flex flex-col gap-1">
+          <legend className="mb-1 text-sm font-medium">Rhythm</legend>
+          {(
+            [
+              ["single", "Once"],
+              ["multi_daily", "Multi-Daily"],
+              ["daily", "Daily"],
+              ["weekdays", "Specific Weekdays"],
+              ["interval", "Every N Days"],
+              ["frequency", "N times per period"],
+            ] as const
+          ).map(([value, label]) => {
+            const selected = rhythmKind === value;
+            return (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setRhythmKind(value)}
+                className={`flex w-full touch-manipulation items-center gap-2 rounded-md border px-3 py-2 text-left text-sm font-medium transition-colors ${
+                  selected
+                    ? "border-zinc-900 bg-zinc-100 dark:border-zinc-50 dark:bg-zinc-900"
+                    : "border-zinc-200 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900"
+                }`}
+              >
+                <span
+                  aria-hidden
+                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 ${
+                    selected
+                      ? "border-zinc-900 dark:border-zinc-50"
+                      : "border-zinc-300 dark:border-zinc-700"
+                  }`}
+                >
+                  {selected && (
+                    <span className="h-2 w-2 rounded-full bg-zinc-900 dark:bg-zinc-50" />
+                  )}
+                </span>
+                {label}
+              </button>
+            );
+          })}
+        </fieldset>
+
+        {/* Conditional rhythm config */}
+        {isMultiDaily && (
+          <div className="mt-3 flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+            <p className="text-xs text-zinc-500">
+              Specify each time of day. Add or remove rows as needed.
+            </p>
+            <ul className="flex flex-col gap-2">
+              {multiDailyTimes.map((t, i) => (
+                <li key={i} className="flex items-center gap-2">
+                  <input
+                    type="time"
+                    name="scheduledTime"
+                    value={t}
+                    onChange={(e) => updateMultiDailyTime(i, e.target.value)}
+                    required
+                    className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeMultiDailyTime(i)}
+                    disabled={multiDailyTimes.length === 1}
+                    className="rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-30 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              onClick={addMultiDailyTime}
+              className="self-start rounded-md border border-zinc-300 px-3 py-1 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            >
+              + Add time
+            </button>
+          </div>
+        )}
+
+        {rhythmKind === "weekdays" && (
+          <div className="mt-3 flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+            <p className="text-xs text-zinc-500">Pick at least one.</p>
+            {weekdays.map((day) => (
+              <input key={day} type="hidden" name="weekday" value={day} />
+            ))}
+            <div className="flex flex-wrap gap-2">
+              {WEEKDAYS.map((d) => {
+                const sel = weekdays.includes(d.value);
+                return (
+                  <button
+                    key={d.value}
+                    type="button"
+                    onClick={() => toggleWeekday(d.value)}
+                    className={`touch-manipulation rounded-md border px-3 py-1.5 text-sm font-medium ${
+                      sel
+                        ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                        : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+                    }`}
+                  >
+                    {d.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {rhythmKind === "interval" && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+            <span className="text-sm">Every</span>
+            <input
+              type="number"
+              name="intervalDays"
+              min={1}
+              max={365}
+              value={intervalDaysStr}
+              onChange={(e) => setIntervalDaysStr(e.target.value)}
+              onBlur={(e) => {
+                const n = parseInt(e.target.value, 10);
+                setIntervalDaysStr(
+                  Number.isFinite(n) && n >= 1
+                    ? String(Math.min(n, 365))
+                    : "1"
+                );
+              }}
+              className="w-16 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            />
+            <span className="text-sm">days</span>
+            {intervalDays > 1 && (
+              <span className="text-xs text-zinc-500">
+                ({intervalDays - 1} day{intervalDays - 1 === 1 ? "" : "s"} rest)
+              </span>
+            )}
+          </div>
+        )}
+
+        {rhythmKind === "frequency" && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+            <input
+              type="number"
+              name="frequencyCount"
+              min={1}
+              max={99}
+              value={frequencyCountStr}
+              onChange={(e) => setFrequencyCountStr(e.target.value)}
+              className="w-16 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            />
+            <span className="text-sm">times per</span>
+            <input
+              type="number"
+              name="frequencyPerCount"
+              min={1}
+              max={99}
+              value={frequencyPerCountStr}
+              onChange={(e) => setFrequencyPerCountStr(e.target.value)}
+              className="w-16 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            />
+            <select
+              name="frequencyPerUnit"
+              value={frequencyPerUnit}
+              onChange={(e) =>
+                setFrequencyPerUnit(e.target.value as PeriodUnit)
+              }
+              className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            >
+              <option value="days">days</option>
+              <option value="weeks">weeks</option>
+              <option value="months">months</option>
+            </select>
+          </div>
+        )}
+
+        {/* Single time-of-day for non-Multi-Daily rhythms. */}
+        {!isMultiDaily && (
+          <label className="mt-4 block">
+            <span className="text-sm font-medium">
+              Time of day{" "}
+              <span className="font-normal text-zinc-500">(optional)</span>
+            </span>
+            <input
+              type="time"
+              name="scheduledTime"
+              value={scheduledTime}
+              onChange={(e) => setScheduledTime(e.target.value)}
+              className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-zinc-50"
+            />
+          </label>
+        )}
+
+        <p className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+          Saving regenerates this activity&rsquo;s future schedule. Past
+          occurrences and their completions are kept; you&rsquo;ll be asked
+          to confirm before changes apply.
+        </p>
+
+        {state && "error" in state && (
+          <p
+            role="alert"
+            className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300"
+          >
+            {state.error}
+          </p>
+        )}
+      </div>
+
+      <div className="flex gap-2 border-t border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={isPending}
+          className="flex-1 touch-manipulation rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          disabled={isPending}
+          className="flex-1 touch-manipulation rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
+        >
+          {isPending ? "Saving…" : "Save & regenerate"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/**
+ * Reverse-derive the rhythm-picker form state from an existing activity's
+ * rhythm + scheduled_times. Used when opening the edit-rhythm body.
+ */
+function initRhythmKindFromActivity(activity: DayInstance["activity"]): {
+  kind: RhythmKind;
+  weekdays: DayOfWeek[];
+  intervalDaysStr: string;
+  frequencyCountStr: string;
+  frequencyPerCountStr: string;
+  frequencyPerUnit: PeriodUnit;
+  multiDailyTimes: string[];
+  scheduledTime: string;
+} {
+  const r = activity.rhythm;
+  const defaults = {
+    kind: "single" as RhythmKind,
+    weekdays: [] as DayOfWeek[],
+    intervalDaysStr: "2",
+    frequencyCountStr: "3",
+    frequencyPerCountStr: "1",
+    frequencyPerUnit: "weeks" as PeriodUnit,
+    multiDailyTimes: ["08:00", "18:00"],
+    scheduledTime: activity.scheduled_times[0] ?? "",
+  };
+
+  if (r.type === "single") return { ...defaults, kind: "single" };
+  if (r.type === "daily") return { ...defaults, kind: "daily" };
+  if (r.type === "weekdays")
+    return { ...defaults, kind: "weekdays", weekdays: r.days as DayOfWeek[] };
+  if (r.type === "interval")
+    return {
+      ...defaults,
+      kind: "interval",
+      intervalDaysStr: String(r.days),
+    };
+  if (r.type === "frequency") {
+    const { perCount, perUnit } = normalizeFrequencyPeriod(r);
+    // Multi-Daily heuristic: daily period + multiple scheduled_times set.
+    if (perUnit === "days" && activity.scheduled_times.length > 0) {
+      return {
+        ...defaults,
+        kind: "multi_daily",
+        multiDailyTimes:
+          activity.scheduled_times.length > 0
+            ? activity.scheduled_times
+            : defaults.multiDailyTimes,
+      };
+    }
+    return {
+      ...defaults,
+      kind: "frequency",
+      frequencyCountStr: String(r.count),
+      frequencyPerCountStr: String(perCount),
+      frequencyPerUnit: perUnit,
+    };
+  }
+  return defaults;
+}
+
+// ---------------------------------------------------------------------------
 
 function DetailRow({
   label,
@@ -532,17 +953,6 @@ function Secondary({
     >
       {label}
     </button>
-  );
-}
-
-function SecondaryLink({ label, href }: { label: string; href: string }) {
-  return (
-    <Link
-      href={href}
-      className="flex-1 rounded-md border border-zinc-300 px-3 py-2 text-center text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-    >
-      {label}
-    </Link>
   );
 }
 

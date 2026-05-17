@@ -14,15 +14,13 @@
 
 import { z } from "zod";
 
-export const reminderSchema = z
-  .object({
-    days: z.number().int().min(0).max(30),
-    hours: z.number().int().min(0).max(23),
-    minutes: z.number().int().min(0).max(59),
-  })
-  .refine((r) => r.days + r.hours + r.minutes > 0, {
-    error: "Reminder must be greater than zero.",
-  });
+// All-zero is intentionally allowed and means "at the activity's scheduled
+// time" (no advance offset). The UI renders this as "At time of occurrence".
+export const reminderSchema = z.object({
+  days: z.number().int().min(0).max(30),
+  hours: z.number().int().min(0).max(23),
+  minutes: z.number().int().min(0).max(59),
+});
 
 export const remindersSchema = z.array(reminderSchema).max(10);
 
