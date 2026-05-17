@@ -5,7 +5,10 @@
 // short label like "Daily · 7:00 AM" or "Every Mon, Wed, Fri · from May 12".
 // ---------------------------------------------------------------------------
 
-import type { Rhythm } from "@/lib/validators/rhythm";
+import {
+  normalizeFrequencyPeriod,
+  type Rhythm,
+} from "@/lib/validators/rhythm";
 
 const WEEKDAY_LABELS: Record<string, string> = {
   mon: "Mon",
@@ -35,18 +38,18 @@ export function summarizeRhythm(
     case "interval":
       return rhythm.days === 1 ? "Every day" : `Every ${rhythm.days} days`;
     case "frequency": {
-      const periodLabel =
-        rhythm.period === "day"
-          ? "day"
-          : rhythm.period === "week"
-            ? "week"
-            : "month";
+      const { perCount, perUnit } = normalizeFrequencyPeriod(rhythm);
       // Multi-Daily UX uses frequency-day under the hood; if we know times,
-      // surface them instead of just the count.
-      if (rhythm.period === "day" && scheduledTimes.length > 0) {
+      // surface them in the summary.
+      if (perUnit === "days" && perCount === 1 && scheduledTimes.length > 0) {
         return `${rhythm.count}× per day`;
       }
-      return `${rhythm.count}× per ${periodLabel}`;
+      if (perCount === 1) {
+        const singular =
+          perUnit === "days" ? "day" : perUnit === "weeks" ? "week" : "month";
+        return `${rhythm.count}× per ${singular}`;
+      }
+      return `${rhythm.count}× per ${perCount} ${perUnit}`;
     }
   }
 }

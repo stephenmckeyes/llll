@@ -48,7 +48,11 @@ Future direction (per user spec):
   group remaining banners by their first tag; show top N tag-counts.
 - Banners colored by first tag (when tags become first-class).
 
-## NEXT TURN: Edit-Rhythm with future-instance regeneration
+## NEXT TURN: Edit-Rhythm modal with future-instance regeneration
+
+(Edit-activity ships in-place in the modal; Edit-rhythm is the larger
+remaining piece because it requires regenerating the future instance
+set when the rhythm changes mid-window.)
 
 Edit-activity (name / notes / tags / priority) ships in the activity
 modal as an in-place form — done. Edit-rhythm is the larger remaining

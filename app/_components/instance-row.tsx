@@ -18,9 +18,10 @@ import {
 } from "@/app/actions/activities";
 
 import type { DayInstance } from "./day-list";
+import { EditableProgressBadge } from "./editable-progress-badge";
 
 const FREQUENCY_BADGE_CLASSES =
-  "shrink-0 rounded-md border border-zinc-300 bg-zinc-50 px-2 py-1 text-xs font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300";
+  "shrink-0 touch-manipulation rounded-md border border-zinc-300 bg-zinc-50 px-2 py-1 text-xs font-semibold text-zinc-700 hover:bg-zinc-100 active:bg-zinc-200 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800";
 
 const PRIORITY_LABEL: Record<number, string> = {
   1: "High",
@@ -130,16 +131,16 @@ export function InstanceRow({
         </div>
       </button>
 
-      {/* Frequency progress badge. Shows "X/Y" so the user can see, at a
-          glance, how many of today's required occurrences are done without
-          having to read the modal. */}
+      {/* Frequency progress badge. Editable: click to set exactly (handy
+          when the user mass-fills at end of day, or accidentally over-
+          clicked +1). */}
       {isFrequency && (
-        <span
-          aria-label={`${frequencyProgress} of ${frequencyTarget} done`}
+        <EditableProgressBadge
+          instanceId={instance.id}
+          current={frequencyProgress}
+          target={frequencyTarget}
           className={FREQUENCY_BADGE_CLASSES}
-        >
-          {frequencyProgress}/{frequencyTarget}
-        </span>
+        />
       )}
 
       {/* Complete + Missed as TRUE siblings, not nested. */}

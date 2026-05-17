@@ -2,21 +2,13 @@
 
 // ---------------------------------------------------------------------------
 // Reminders editor — one form section, reused by the create form and the
-// edit-activity modal. Renders a list of {amount, unit} rows the user can
-// add / remove. Each row emits two hidden FormData entries:
-//   - reminderAmount (number string)
-//   - reminderUnit   (minutes | hours | days | weeks)
-// The server zips them by index back into Reminder[] (see parseRemindersFromForm).
+// edit-activity modal. Renders a list of {days, hours, minutes} rows the
+// user can add / remove. Each row emits three FormData entries:
+//   - reminderDays, reminderHours, reminderMinutes
+// The server zips them by index (see parseRemindersFromForm).
 // ---------------------------------------------------------------------------
 
-import type { Reminder, ReminderUnit } from "@/lib/validators/reminder";
-
-const UNIT_OPTIONS: ReadonlyArray<{ value: ReminderUnit; label: string }> = [
-  { value: "minutes", label: "minutes" },
-  { value: "hours", label: "hours" },
-  { value: "days", label: "days" },
-  { value: "weeks", label: "weeks" },
-];
+import type { Reminder } from "@/lib/validators/reminder";
 
 export function RemindersField({
   reminders,
@@ -29,15 +21,16 @@ export function RemindersField({
   legendClassName?: string;
   helperClassName?: string;
 }) {
-  function updateAmount(i: number, raw: string) {
-    const amount = Math.max(1, Math.min(999, parseInt(raw, 10) || 1));
-    setReminders(reminders.map((r, idx) => (idx === i ? { ...r, amount } : r)));
-  }
-  function updateUnit(i: number, unit: ReminderUnit) {
-    setReminders(reminders.map((r, idx) => (idx === i ? { ...r, unit } : r)));
+  function update(i: number, patch: Partial<Reminder>) {
+    setReminders(
+      reminders.map((r, idx) => (idx === i ? { ...r, ...patch } : r))
+    );
   }
   function addReminder() {
-    setReminders([...reminders, { amount: 30, unit: "minutes" }]);
+    setReminders([
+      ...reminders,
+      { days: 0, hours: 0, minutes: 30 },
+    ]);
   }
   function removeReminder(i: number) {
     setReminders(reminders.filter((_, idx) => idx !== i));
@@ -56,27 +49,34 @@ export function RemindersField({
         <ul className="flex flex-col gap-2">
           {reminders.map((r, i) => (
             <li key={i} className="flex flex-wrap items-center gap-2">
-              <input
-                type="number"
-                name="reminderAmount"
-                min={1}
-                max={999}
-                value={r.amount}
-                onChange={(e) => updateAmount(i, e.target.value)}
-                className="w-20 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              {/* Hidden inputs carry the controlled values into FormData. */}
+              <input type="hidden" name="reminderDays" value={r.days} />
+              <input type="hidden" name="reminderHours" value={r.hours} />
+              <input type="hidden" name="reminderMinutes" value={r.minutes} />
+
+              <DurationInput
+                label="d"
+                title="Days"
+                value={r.days}
+                max={30}
+                onChange={(n) => update(i, { days: n })}
               />
-              <select
-                name="reminderUnit"
-                value={r.unit}
-                onChange={(e) => updateUnit(i, e.target.value as ReminderUnit)}
-                className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-              >
-                {UNIT_OPTIONS.map((u) => (
-                  <option key={u.value} value={u.value}>
-                    {u.label}
-                  </option>
-                ))}
-              </select>
+              <span className="text-zinc-400">:</span>
+              <DurationInput
+                label="h"
+                title="Hours"
+                value={r.hours}
+                max={23}
+                onChange={(n) => update(i, { hours: n })}
+              />
+              <span className="text-zinc-400">:</span>
+              <DurationInput
+                label="m"
+                title="Minutes"
+                value={r.minutes}
+                max={59}
+                onChange={(n) => update(i, { minutes: n })}
+              />
               <span className="text-sm text-zinc-600 dark:text-zinc-400">
                 before
               </span>
@@ -103,9 +103,48 @@ export function RemindersField({
   );
 }
 
-// Helper to format a reminder for display: "30 minutes before".
+function DurationInput({
+  label,
+  title,
+  value,
+  max,
+  onChange,
+}: {
+  label: string;
+  title: string;
+  value: number;
+  max: number;
+  onChange: (n: number) => void;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <input
+        type="number"
+        min={0}
+        max={max}
+        value={value}
+        title={title}
+        onChange={(e) => {
+          const n = parseInt(e.target.value, 10);
+          if (!Number.isFinite(n)) {
+            onChange(0);
+            return;
+          }
+          onChange(Math.min(Math.max(n, 0), max));
+        }}
+        className="w-14 rounded-md border border-zinc-300 bg-white px-2 py-1 text-right text-sm tabular-nums dark:border-zinc-700 dark:bg-zinc-900"
+      />
+      <span className="text-xs text-zinc-500">{label}</span>
+    </span>
+  );
+}
+
+// Human-readable summary: "1d 2h 30m before" / "30m before" / "At time"
 export function formatReminder(r: Reminder): string {
-  const unit =
-    r.amount === 1 ? r.unit.replace(/s$/, "") : r.unit;
-  return `${r.amount} ${unit} before`;
+  const parts: string[] = [];
+  if (r.days > 0) parts.push(`${r.days}d`);
+  if (r.hours > 0) parts.push(`${r.hours}h`);
+  if (r.minutes > 0) parts.push(`${r.minutes}m`);
+  if (parts.length === 0) return "At time of occurrence";
+  return `${parts.join(" ")} before`;
 }

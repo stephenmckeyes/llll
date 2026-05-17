@@ -182,6 +182,62 @@ describe("generateInstances — interval rhythm", () => {
   });
 });
 
+describe("generateInstances — flexible frequency (perCount + perUnit)", () => {
+  it("'3 times per 2 weeks' produces one instance every 14 days, anchored to Monday", () => {
+    // 2026-01-01 is Thursday → start-of-week is Mon 2025-12-29 (before from),
+    // so the first emitted Monday IN range is +2 weeks: Mon Jan 12. Next is
+    // Jan 26. Jan 12 → Feb 9 exceeds the Jan 31 boundary.
+    const result = generateInstances(
+      { type: "frequency", count: 3, perCount: 2, perUnit: "weeks" },
+      { from: "2026-01-01", to: "2026-01-31" }
+    );
+    expect(result.map((i) => i.scheduledFor)).toEqual([
+      "2026-01-12",
+      "2026-01-26",
+    ]);
+  });
+
+  it("'1 time per 3 days' steps in 3-day chunks", () => {
+    const result = generateInstances(
+      { type: "frequency", count: 1, perCount: 3, perUnit: "days" },
+      { from: "2026-01-01", to: "2026-01-10" }
+    );
+    expect(result.map((i) => i.scheduledFor)).toEqual([
+      "2026-01-01",
+      "2026-01-04",
+      "2026-01-07",
+      "2026-01-10",
+    ]);
+  });
+
+  it("'1 time per 2 months' steps in 2-month chunks anchored to 1st", () => {
+    const result = generateInstances(
+      { type: "frequency", count: 1, perCount: 2, perUnit: "months" },
+      { from: "2026-01-01", to: "2026-12-31" }
+    );
+    expect(result.map((i) => i.scheduledFor)).toEqual([
+      "2026-01-01",
+      "2026-03-01",
+      "2026-05-01",
+      "2026-07-01",
+      "2026-09-01",
+      "2026-11-01",
+    ]);
+  });
+
+  it("backwards-compat: legacy { count, period: 'week' } still maps to perCount=1, perUnit=weeks", () => {
+    const newShape = generateInstances(
+      { type: "frequency", count: 3, perCount: 1, perUnit: "weeks" },
+      { from: "2026-01-01", to: "2026-01-31" }
+    );
+    const oldShape = generateInstances(
+      { type: "frequency", count: 3, period: "week" },
+      { from: "2026-01-01", to: "2026-01-31" }
+    );
+    expect(newShape).toEqual(oldShape);
+  });
+});
+
 describe("generateInstances — frequency rhythm", () => {
   it("weekly: one instance per week, anchored to Monday", () => {
     // Mondays in Jan 2026: Jan 5, 12, 19, 26.

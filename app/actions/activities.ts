@@ -72,7 +72,8 @@ export async function createActivity(
             .map(String)
             .filter((s) => /^\d{2}:\d{2}$/.test(s)).length
         ),
-        period: "day",
+        perCount: 1,
+        perUnit: "days",
       };
       break;
     case "daily":
@@ -93,8 +94,9 @@ export async function createActivity(
     case "frequency":
       candidateRhythm = {
         type: "frequency",
-        count: clampInt(formData.get("frequencyCount"), 1, 50, 3),
-        period: String(formData.get("frequencyPeriod") ?? "week"),
+        count: clampInt(formData.get("frequencyCount"), 1, 99, 3),
+        perCount: clampInt(formData.get("frequencyPerCount"), 1, 99, 1),
+        perUnit: String(formData.get("frequencyPerUnit") ?? "weeks"),
       };
       break;
     default:
@@ -216,6 +218,76 @@ export async function completeInstance(instanceId: string) {
   if (!user) redirect("/login");
 
   await logCompletion(supabase, user.id, { instanceIds: [instanceId] });
+  revalidatePath("/");
+}
+
+// ---------------------------------------------------------------------------
+// setInstanceProgress — set the completion count for an instance to a
+// specific number, then sync status. Used by the editable X/Y badge on
+// frequency rows (for "I miss-clicked +1" undo, or "I did 3 of them at
+// once, mark them all done" mass-fill).
+//
+// Implementation:
+//   - delta > 0 → add new completions through logCompletion (so XP/streaks
+//     hooks still run when we add them).
+//   - delta < 0 → delete the most recent N completions linked to this
+//     instance. completion_instances rows cascade. History for OTHER
+//     instances is unaffected.
+// ---------------------------------------------------------------------------
+
+export async function setInstanceProgress(
+  instanceId: string,
+  targetCount: number
+) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const safeTarget = Math.max(0, Math.floor(targetCount));
+
+  // Existing links, most-recent-first (we'll trim from the top if removing).
+  const { data: links } = await supabase
+    .from("completion_instances")
+    .select("completion_id, created_at")
+    .eq("instance_id", instanceId)
+    .order("created_at", { ascending: false });
+
+  const current = links?.length ?? 0;
+  const delta = safeTarget - current;
+
+  if (delta > 0) {
+    for (let i = 0; i < delta; i++) {
+      await logCompletion(supabase, user.id, { instanceIds: [instanceId] });
+    }
+  } else if (delta < 0) {
+    const toDelete = (links ?? [])
+      .slice(0, -delta)
+      .map((l) => l.completion_id as string);
+    if (toDelete.length > 0) {
+      // Delete the completions themselves; the link rows cascade.
+      await supabase.from("completions").delete().in("id", toDelete);
+    }
+  }
+
+  // Sync the instance status against the activity's target.
+  const { data: inst } = await supabase
+    .from("activity_instances")
+    .select("activities ( rhythm )")
+    .eq("id", instanceId)
+    .single();
+  const rhythm = (
+    inst as { activities?: { rhythm?: { type?: string; count?: number } } } | null
+  )?.activities?.rhythm;
+  const target = rhythm?.type === "frequency" ? rhythm.count ?? 1 : 1;
+  const newStatus = safeTarget >= target ? "completed" : "pending";
+
+  await supabase
+    .from("activity_instances")
+    .update({ status: newStatus })
+    .eq("id", instanceId);
+
   revalidatePath("/");
 }
 
@@ -446,28 +518,33 @@ function parseISODate(yyyyMmDd: string): Date {
 }
 
 // ---------------------------------------------------------------------------
-// Form-data → reminders[]. The UI renders parallel `reminderAmount` and
-// `reminderUnit` fields, one per reminder row. We zip them by index and
-// drop anything that can't be coerced.
+// Form-data → reminders[]. The UI renders parallel reminderDays,
+// reminderHours, reminderMinutes fields, one trio per reminder row. We zip
+// them by index and drop any row whose total duration is zero.
 // ---------------------------------------------------------------------------
 
 function parseRemindersFromForm(formData: FormData): Reminder[] {
-  const amounts = formData.getAll("reminderAmount");
-  const units = formData.getAll("reminderUnit");
-  const n = Math.min(amounts.length, units.length);
+  const days = formData.getAll("reminderDays");
+  const hours = formData.getAll("reminderHours");
+  const mins = formData.getAll("reminderMinutes");
+  const n = Math.min(days.length, hours.length, mins.length);
   const out: Reminder[] = [];
   for (let i = 0; i < n; i++) {
-    const amount = parseInt(String(amounts[i]), 10);
-    const unit = String(units[i]);
-    if (!Number.isFinite(amount) || amount < 1) continue;
-    if (
-      unit !== "minutes" &&
-      unit !== "hours" &&
-      unit !== "days" &&
-      unit !== "weeks"
-    )
-      continue;
-    out.push({ amount, unit });
+    const d = clampFormInt(days[i], 0, 30);
+    const h = clampFormInt(hours[i], 0, 23);
+    const m = clampFormInt(mins[i], 0, 59);
+    if (d + h + m === 0) continue; // drop empty rows
+    out.push({ days: d, hours: h, minutes: m });
   }
   return out;
+}
+
+function clampFormInt(
+  v: FormDataEntryValue,
+  min: number,
+  max: number
+): number {
+  const n = parseInt(String(v), 10);
+  if (!Number.isFinite(n)) return min;
+  return Math.min(Math.max(n, min), max);
 }

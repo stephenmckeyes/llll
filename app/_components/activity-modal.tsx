@@ -29,9 +29,9 @@ import {
   summarizeRhythm,
   summarizeScheduledTimes,
 } from "@/lib/domain/rhythm-summary";
-import type {
-  Reminder,
-  ReminderUnit,
+import {
+  normalizeReminder,
+  type Reminder,
 } from "@/lib/validators/reminder";
 
 import type { DayInstance } from "./day-list";
@@ -264,23 +264,20 @@ function DetailsBody({
         </div>
       )}
 
-      {activity.reminders.length > 0 && (
-        <div className="mt-5">
-          <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
-            Reminders
-          </h3>
+      <div className="mt-5">
+        <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
+          Reminders
+        </h3>
+        {activity.reminders.length === 0 ? (
+          <p className="text-sm text-zinc-500">None</p>
+        ) : (
           <ul className="flex flex-col gap-1 text-sm">
             {activity.reminders.map((r, i) => (
-              <li key={i}>
-                {formatReminder({
-                  amount: r.amount,
-                  unit: r.unit as ReminderUnit,
-                })}
-              </li>
+              <li key={i}>{formatReminder(normalizeReminder(r))}</li>
             ))}
           </ul>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
@@ -309,10 +306,7 @@ function EditActivityBody({
 
   const [priority, setPriority] = useState<number>(activity.priority);
   const [reminders, setReminders] = useState<Reminder[]>(
-    activity.reminders.map((r) => ({
-      amount: r.amount,
-      unit: r.unit as ReminderUnit,
-    }))
+    activity.reminders.map(normalizeReminder)
   );
   const isSingle = activity.rhythm.type === "single";
 

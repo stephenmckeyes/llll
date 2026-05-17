@@ -16,7 +16,7 @@ import {
 } from "@/app/actions/activities";
 import type {
   DayOfWeek,
-  Period,
+  PeriodUnit,
   Rhythm,
 } from "@/lib/validators/rhythm";
 
@@ -63,7 +63,9 @@ export function ActivityForm() {
   const [weekdays, setWeekdays] = useState<DayOfWeek[]>([]);
   const [intervalDaysStr, setIntervalDaysStr] = useState<string>("2");
   const [frequencyCountStr, setFrequencyCountStr] = useState<string>("3");
-  const [frequencyPeriod, setFrequencyPeriod] = useState<Period>("week");
+  const [frequencyPerCountStr, setFrequencyPerCountStr] = useState<string>("1");
+  const [frequencyPerUnit, setFrequencyPerUnit] =
+    useState<PeriodUnit>("weeks");
   const [multiDailyTimes, setMultiDailyTimes] = useState<string[]>(
     DEFAULT_MULTI_DAILY_TIMES
   );
@@ -75,6 +77,10 @@ export function ActivityForm() {
   // back to 1 so the calendar still renders something while you're typing.
   const intervalDays = Math.max(1, parseInt(intervalDaysStr, 10) || 1);
   const frequencyCount = Math.max(1, parseInt(frequencyCountStr, 10) || 1);
+  const frequencyPerCount = Math.max(
+    1,
+    parseInt(frequencyPerCountStr, 10) || 1
+  );
 
   const isSingle = rhythmKind === "single";
   const isMultiDaily = rhythmKind === "multi_daily";
@@ -88,7 +94,8 @@ export function ActivityForm() {
     weekdays,
     intervalDays,
     frequencyCount,
-    frequencyPeriod,
+    frequencyPerCount,
+    frequencyPerUnit,
     multiDailyTimes,
   });
 
@@ -310,26 +317,44 @@ export function ActivityForm() {
             type="number"
             name="frequencyCount"
             min={1}
-            max={50}
+            max={99}
             value={frequencyCountStr}
             onChange={(e) => setFrequencyCountStr(e.target.value)}
             onBlur={(e) => {
               const n = parseInt(e.target.value, 10);
               setFrequencyCountStr(
-                Number.isFinite(n) && n >= 1 ? String(Math.min(n, 50)) : "1"
+                Number.isFinite(n) && n >= 1 ? String(Math.min(n, 99)) : "1"
               );
             }}
             className="w-16 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
           />
           <span className="text-sm">times per</span>
+          <input
+            type="number"
+            name="frequencyPerCount"
+            min={1}
+            max={99}
+            value={frequencyPerCountStr}
+            onChange={(e) => setFrequencyPerCountStr(e.target.value)}
+            onBlur={(e) => {
+              const n = parseInt(e.target.value, 10);
+              setFrequencyPerCountStr(
+                Number.isFinite(n) && n >= 1 ? String(Math.min(n, 99)) : "1"
+              );
+            }}
+            className="w-16 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+          />
           <select
-            name="frequencyPeriod"
-            value={frequencyPeriod}
-            onChange={(e) => setFrequencyPeriod(e.target.value as Period)}
+            name="frequencyPerUnit"
+            value={frequencyPerUnit}
+            onChange={(e) =>
+              setFrequencyPerUnit(e.target.value as PeriodUnit)
+            }
             className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
           >
-            <option value="week">week</option>
-            <option value="month">month</option>
+            <option value="days">{frequencyPerCount === 1 ? "day" : "days"}</option>
+            <option value="weeks">{frequencyPerCount === 1 ? "week" : "weeks"}</option>
+            <option value="months">{frequencyPerCount === 1 ? "month" : "months"}</option>
           </select>
         </ConfigBox>
       )}
@@ -442,14 +467,16 @@ function derivePreviewRhythm({
   weekdays,
   intervalDays,
   frequencyCount,
-  frequencyPeriod,
+  frequencyPerCount,
+  frequencyPerUnit,
   multiDailyTimes,
 }: {
   kind: RhythmKind;
   weekdays: DayOfWeek[];
   intervalDays: number;
   frequencyCount: number;
-  frequencyPeriod: Period;
+  frequencyPerCount: number;
+  frequencyPerUnit: PeriodUnit;
   multiDailyTimes: string[];
 }): Rhythm | null {
   switch (kind) {
@@ -470,7 +497,8 @@ function derivePreviewRhythm({
         ? {
             type: "frequency",
             count: frequencyCount,
-            period: frequencyPeriod,
+            perCount: frequencyPerCount,
+            perUnit: frequencyPerUnit,
           }
         : null;
     case "multi_daily": {
@@ -482,7 +510,8 @@ function derivePreviewRhythm({
         : {
             type: "frequency",
             count: validTimes.length,
-            period: "day",
+            perCount: 1,
+            perUnit: "days",
           };
     }
   }

@@ -25,10 +25,11 @@ import {
   startOfWeek,
 } from "date-fns";
 
-import type {
-  DayOfWeek,
-  Period,
-  Rhythm,
+import {
+  normalizeFrequencyPeriod,
+  type DayOfWeek,
+  type PeriodUnit,
+  type Rhythm,
 } from "@/lib/validators/rhythm";
 
 /** Calendar date as 'YYYY-MM-DD' — no time, no timezone. */
@@ -87,10 +88,13 @@ export function generateInstances(
         context.anchor ? toDate(context.anchor) : from
       );
 
-    case "frequency":
+    case "frequency": {
       // `count` is metadata for the UI ("Goal X/N"); generator emits one
-      // instance per period.
-      return generateFrequency(rhythm.period, from, to);
+      // instance per period of length (perCount * perUnit). Old data may
+      // still have `period` (single unit, count=1), so normalize.
+      const { perCount, perUnit } = normalizeFrequencyPeriod(rhythm);
+      return generateFrequency(perCount, perUnit, from, to);
+    }
 
     default: {
       const _never: never = rhythm;
@@ -137,40 +141,42 @@ function generateInterval(
 }
 
 function generateFrequency(
-  period: Period,
+  perCount: number,
+  perUnit: PeriodUnit,
   from: Date,
   to: Date
 ): Instance[] {
   const out: Instance[] = [];
-  let cursor = startOfPeriod(period, from);
+  let cursor = startOfPeriodUnit(perUnit, from);
+  // Step forward (by perCount * perUnit) until we land on/after `from`.
   while (isBefore(cursor, from)) {
-    cursor = nextPeriodStart(period, cursor);
+    cursor = advancePeriod(cursor, perCount, perUnit);
   }
   while (!isAfter(cursor, to)) {
     out.push({ scheduledFor: toString(cursor) });
-    cursor = nextPeriodStart(period, cursor);
+    cursor = advancePeriod(cursor, perCount, perUnit);
   }
   return out;
 }
 
-function startOfPeriod(period: Period, d: Date): Date {
-  switch (period) {
-    case "day":
+function startOfPeriodUnit(unit: PeriodUnit, d: Date): Date {
+  switch (unit) {
+    case "days":
       return d;
-    case "week":
-      return startOfWeek(d, { weekStartsOn: 1 });
-    case "month":
+    case "weeks":
+      return startOfWeek(d, { weekStartsOn: 1 }); // Monday
+    case "months":
       return startOfMonth(d);
   }
 }
 
-function nextPeriodStart(period: Period, d: Date): Date {
-  switch (period) {
-    case "day":
-      return addDays(d, 1);
-    case "week":
-      return addWeeks(d, 1);
-    case "month":
-      return addMonths(d, 1);
+function advancePeriod(d: Date, count: number, unit: PeriodUnit): Date {
+  switch (unit) {
+    case "days":
+      return addDays(d, count);
+    case "weeks":
+      return addWeeks(d, count);
+    case "months":
+      return addMonths(d, count);
   }
 }
