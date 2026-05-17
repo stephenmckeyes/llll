@@ -8,6 +8,8 @@ import { addDays } from "date-fns";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { z } from "zod";
+
 import { logCompletion } from "@/lib/domain/completions";
 import { generateInstances } from "@/lib/domain/rhythms";
 import { createClient } from "@/lib/supabase/server";
@@ -224,6 +226,69 @@ export async function archiveActivity(activityId: string) {
 
   revalidatePath("/");
   revalidatePath("/activities");
+}
+
+// ---------------------------------------------------------------------------
+// updateActivity — partial update for an existing activity. v1 covers the
+// fields that DON'T change the schedule (name, notes, tags, priority). The
+// schedule fields (rhythm, start_date, end_date, scheduled_times) ship in
+// a follow-up turn together with the future-instance regeneration logic;
+// touching them today without regeneration would leave the activity row
+// disagreeing with its generated activity_instances.
+// ---------------------------------------------------------------------------
+
+export type UpdateActivityState = { error: string } | { ok: true } | null;
+
+const editFieldsSchema = z.object({
+  name: z.string().trim().min(1, "Name can't be empty.").max(120),
+  notes: z.string().trim().max(500),
+  tags: z.string().trim().max(300),
+  priority: z.number().int().min(1).max(3),
+});
+
+export async function updateActivityFields(
+  activityId: string,
+  _prev: UpdateActivityState,
+  formData: FormData
+): Promise<UpdateActivityState> {
+  const parsed = editFieldsSchema.safeParse({
+    name: formData.get("name"),
+    notes: formData.get("notes") ?? "",
+    tags: formData.get("tags") ?? "",
+    priority: Number(formData.get("priority") ?? 2),
+  });
+
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
+  }
+
+  const tags = parsed.data.tags
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase
+    .from("activities")
+    .update({
+      name: parsed.data.name,
+      notes: parsed.data.notes.length === 0 ? null : parsed.data.notes,
+      default_skill_tags: tags,
+      priority: parsed.data.priority,
+    })
+    .eq("id", activityId);
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/");
+  revalidatePath("/activities");
+  revalidatePath(`/activities/${activityId}`);
+  return { ok: true };
 }
 
 export async function unarchiveActivity(activityId: string) {

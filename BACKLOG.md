@@ -48,7 +48,32 @@ Future direction (per user spec):
   group remaining banners by their first tag; show top N tag-counts.
 - Banners colored by first tag (when tags become first-class).
 
-## NEXT TURN: Edit-Activity / Edit-Rhythm as in-place modals (not new pages)
+## NEXT TURN: Edit-Rhythm with future-instance regeneration
+
+Edit-activity (name / notes / tags / priority) ships in the activity
+modal as an in-place form — done. Edit-rhythm is the larger remaining
+piece because it requires regenerating the future instance set:
+
+- New `updateActivityRhythm(activityId, { rhythm, start_date, end_date,
+  scheduled_times })` server action.
+- Confirmation popup before applying: "Changing the rhythm will replace
+  all future pending occurrences. Past occurrences and their
+  completions stay untouched." Past = scheduled_for < today.
+- On confirm:
+  1. UPDATE the activity row with the new rhythm/dates/times.
+  2. DELETE FROM activity_instances WHERE activity_id = X AND
+     scheduled_for >= today AND status = 'pending'.
+  3. Re-run generateInstances() with the new rhythm + the activity's
+     effective date range, starting from max(today, start_date), and
+     bulk-insert.
+- Render inside the same activity modal (mode = 'edit-rhythm'), using
+  the same rhythm picker as the create form.
+- Reuse ActivityForm's rhythm-picker subtree — likely worth extracting
+  it into a shared `RhythmPicker` component first.
+
+Then the standalone `/activities/[id]/edit` page can go away.
+
+## OLD: Edit-Activity / Edit-Rhythm as in-place modals (not new pages)
 
 Per user spec: tapping "Edit activity" / "Edit rhythm" on a Day row should
 swap the modal's content from details → edit form, without navigating
