@@ -49,6 +49,7 @@ export type DayInstance = {
     start_date: string;
     end_date: string | null;
     archived_at: string | null;
+    reminders: Array<{ amount: number; unit: string }>;
   };
 };
 

@@ -13,6 +13,10 @@ import { z } from "zod";
 import { logCompletion } from "@/lib/domain/completions";
 import { generateInstances } from "@/lib/domain/rhythms";
 import { createClient } from "@/lib/supabase/server";
+import {
+  remindersSchema,
+  type Reminder,
+} from "@/lib/validators/reminder";
 import { rhythmSchema, type Rhythm } from "@/lib/validators/rhythm";
 
 export type ActivityFormState = { error: string } | null;
@@ -129,6 +133,14 @@ export async function createActivity(
     .map(String)
     .filter((s) => /^\d{2}:\d{2}$/.test(s));
 
+  // ---- 4b. Reminders (zip parallel arrays from the form) ------------------
+
+  const reminders = parseRemindersFromForm(formData);
+  const remindersValidated = remindersSchema.safeParse(reminders);
+  if (!remindersValidated.success) {
+    return { error: "One of the reminders is invalid." };
+  }
+
   // ---- 5. Insert activity --------------------------------------------------
 
   const supabase = await createClient();
@@ -149,6 +161,7 @@ export async function createActivity(
       priority,
       default_skill_tags: tags,
       scheduled_times: scheduledTimes,
+      reminders: remindersValidated.data,
     })
     .select("id")
     .single();
@@ -277,6 +290,12 @@ export async function updateActivityFields(
     .map((s) => s.trim())
     .filter(Boolean);
 
+  const reminders = parseRemindersFromForm(formData);
+  const remindersValidated = remindersSchema.safeParse(reminders);
+  if (!remindersValidated.success) {
+    return { error: "One of the reminders is invalid." };
+  }
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -294,6 +313,7 @@ export async function updateActivityFields(
       priority: parsed.data.priority,
       start_date: parsed.data.startDate,
       end_date: newEndDate,
+      reminders: remindersValidated.data,
     })
     .eq("id", activityId);
 
@@ -423,4 +443,31 @@ function parseDateField(v: FormDataEntryValue | null): string | null {
 function parseISODate(yyyyMmDd: string): Date {
   const [y, m, d] = yyyyMmDd.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d));
+}
+
+// ---------------------------------------------------------------------------
+// Form-data → reminders[]. The UI renders parallel `reminderAmount` and
+// `reminderUnit` fields, one per reminder row. We zip them by index and
+// drop anything that can't be coerced.
+// ---------------------------------------------------------------------------
+
+function parseRemindersFromForm(formData: FormData): Reminder[] {
+  const amounts = formData.getAll("reminderAmount");
+  const units = formData.getAll("reminderUnit");
+  const n = Math.min(amounts.length, units.length);
+  const out: Reminder[] = [];
+  for (let i = 0; i < n; i++) {
+    const amount = parseInt(String(amounts[i]), 10);
+    const unit = String(units[i]);
+    if (!Number.isFinite(amount) || amount < 1) continue;
+    if (
+      unit !== "minutes" &&
+      unit !== "hours" &&
+      unit !== "days" &&
+      unit !== "weeks"
+    )
+      continue;
+    out.push({ amount, unit });
+  }
+  return out;
 }

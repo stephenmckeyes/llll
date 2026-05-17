@@ -229,7 +229,8 @@ async function DayView({ startDate }: { startDate: string }) {
         default_skill_tags,
         start_date,
         end_date,
-        archived_at
+        archived_at,
+        reminders
       ),
       completion_instances (
         completion_id

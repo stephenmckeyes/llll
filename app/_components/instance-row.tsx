@@ -19,6 +19,9 @@ import {
 
 import type { DayInstance } from "./day-list";
 
+const FREQUENCY_BADGE_CLASSES =
+  "shrink-0 rounded-md border border-zinc-300 bg-zinc-50 px-2 py-1 text-xs font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300";
+
 const PRIORITY_LABEL: Record<number, string> = {
   1: "High",
   2: "Medium",
@@ -50,19 +53,16 @@ export function InstanceRow({
       ? daysBetween(instance.scheduled_for, todayStr)
       : 0;
 
+  const frequencyTarget =
+    activity.rhythm.type === "frequency" ? activity.rhythm.count : 0;
+  const frequencyProgress = instance.completionCount;
+
+  // For frequency rhythms the X/Y is shown as a separate badge next to the
+  // +1 button (more discoverable). For singles we still surface an overdue
+  // banner. Non-frequency, non-overdue rows just show the activity body.
   let hint: { text: string; tone: "muted" | "danger" } | null = null;
-  if (isFrequency) {
-    hint = {
-      text: `Goal ${instance.completionCount}/${
-        activity.rhythm.type === "frequency" ? activity.rhythm.count : 0
-      }`,
-      tone: "muted",
-    };
-  } else if (isSingle) {
-    hint =
-      overdueDays > 0
-        ? { text: `Overdue by ${overdueDays}d`, tone: "danger" }
-        : null;
+  if (isSingle && overdueDays > 0) {
+    hint = { text: `Overdue by ${overdueDays}d`, tone: "danger" };
   }
 
   function handleComplete() {
@@ -129,6 +129,18 @@ export function InstanceRow({
           )}
         </div>
       </button>
+
+      {/* Frequency progress badge. Shows "X/Y" so the user can see, at a
+          glance, how many of today's required occurrences are done without
+          having to read the modal. */}
+      {isFrequency && (
+        <span
+          aria-label={`${frequencyProgress} of ${frequencyTarget} done`}
+          className={FREQUENCY_BADGE_CLASSES}
+        >
+          {frequencyProgress}/{frequencyTarget}
+        </span>
+      )}
 
       {/* Complete + Missed as TRUE siblings, not nested. */}
       <button

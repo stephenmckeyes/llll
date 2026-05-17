@@ -104,6 +104,10 @@ export const activities = pgTable(
       .array()
       .notNull()
       .default(sql`'{}'::text[]`),
+    // Array of { amount, unit } reminders. unit ∈ {minutes,hours,days,weeks}.
+    // Notification *delivery* is a separate concern (cron + email/push); this
+    // column is the user's persisted preferences.
+    reminders: jsonb("reminders").notNull().default(sql`'[]'::jsonb`),
     priority: smallint("priority").notNull().default(2),
     defaultSkillTags: text("default_skill_tags")
       .array()

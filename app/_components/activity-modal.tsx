@@ -29,8 +29,13 @@ import {
   summarizeRhythm,
   summarizeScheduledTimes,
 } from "@/lib/domain/rhythm-summary";
+import type {
+  Reminder,
+  ReminderUnit,
+} from "@/lib/validators/reminder";
 
 import type { DayInstance } from "./day-list";
+import { formatReminder, RemindersField } from "./reminders-field";
 
 const PRIORITY_LABEL: Record<number, string> = {
   1: "High",
@@ -258,6 +263,24 @@ function DetailsBody({
           </div>
         </div>
       )}
+
+      {activity.reminders.length > 0 && (
+        <div className="mt-5">
+          <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
+            Reminders
+          </h3>
+          <ul className="flex flex-col gap-1 text-sm">
+            {activity.reminders.map((r, i) => (
+              <li key={i}>
+                {formatReminder({
+                  amount: r.amount,
+                  unit: r.unit as ReminderUnit,
+                })}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
@@ -285,6 +308,12 @@ function EditActivityBody({
   >(boundAction, null);
 
   const [priority, setPriority] = useState<number>(activity.priority);
+  const [reminders, setReminders] = useState<Reminder[]>(
+    activity.reminders.map((r) => ({
+      amount: r.amount,
+      unit: r.unit as ReminderUnit,
+    }))
+  );
   const isSingle = activity.rhythm.type === "single";
 
   // If the action returns ok, close the modal so the user sees the refreshed
@@ -407,10 +436,17 @@ function EditActivityBody({
           </div>
         </fieldset>
 
-        {/* Reminders intentionally absent from this turn — the migration
-            that adds the `reminders` jsonb column is currently blocked on
-            the Supabase pooler resetting connections. Once that's working
-            we'll add the reminders UI here AND in the create form. */}
+        <div className="mt-4">
+          <RemindersField
+            reminders={reminders}
+            setReminders={setReminders}
+          />
+        </div>
+
+        {/* Hidden inputs to surface the controlled reminders state in
+            FormData (the visible inputs inside RemindersField already do
+            this; this is belt-and-suspenders in case React strips the
+            uncontrolled inputs during fast re-renders). */}
 
         {state && "error" in state && (
           <p

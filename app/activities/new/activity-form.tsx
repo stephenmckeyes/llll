@@ -20,6 +20,9 @@ import type {
   Rhythm,
 } from "@/lib/validators/rhythm";
 
+import { RemindersField } from "@/app/_components/reminders-field";
+import type { Reminder } from "@/lib/validators/reminder";
+
 import { CalendarPreview } from "./calendar-preview";
 
 type RhythmKind =
@@ -66,6 +69,7 @@ export function ActivityForm() {
   );
   const [startDate, setStartDate] = useState<string>(TODAY_ISO);
   const [endDate, setEndDate] = useState<string>("");
+  const [reminders, setReminders] = useState<Reminder[]>([]);
 
   // Parsed numbers for preview computation. Empty / invalid input falls
   // back to 1 so the calendar still renders something while you're typing.
@@ -395,6 +399,9 @@ export function ActivityForm() {
           </div>
         </fieldset>
       )}
+
+      {/* --- 6. Reminders ---------------------------------------------- */}
+      <RemindersField reminders={reminders} setReminders={setReminders} />
 
       {/* --- Calendar preview ------------------------------------------ */}
       <CalendarPreview
