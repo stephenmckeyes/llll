@@ -59,6 +59,13 @@ export async function createActivity(
   let candidateRhythm: unknown;
   switch (rhythmType) {
     case "single":
+    case "selection":
+      // Selection fans out into N independent single activities below.
+      // The rhythm shape stored on each row is plain `{type: "single"}`
+      // — there's no special "selection" rhythm at the database level.
+      // The bundling exists only in this form submission, not in
+      // storage. Each spawned activity is afterwards indistinguishable
+      // from a "Once" activity created on its own.
       candidateRhythm = { type: "single" };
       break;
     case "multi_daily":
@@ -111,18 +118,41 @@ export async function createActivity(
   const rhythm: Rhythm = parsed.data;
 
   // ---- 3. Schedule range (start_date, end_date) ---------------------------
+  // Selection submits MULTIPLE `startDate` form values — one per picked
+  // date. For every other rhythm there's exactly one. We normalize into
+  // a `startDates: string[]` list and fan out below.
 
   const todayStr = new Date().toISOString().slice(0, 10);
-  const startDate = parseDateField(formData.get("startDate")) ?? todayStr;
+  const isSelection = rhythmType === "selection";
+  const startDates = isSelection
+    ? Array.from(
+        new Set(
+          formData
+            .getAll("startDate")
+            .map(parseDateField)
+            .filter((v): v is string => v !== null)
+        )
+      ).sort()
+    : [parseDateField(formData.get("startDate")) ?? todayStr];
 
-  // Singles: end_date := start_date (window of one day). All others:
-  // optional end_date; null = open-ended.
+  if (isSelection && startDates.length === 0) {
+    return {
+      error:
+        "Selection needs at least one date — pick a start date or add one.",
+    };
+  }
+
+  // For non-selection singles, end_date := start_date. For selection,
+  // each fanned-out activity follows the same rule (handled in the loop
+  // below). All other rhythms get the optional end_date from the form.
   let endDate: string | null;
   if (rhythm.type === "single") {
-    endDate = startDate;
+    endDate = null; // per-activity end_date set in the loop below
   } else {
     endDate = parseDateField(formData.get("endDate"));
-    if (endDate && endDate < startDate) {
+    // Validate against the primary start date for non-selection cases;
+    // selection always has end_date == that loop iteration's start_date.
+    if (endDate && endDate < startDates[0]) {
       return { error: "End date must be on or after the start date." };
     }
   }
@@ -144,7 +174,12 @@ export async function createActivity(
     return { error: "One of the reminders is invalid." };
   }
 
-  // ---- 5. Insert activity --------------------------------------------------
+  // ---- 5+6. Insert + pre-generate instances ------------------------------
+  // For non-selection: one iteration with the form's single start date.
+  // For Unrhythmic Selection: one iteration per picked date — each
+  // produces an independent `{type:"single"}` activity sharing every
+  // other field. Once stored, the spawned activities are
+  // indistinguishable from "Once" activities created individually.
 
   const supabase = await createClient();
   const {
@@ -152,55 +187,58 @@ export async function createActivity(
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { data: activity, error: aerr } = await supabase
-    .from("activities")
-    .insert({
-      user_id: user.id,
-      name,
-      notes,
-      rhythm,
-      start_date: startDate,
-      end_date: endDate,
-      priority,
-      default_skill_tags: tags,
-      scheduled_times: scheduledTimes,
-      reminders: remindersValidated.data,
-    })
-    .select("id")
-    .single();
+  for (const startDate of startDates) {
+    const perActivityEndDate =
+      rhythm.type === "single" ? startDate : endDate;
 
-  if (aerr || !activity) {
-    return { error: aerr?.message ?? "Could not save activity." };
-  }
+    const { data: activity, error: aerr } = await supabase
+      .from("activities")
+      .insert({
+        user_id: user.id,
+        name,
+        notes,
+        rhythm,
+        start_date: startDate,
+        end_date: perActivityEndDate,
+        priority,
+        default_skill_tags: tags,
+        scheduled_times: scheduledTimes,
+        reminders: remindersValidated.data,
+      })
+      .select("id")
+      .single();
 
-  // ---- 6. Pre-generate instances ------------------------------------------
-  // Window: from start_date up to min(start_date + 30 days, end_date).
-  // generateInstances is pure; same inputs → same outputs.
+    if (aerr || !activity) {
+      return { error: aerr?.message ?? "Could not save activity." };
+    }
 
-  const horizonStr = addDays(parseISODate(startDate), INSTANCE_HORIZON_DAYS)
-    .toISOString()
-    .slice(0, 10);
-  const generationTo =
-    endDate !== null && endDate < horizonStr ? endDate : horizonStr;
+    const horizonStr = addDays(parseISODate(startDate), INSTANCE_HORIZON_DAYS)
+      .toISOString()
+      .slice(0, 10);
+    const generationTo =
+      perActivityEndDate !== null && perActivityEndDate < horizonStr
+        ? perActivityEndDate
+        : horizonStr;
 
-  const instances = generateInstances(rhythm, {
-    from: startDate,
-    to: generationTo,
-  });
+    const instances = generateInstances(rhythm, {
+      from: startDate,
+      to: generationTo,
+    });
 
-  if (instances.length > 0) {
-    const rows = instances.map((i) => ({
-      activity_id: activity.id,
-      scheduled_for: i.scheduledFor,
-      status: "pending" as const,
-    }));
-    const { error: ierr } = await supabase
-      .from("activity_instances")
-      .insert(rows);
-    if (ierr) {
-      return {
-        error: `Activity saved, but generating its schedule failed: ${ierr.message}`,
-      };
+    if (instances.length > 0) {
+      const rows = instances.map((i) => ({
+        activity_id: activity.id,
+        scheduled_for: i.scheduledFor,
+        status: "pending" as const,
+      }));
+      const { error: ierr } = await supabase
+        .from("activity_instances")
+        .insert(rows);
+      if (ierr) {
+        return {
+          error: `Activity saved, but generating its schedule failed: ${ierr.message}`,
+        };
+      }
     }
   }
 

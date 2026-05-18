@@ -27,6 +27,7 @@ import { CalendarPreview } from "./calendar-preview";
 
 type RhythmKind =
   | "single"
+  | "selection"
   | "multi_daily"
   | "daily"
   | "weekdays"
@@ -72,6 +73,11 @@ export function ActivityForm() {
   const [startDate, setStartDate] = useState<string>(TODAY_ISO);
   const [endDate, setEndDate] = useState<string>("");
   const [reminders, setReminders] = useState<Reminder[]>([]);
+  // Unrhythmic Selection: extra start dates BEYOND the primary one.
+  // Each entry produces an additional `single` activity sharing every
+  // other field. See createActivity's "selection" branch for the
+  // server-side fan-out.
+  const [extraStartDates, setExtraStartDates] = useState<string[]>([]);
 
   // Parsed numbers for preview computation. Empty / invalid input falls
   // back to 1 so the calendar still renders something while you're typing.
@@ -83,10 +89,15 @@ export function ActivityForm() {
   );
 
   const isSingle = rhythmKind === "single";
+  const isSelection = rhythmKind === "selection";
   const isMultiDaily = rhythmKind === "multi_daily";
+  // "selection" is shown to the server as a flag — each picked date
+  // becomes its own `single` activity. So for the preview / end-date
+  // logic, treat selection the same as single.
+  const isSingleLike = isSingle || isSelection;
 
   // Force end_date == start_date for singles (the server enforces this too).
-  const effectiveEndDate = isSingle ? startDate : endDate || null;
+  const effectiveEndDate = isSingleLike ? startDate : endDate || null;
 
   // Compute the rhythm shape the preview should render.
   const previewRhythm = derivePreviewRhythm({
@@ -119,6 +130,19 @@ export function ActivityForm() {
     setWeekdays((prev) =>
       prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
     );
+  }
+
+  // ---- Selection extra-date handlers ------------------------------------
+  function addExtraStartDate() {
+    setExtraStartDates((prev) => [...prev, TODAY_ISO]);
+  }
+  function updateExtraStartDate(i: number, value: string) {
+    setExtraStartDates((prev) =>
+      prev.map((d, idx) => (idx === i ? value : d))
+    );
+  }
+  function removeExtraStartDate(i: number) {
+    setExtraStartDates((prev) => prev.filter((_, idx) => idx !== i));
   }
 
   return (
@@ -189,6 +213,13 @@ export function ActivityForm() {
         <legend className="mb-1 text-sm font-medium">Rhythm</legend>
         <RhythmRadio value="single" current={rhythmKind} onChange={setRhythmKind} label="Once" />
         <RhythmRadio
+          value="selection"
+          current={rhythmKind}
+          onChange={setRhythmKind}
+          label="Unrhythmic Selection"
+          hint="Several one-offs, shared details"
+        />
+        <RhythmRadio
           value="multi_daily"
           current={rhythmKind}
           onChange={setRhythmKind}
@@ -200,7 +231,7 @@ export function ActivityForm() {
           value="weekdays"
           current={rhythmKind}
           onChange={setRhythmKind}
-          label="Specific Weekdays"
+          label="Specific Days of the Week"
         />
         <RhythmRadio
           value="interval"
@@ -377,7 +408,7 @@ export function ActivityForm() {
               <>
                 End date{" "}
                 <span className="font-normal text-zinc-500">
-                  {isSingle ? "(n/a for Once)" : "(optional)"}
+                  {isSingleLike ? "(n/a)" : "(optional)"}
                 </span>
               </>
             }
@@ -385,13 +416,55 @@ export function ActivityForm() {
             <input
               type="date"
               name="endDate"
-              value={isSingle ? "" : endDate}
+              value={isSingleLike ? "" : endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              disabled={isSingle}
+              disabled={isSingleLike}
               className={inputClasses}
             />
           </FieldLabel>
         </div>
+
+        {/* Selection mode: list of extra dates, each producing its own
+            single activity. Submitted as additional `startDate` form
+            values; the server splits them in createActivity. */}
+        {isSelection && (
+          <ConfigBox column>
+            <p className="text-xs text-zinc-500">
+              Each additional date becomes a separate one-time activity
+              sharing the name, notes, tags, time, priority, and reminders
+              above.
+            </p>
+            {extraStartDates.length > 0 && (
+              <ul className="flex flex-col gap-2">
+                {extraStartDates.map((d, i) => (
+                  <li key={i} className="flex items-center gap-2">
+                    <input
+                      type="date"
+                      name="startDate"
+                      value={d}
+                      onChange={(e) => updateExtraStartDate(i, e.target.value)}
+                      className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeExtraStartDate(i)}
+                      className="rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
+                    >
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <button
+              type="button"
+              onClick={addExtraStartDate}
+              className="self-start rounded-md border border-zinc-300 px-3 py-1 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            >
+              + Add date
+            </button>
+          </ConfigBox>
+        )}
 
         {!isMultiDaily && (
           <FieldLabel
@@ -406,15 +479,15 @@ export function ActivityForm() {
           </FieldLabel>
         )}
 
-        {!isSingle && !isMultiDaily && (
+        {!isSingleLike && !isMultiDaily && (
           <p className="text-xs text-zinc-500">
             Leave end date blank for an open-ended rhythm.
           </p>
         )}
       </fieldset>
 
-      {/* --- 5. Priority (only for Once) ------------------------------- */}
-      {isSingle && (
+      {/* --- 5. Priority (only for Once / Selection) ------------------- */}
+      {isSingleLike && (
         <fieldset className="flex flex-col gap-2">
           <legend className="mb-1 text-sm font-medium">Priority</legend>
           <div className="flex gap-2">
@@ -482,6 +555,9 @@ function derivePreviewRhythm({
 }): Rhythm | null {
   switch (kind) {
     case "single":
+    case "selection":
+      // Selection fans out to multiple `single` activities server-side;
+      // for the calendar preview we just show the primary date's single.
       return { type: "single" };
     case "daily":
       return { type: "daily" };

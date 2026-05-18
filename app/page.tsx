@@ -26,6 +26,7 @@ import Link from "next/link";
 import { signOut } from "@/app/actions/auth";
 import { ensureInstancesBackfilled } from "@/lib/domain/backfill";
 import { rhythmCategoryLabel } from "@/lib/domain/rhythm-summary";
+import { computeStreak } from "@/lib/domain/streak";
 import { createClient } from "@/lib/supabase/server";
 import type { Rhythm } from "@/lib/validators/rhythm";
 
@@ -1181,6 +1182,39 @@ async function GridView({
     inner.set(i.scheduled_for, i);
   }
 
+  // ---- 5b. Streak data --------------------------------------------------
+  // For the per-row streak counter we need ALL past-or-today instances
+  // per activity, not just the in-range subset. We cap the lookback at
+  // 365 days so the query stays bounded for power users; a streak longer
+  // than one year is rare enough that the cap is acceptable for v1.
+  //
+  // Sorted DESC by scheduled_for so the streak walker can stop at the
+  // first non-completed past period without scanning further history.
+  const streakLookbackStr = format(
+    addDays(parseDate(TODAY_STR), -365),
+    "yyyy-MM-dd"
+  );
+  type StreakInst = { activity_id: string; scheduled_for: string; status: string };
+  const streakInstances =
+    rhythmicIds.length === 0
+      ? []
+      : (((
+          await supabase
+            .from("activity_instances")
+            .select("activity_id, scheduled_for, status")
+            .in("activity_id", rhythmicIds)
+            .gte("scheduled_for", streakLookbackStr)
+            .lte("scheduled_for", TODAY_STR)
+            .order("scheduled_for", { ascending: false })
+        ).data ?? []) as StreakInst[]);
+
+  const streakByActivity = new Map<string, StreakInst[]>();
+  for (const inst of streakInstances) {
+    const arr = streakByActivity.get(inst.activity_id) ?? [];
+    arr.push(inst); // already DESC from query, so order preserved
+    streakByActivity.set(inst.activity_id, arr);
+  }
+
   // ---- 6. Build row data -------------------------------------------------
   const rows: GridTableRow[] = rhythmicActivities.map((act) => {
     const byDate = instancesByActivityDate.get(act.id);
@@ -1224,6 +1258,11 @@ async function GridView({
 
     const onTheHook = done + missed + unlabeled;
     const pct = onTheHook === 0 ? null : Math.round((done / onTheHook) * 100);
+    const streak = computeStreak(
+      streakByActivity.get(act.id) ?? [],
+      act.rhythm,
+      TODAY_STR
+    );
 
     return {
       activity: { id: act.id, name: act.name },
@@ -1234,6 +1273,7 @@ async function GridView({
       missed,
       unlabeled,
       onTheHook,
+      streak,
     };
   });
 
@@ -1324,6 +1364,7 @@ type GridTableRow = {
   missed: number;
   unlabeled: number;
   onTheHook: number;
+  streak: number;
 };
 
 function makeNonInstanceCell(
@@ -1346,6 +1387,7 @@ function alwaysInactive(
   if (endDate && endDate < rangeStartStr) return true;
   return false;
 }
+
 
 // Assemble the full DayInstance the ActivityModal expects from an
 // instance row + its parent activity row. Keeping this conversion in

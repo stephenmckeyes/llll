@@ -6,6 +6,61 @@ startup.
 
 ## Pending features (asked for, deferred on purpose)
 
+### Alternate Grid-view visualizations
+
+Today the Grid view renders activity history as colored cells (a
+heatmap). The user wants additional visualization options so the
+same data can be looked at multiple ways. Picker would live in the
+grid's sub-tabs or a per-view dropdown.
+
+- **Chain** — for each activity, draw the days as connected links of
+  a chain going day to day. A missed day is a visible **break** in
+  the chain (the link before/after is rendered jagged or with a gap).
+  Reinforces the "don't break the chain" mental model viscerally.
+- **River with dams** — each activity is a flowing river. Days
+  completed are smooth water; missed days are **dam** icons that
+  block flow. Visually communicates lost momentum.
+- **Sparkline / line graph** — for activities with quantitative
+  metrics (when those land), plot the value over time, not just
+  presence/absence.
+- **Calendar-overlay** — instead of per-activity rows, render a
+  single calendar with stacked color dots per day (one dot per
+  completed activity that day).
+
+All variants would read from the same underlying
+`activity_instances` data — purely rendering changes. Probably
+keep the current Heatmap as the default and add `?viz=chain` /
+`?viz=river` URL params (the sub-tab pattern already in place).
+
+### AI-friendly data export for trend analysis
+
+(Asked for: "incorporate ways to mass-pull information that someone
+could put into AI to analyze trends of when/why they might mess up
+on their goals.") Plan:
+
+- A **Settings → Export** button that bundles the user's recent
+  history (e.g., last 6 / 12 months) into a single JSON/CSV file:
+  - Activities with name, rhythm, notes, tags, start/end dates.
+  - Every `activity_instance` with status, scheduled_for, and any
+    linked completions (occurred_at, effort_rating, note).
+  - Daily / weekly / monthly rollups (completion rate per activity,
+    per tag) — useful summary statistics so the AI doesn't have to
+    rederive them from raw rows.
+- Output **redacts emails / private IDs** but keeps activity names
+  (which the user already wrote). A toggle could optionally
+  hash names for sharing.
+- Suggested companion: a **markdown prompt template** the user can
+  paste alongside the export — e.g., "Look at this productivity
+  history. On what weekdays / time-of-day do I most often skip my
+  activities? Which two activities seem to interfere with each
+  other (correlated misses)? Which notes hint at common blockers?
+  Surface trends I might not see myself."
+- Out of scope for v1: API-style scheduled pushes, direct LLM
+  integration. Manual export → paste into the user's AI of choice
+  is the explicit shape.
+
+
+
 ### Onboarding flow on first sign-in
 First-time users should land in a short questionnaire before the
 dashboard, not directly on an empty today view.

@@ -58,6 +58,9 @@ export type GridRow = {
   missed: number;
   unlabeled: number;
   onTheHook: number;
+  /** Consecutive completed instances ending at the latest past-or-current
+   *  scheduled occurrence. 0 means the current run is broken. */
+  streak: number;
 };
 
 export type DateCol = { date: Date; dateStr: string };
@@ -73,6 +76,20 @@ const TOTAL_CELL_MAX_PX = 12;
 const WEEK_CELL_GAP_PX = 4;
 const MONTH_CELL_GAP_PX = 4;
 const TOTAL_CELL_GAP_PX = 1;
+
+// Each mode's cells use this aspect ratio. Week stays square. Month
+// uses a wide-rectangle shape so a 5-week calendar grid doesn't tower
+// to a 200+px row height; the row stays compact and more activities
+// fit on-screen. Total stays square since its cells are tiny.
+const WEEK_CELL_ASPECT = "aspect-square";
+const MONTH_CELL_ASPECT = "aspect-[2/1]"; // 2:1, wider than tall
+const TOTAL_CELL_ASPECT = "aspect-square";
+
+// Sticky-thead offset. ViewSwitcher (top-0, ~104px tall incl. py-2)
+// + Navigator (top-[6.5rem], ~64px tall) stack at the top of the
+// viewport. The grid's thead pins just below them. If either of
+// those layouts changes height, adjust this offset to match.
+const STICKY_THEAD_TOP = "top-[10.5rem]";
 
 // ---------------------------------------------------------------------------
 
@@ -305,7 +322,7 @@ function WeekTable({
                           todayStr={todayStr}
                           activityName={row.activity.name}
                           showGlyph={true}
-                          hideOutside={false}
+                          aspectClass={WEEK_CELL_ASPECT}
                           onOpen={onOpenInstance}
                         />
                       ))}
@@ -394,10 +411,18 @@ function MonthTable({
               ) : (
                 <>
                   <TypeCell row={row} />
+                  {/* Month cells use a wider-than-tall aspect ratio so the
+                      mini-calendar block doesn't tower over the rest of
+                      the row. 5 weeks at 2:1 cells (~44 × 22 px) = ~120px
+                      row height instead of the ~230px that aspect-square
+                      cells would produce. */}
                   <td className="border-b border-zinc-100 px-1 py-1.5 align-top dark:border-zinc-900">
                     <div className="grid grid-cols-7" style={gridStyle}>
                       {Array.from({ length: padBefore }, (_, i) => (
-                        <div key={`pad-${i}`} className="aspect-square" />
+                        <div
+                          key={`pad-${i}`}
+                          className={MONTH_CELL_ASPECT}
+                        />
                       ))}
                       {row.cells.map((cell) => (
                         <CellButton
@@ -406,7 +431,7 @@ function MonthTable({
                           todayStr={todayStr}
                           activityName={row.activity.name}
                           showGlyph={true}
-                          hideOutside={false}
+                          aspectClass={MONTH_CELL_ASPECT}
                           onOpen={onOpenInstance}
                         />
                       ))}
@@ -489,7 +514,7 @@ function TotalTable({
                 row={row}
                 isOff={isOff}
                 onToggle={onToggle}
-                linesMax={3}
+                linesMax={2}
               />
               {isOff ? (
                 <CollapsedRow span={3} />
@@ -510,7 +535,7 @@ function TotalTable({
                       {Array.from({ length: padBefore }, (_, i) => (
                         <div
                           key={`pad-b-${i}`}
-                          className="aspect-square"
+                          className={TOTAL_CELL_ASPECT}
                         />
                       ))}
                       {row.cells.map((cell) => (
@@ -520,14 +545,14 @@ function TotalTable({
                           todayStr={todayStr}
                           activityName={row.activity.name}
                           showGlyph={false}
-                          hideOutside={true}
+                          aspectClass={TOTAL_CELL_ASPECT}
                           onOpen={onOpenInstance}
                         />
                       ))}
                       {Array.from({ length: padAfter }, (_, i) => (
                         <div
                           key={`pad-a-${i}`}
-                          className="aspect-square"
+                          className={TOTAL_CELL_ASPECT}
                         />
                       ))}
                     </div>
@@ -568,26 +593,28 @@ function CellButton({
   todayStr,
   activityName,
   showGlyph,
-  hideOutside,
+  aspectClass,
   onOpen,
 }: {
   cell: GridCell;
   todayStr: string;
   activityName: string;
   showGlyph: boolean;
-  hideOutside: boolean;
+  /** "aspect-square" | "aspect-[2/1]" | etc — the grid cell's shape. */
+  aspectClass: string;
   onOpen: (i: DayInstance) => void;
 }) {
-  if (hideOutside && cell.state === "outside") {
-    // Render an empty grid slot so the column-major flow stays aligned.
-    return <div className="aspect-square" />;
+  // Outside-days (activity hadn't started yet / had already ended)
+  // render as empty grid slots EVERYWHERE — no diagonal hatch, no
+  // hover, nothing. The grid reads as pure history.
+  if (cell.state === "outside") {
+    return <div className={aspectClass} />;
   }
 
   const isToday = cell.dateStr === todayStr;
   let bg = "";
   let glyph: React.ReactNode = "";
   let statusLine: string;
-  let style: React.CSSProperties | undefined;
 
   switch (cell.state) {
     case "completed":
@@ -616,19 +643,9 @@ function CellButton({
       bg = "bg-zinc-100 dark:bg-zinc-900";
       statusLine = "Not scheduled";
       break;
-    case "outside":
-      // Used in Month (where hideOutside is false). In Total this path
-      // is short-circuited above.
-      bg = "text-zinc-300 dark:text-zinc-700";
-      statusLine = "Not active";
-      style = {
-        backgroundImage:
-          "repeating-linear-gradient(45deg, rgb(228 228 231 / 0.6) 0 2px, transparent 2px 6px)",
-      };
-      break;
   }
 
-  const baseCls = `group/cell relative aspect-square rounded-[1px] ${bg}${
+  const baseCls = `group/cell relative ${aspectClass} rounded-[1px] ${bg}${
     showGlyph
       ? " flex items-center justify-center text-[10px] font-medium leading-none"
       : ""
@@ -645,7 +662,7 @@ function CellButton({
 
   if (!cell.instance) {
     return (
-      <div className={baseCls + ringCls} style={style} aria-label={statusLine}>
+      <div className={baseCls + ringCls} aria-label={statusLine}>
         {showGlyph && glyph}
         {tooltip}
       </div>
@@ -657,7 +674,6 @@ function CellButton({
       type="button"
       onClick={() => cell.instance && onOpen(cell.instance)}
       className={baseCls + ringCls + " cursor-pointer"}
-      style={style}
       aria-label={`${statusLine} — ${activityName} on ${cell.dateStr}`}
     >
       {showGlyph && glyph}
@@ -700,20 +716,28 @@ function TH({
   children: React.ReactNode;
   className?: string;
 }) {
+  // `<th>` cells in the head row are sticky individually (not the
+  // <thead> element itself) — sticky on <thead> is hit-or-miss across
+  // browsers, but sticky on <th> is reliable. Each th gets a solid bg
+  // so scrolled rows don't show through behind the labels.
   return (
     <th
       scope="col"
-      className={`border-b border-zinc-200 px-2 py-2 text-left text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:border-zinc-800 ${className}`}
+      className={`sticky ${STICKY_THEAD_TOP} z-10 border-b border-zinc-200 bg-white px-2 py-2 text-left text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950 ${className}`}
     >
       {children}
     </th>
   );
 }
 
-// Activity-name cell. `linesMax` lets each mode decide how many lines
-// the name can wrap to before truncating:
-//   - Week: 1 (single visual row, no wrapping)
-//   - Month/Total: 3 (wrap to fill the heatmap row height)
+// Activity-name cell. `linesMax` caps how many wrapped lines the name
+// shows before truncating with "…", per mode:
+//   - Week:  1 (cells block is a single row of cells; no wrapping)
+//   - Month: 3 (cells block is multi-row but cells are short
+//             rectangles → ~100px tall; 3 name lines fit comfortably)
+//   - Total: 2 (cells block can shrink down to ~20-30px for power
+//             users with hundreds of weeks; 2 lines avoids the name
+//             pushing the row taller than the heatmap itself)
 function NameCell({
   row,
   isOff,
@@ -723,9 +747,14 @@ function NameCell({
   row: GridRow;
   isOff: boolean;
   onToggle: (id: string) => void;
-  linesMax: 1 | 3;
+  linesMax: 1 | 2 | 3;
 }) {
-  const clampCls = linesMax === 1 ? "line-clamp-1" : "line-clamp-3";
+  const clampCls =
+    linesMax === 1
+      ? "line-clamp-1"
+      : linesMax === 2
+        ? "line-clamp-2"
+        : "line-clamp-3";
   return (
     <th
       scope="row"
@@ -756,19 +785,30 @@ function TypeCell({ row }: { row: GridRow }) {
 }
 
 function SuccessCell({ row }: { row: GridRow }) {
+  // Two stacked lines per spec: first the X/Y | Z% success metric,
+  // then a streak line. 🔥 burns when streak > 0 (text-orange-500),
+  // shows zinc-400 at 0 so the user sees "no current run" rather
+  // than wondering whether streak is supported.
+  const streakColorCls =
+    row.streak > 0
+      ? "text-orange-500 dark:text-orange-400"
+      : "text-zinc-400";
   return (
     <td
-      className={`border-b border-zinc-100 px-2 py-1.5 align-top text-center text-[11px] tabular-nums dark:border-zinc-900 ${pctClass(
-        row.pct
-      )}`}
+      className="border-b border-zinc-100 px-2 py-1.5 align-top text-center text-[11px] tabular-nums dark:border-zinc-900"
     >
-      {row.pct === null ? (
-        "—"
-      ) : (
-        <span>
-          {row.done}/{row.onTheHook} | {row.pct}%
-        </span>
-      )}
+      <div className={pctClass(row.pct)}>
+        {row.pct === null ? (
+          "—"
+        ) : (
+          <span>
+            {row.done}/{row.onTheHook} | {row.pct}%
+          </span>
+        )}
+      </div>
+      <div className={`${streakColorCls} text-[10px]`}>
+        🔥{row.streak}
+      </div>
     </td>
   );
 }
