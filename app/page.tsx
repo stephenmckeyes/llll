@@ -23,10 +23,15 @@ import {
 import Link from "next/link";
 
 import { signOut } from "@/app/actions/auth";
+import { ensureInstancesBackfilled } from "@/lib/domain/backfill";
 import { createClient } from "@/lib/supabase/server";
 
 import { DateNavigator } from "./_components/date-navigator";
-import { DayList, type DayInstance } from "./_components/day-list";
+import {
+  DayList,
+  type CompletedItem,
+  type DayInstance,
+} from "./_components/day-list";
 import { MonthInstanceBox } from "./_components/month-instance-box";
 
 type ViewKind = "day" | "week" | "month" | "year";
@@ -72,6 +77,18 @@ export default async function HomePage({
   const view = parseView(params.view);
   const date = parseDateParam(params.date);
 
+  // Top up the user's activity_instances out to ~3 months ahead of whatever
+  // they're looking at. Indefinite rhythms (no end_date) only get N days of
+  // instances generated up front; without this, the calendar "runs out" of
+  // future days after that window. This is idempotent — already-present
+  // instances get skipped via ON CONFLICT DO NOTHING.
+  const backfillThrough = (() => {
+    const ref = new Date(date.slice(0, 4) + "-" + date.slice(5, 7) + "-" + date.slice(8, 10));
+    ref.setMonth(ref.getMonth() + 3);
+    return ref.toISOString().slice(0, 10);
+  })();
+  await ensureInstancesBackfilled(supabase, user.id, backfillThrough);
+
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-8 p-6">
       <header className="flex flex-col gap-4">
@@ -107,7 +124,7 @@ export default async function HomePage({
         <ViewSwitcher current={view} date={date} />
       </header>
 
-      {view === "day" && <DayView startDate={date} />}
+      {view === "day" && <DayView startDate={date} userId={user.id} />}
       {view === "week" && <WeekView weekDate={date} />}
       {view === "month" && <MonthView monthDate={date} />}
       {view === "year" && <YearView yearDate={date} />}
@@ -127,6 +144,14 @@ function parseDateParam(raw: string | undefined): string {
   const d = parseISO(raw);
   if (Number.isNaN(d.getTime())) return TODAY_STR;
   return raw;
+}
+
+// Supabase JS sometimes types to-one relationships as arrays. This helper
+// peels off the array so the call site doesn't need ternaries everywhere.
+function firstOrSelf<T>(v: T | T[] | null | undefined): T | null {
+  if (v === null || v === undefined) return null;
+  if (Array.isArray(v)) return (v[0] as T) ?? null;
+  return v;
 }
 
 function parseDate(yyyyMmDd: string): Date {
@@ -203,7 +228,13 @@ function ViewSwitcher({
 // Day view — target date + the next 6 days stacked. Scroll for more.
 // ---------------------------------------------------------------------------
 
-async function DayView({ startDate }: { startDate: string }) {
+async function DayView({
+  startDate,
+  userId,
+}: {
+  startDate: string;
+  userId: string;
+}) {
   const supabase = await createClient();
 
   const startD = parseDate(startDate);
@@ -261,10 +292,79 @@ async function DayView({ startDate }: { startDate: string }) {
       completionCount: r.completion_instances?.length ?? 0,
     }));
 
+  // ---- Completed items for the "Completed (N)" banner per day -----------
+  // Fetch every completion whose occurred_at falls in the visible window,
+  // joined back to its activity name through the M:N link table. Single
+  // completions can technically be linked to multiple instances; we just
+  // surface one row per link.
+  const { data: completionsRaw } = await supabase
+    .from("completions")
+    .select(
+      `
+      id,
+      occurred_at,
+      user_id,
+      completion_instances (
+        instance_id,
+        activity_instances (
+          activity_id,
+          activities ( id, name, rhythm )
+        )
+      )
+    `
+    )
+    .eq("user_id", userId)
+    .gte("occurred_at", windowStartStr + "T00:00:00")
+    .lte("occurred_at", windowEndStr + "T23:59:59")
+    .is("deleted_at", null)
+    .order("occurred_at", { ascending: false });
+
+  // Supabase JS returns nested to-one relationships as either an object OR
+  // an array of one — depends on FK inference. Tolerate both by taking the
+  // first element when it's an array.
+  type CompletionRowLoose = {
+    id: string;
+    occurred_at: string;
+    completion_instances?:
+      | Array<{
+          instance_id: string;
+          activity_instances?: unknown;
+        }>
+      | null;
+  };
+
+  const completedByDate: Record<string, CompletedItem[]> = {};
+  for (const c of (completionsRaw ?? []) as unknown as CompletionRowLoose[]) {
+    const day = c.occurred_at.slice(0, 10);
+    const links = c.completion_instances ?? [];
+    if (links.length === 0) {
+      // Ad-hoc completion not linked to any instance.
+      (completedByDate[day] ??= []).push({
+        id: c.id,
+        occurredAt: c.occurred_at,
+        activityName: "Ad-hoc log",
+      });
+      continue;
+    }
+    for (const link of links) {
+      const ai = firstOrSelf(link.activity_instances);
+      const activity = firstOrSelf(
+        (ai as { activities?: unknown } | null)?.activities
+      ) as { id: string; name: string; rhythm: Rhythm } | null;
+      if (!activity) continue;
+      (completedByDate[day] ??= []).push({
+        id: `${c.id}:${link.instance_id}`,
+        occurredAt: c.occurred_at,
+        activityName: activity.name,
+      });
+    }
+  }
+
   return (
     <DayList
       initialDate={startDate}
       instances={instances}
+      completedByDate={completedByDate}
       todayStr={TODAY_STR}
     />
   );

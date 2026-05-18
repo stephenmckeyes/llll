@@ -86,16 +86,16 @@ export function ActivityModal({
   const activity = instance.activity;
   const isSingle = activity.rhythm.type === "single";
 
-  // Escape closes (only when in details mode — edit mode should require
-  // explicit cancel/save so accidental Escape doesn't lose work).
+  // Escape closes in any mode. Per user request, edit modes use the same
+  // dismiss-on-outside-click as the details view; explicit Cancel buttons
+  // are still available inside the form.
   useEffect(() => {
-    if (mode !== "details") return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, mode]);
+  }, [onClose]);
 
   // Body scroll-lock while open.
   useEffect(() => {
@@ -148,7 +148,7 @@ export function ActivityModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="activity-modal-title"
-      onClick={mode === "details" ? onClose : undefined}
+      onClick={onClose}
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 sm:items-center"
     >
       <div

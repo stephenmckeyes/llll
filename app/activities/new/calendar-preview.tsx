@@ -15,7 +15,6 @@
 
 import { addDays, format, startOfWeek } from "date-fns";
 
-import { formatReminder } from "@/app/_components/reminders-field";
 import { generateInstances } from "@/lib/domain/rhythms";
 import type { Reminder } from "@/lib/validators/reminder";
 import type { Rhythm } from "@/lib/validators/rhythm";
@@ -80,6 +79,21 @@ export function CalendarPreview({
   }
   const instanceDays = new Set(instances.map((i) => i.scheduledFor));
 
+  // Build the set of days that will trigger a reminder. For each scheduled
+  // instance and each reminder, the reminder fires `r.days` days earlier.
+  // Reminders with days = 0 (same-day offset) aren't marked separately —
+  // they're implied by the instance day itself.
+  const reminderDays = new Set<string>();
+  if (reminders.length > 0) {
+    for (const inst of instances) {
+      for (const r of reminders) {
+        if (r.days <= 0) continue;
+        const day = format(addDays(parseLocalDate(inst.scheduledFor), -r.days), "yyyy-MM-dd");
+        reminderDays.add(day);
+      }
+    }
+  }
+
   // Grid: start at Monday of the week containing startDate.
   const gridStart = startOfWeek(startD, { weekStartsOn: 1 });
   const cells = Array.from({ length: WINDOW_DAYS }, (_, i) => {
@@ -91,6 +105,7 @@ export function CalendarPreview({
       inRange:
         dateStr >= startDate && (endDate === null || dateStr <= endDate),
       hasInstance: instanceDays.has(dateStr),
+      hasReminder: !instanceDays.has(dateStr) && reminderDays.has(dateStr),
       isToday: dateStr === TODAY_STR,
       isStartDate: dateStr === startDate,
     };
@@ -122,24 +137,17 @@ export function CalendarPreview({
         <span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-zinc-900 align-middle dark:bg-zinc-50" />
         Scheduled ·{" "}
         <span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm border border-zinc-900 align-middle dark:border-zinc-50" />
-        Today ·{" "}
+        Today
+        {reminders.length > 0 && (
+          <>
+            {" · "}
+            <span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-amber-400 align-middle dark:bg-amber-500" />
+            Reminder
+          </>
+        )}
+        {" · "}
         <span className="text-zinc-400">faded</span> = outside window
       </p>
-      {reminders.length > 0 && (
-        <div className="border-t border-zinc-200 pt-2 text-xs text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
-          <span className="font-medium uppercase tracking-wide text-zinc-500">
-            Reminders:
-          </span>{" "}
-          <span>
-            {reminders.map((r, i) => (
-              <span key={i}>
-                {i > 0 && <span className="text-zinc-400"> · </span>}
-                {formatReminder(r)}
-              </span>
-            ))}
-          </span>
-        </div>
-      )}
     </Pane>
   );
 }
@@ -192,6 +200,7 @@ function Cell({
   date,
   inRange,
   hasInstance,
+  hasReminder,
   isToday,
   isStartDate,
   activityName,
@@ -200,30 +209,50 @@ function Cell({
   dateStr: string;
   inRange: boolean;
   hasInstance: boolean;
+  hasReminder: boolean;
   isToday: boolean;
   isStartDate: boolean;
   activityName: string;
 }) {
   let cls =
-    "flex aspect-square min-w-0 flex-col items-start gap-0.5 overflow-hidden rounded p-1 text-[11px] leading-tight select-none";
+    "relative flex aspect-square min-w-0 flex-col items-start gap-0.5 overflow-hidden rounded p-1 text-[11px] leading-tight select-none";
 
   if (hasInstance) {
-    cls +=
-      " bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900";
+    cls += " bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900";
+  } else if (hasReminder) {
+    cls += " bg-amber-50 text-amber-900 ring-1 ring-amber-300 dark:bg-amber-950 dark:text-amber-200 dark:ring-amber-700";
   } else if (inRange) {
     cls += " text-zinc-700 dark:text-zinc-300";
   } else {
     cls += " text-zinc-300 dark:text-zinc-700";
   }
-  if (isToday && !hasInstance) cls += " ring-1 ring-zinc-900 dark:ring-zinc-50";
-  if (isStartDate && !hasInstance && !isToday) cls += " underline underline-offset-2";
+  if (isToday && !hasInstance && !hasReminder) cls += " ring-1 ring-zinc-900 dark:ring-zinc-50";
+  if (isStartDate && !hasInstance && !hasReminder && !isToday) cls += " underline underline-offset-2";
 
   return (
-    <div className={cls} title={hasInstance ? `${activityName || "Activity"} — ${date.toDateString()}` : date.toDateString()}>
+    <div
+      className={cls}
+      title={
+        hasInstance
+          ? `${activityName || "Activity"} — ${date.toDateString()}`
+          : hasReminder
+            ? `Reminder for an upcoming occurrence — ${date.toDateString()}`
+            : date.toDateString()
+      }
+    >
       <span className={hasInstance ? "font-semibold" : ""}>{date.getDate()}</span>
       {hasInstance && activityName && (
         <span className="line-clamp-2 w-full break-words text-[10px] font-medium opacity-90">
           {activityName}
+        </span>
+      )}
+      {hasReminder && (
+        <span
+          aria-hidden
+          className="absolute bottom-1 right-1 text-[10px]"
+          title="Reminder fires this day"
+        >
+          🔔
         </span>
       )}
     </div>

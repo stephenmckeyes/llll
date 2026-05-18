@@ -56,12 +56,20 @@ export type DayInstance = {
   };
 };
 
+export type CompletedItem = {
+  id: string;
+  occurredAt: string;
+  activityName: string;
+};
+
 export function DayList({
   initialDate,
   instances,
+  completedByDate,
   todayStr,
 }: {
   initialDate: string;
+  completedByDate: Record<string, CompletedItem[]>;
   instances: DayInstance[];
   todayStr: string;
 }) {
@@ -228,6 +236,7 @@ export function DayList({
               date={d.date}
               dateStr={d.dateStr}
               visible={d.visible}
+              completed={completedByDate[d.dateStr] ?? []}
               todayStr={todayStr}
               onOpenInstance={setOpenInstance}
             />
@@ -252,12 +261,14 @@ function DaySection({
   date,
   dateStr,
   visible,
+  completed,
   todayStr,
   onOpenInstance,
 }: {
   date: Date;
   dateStr: string;
   visible: DayInstance[];
+  completed: CompletedItem[];
   todayStr: string;
   onOpenInstance: (inst: DayInstance) => void;
 }) {
@@ -276,6 +287,27 @@ function DaySection({
           </span>
         )}
       </h2>
+
+      {/* "Completed" banner — collapsed by default; expand to see what was
+          done that day. Uses native <details>/<summary> for accessibility +
+          no extra client state. */}
+      {completed.length > 0 && (
+        <details className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 dark:border-emerald-900 dark:bg-emerald-950">
+          <summary className="cursor-pointer text-xs font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-300 marker:text-emerald-500">
+            Completed ({completed.length})
+          </summary>
+          <ul className="mt-2 flex flex-col gap-1 text-sm text-emerald-900 dark:text-emerald-100">
+            {completed.map((c) => (
+              <li key={c.id} className="flex items-baseline gap-2">
+                <span className="flex-1 truncate">{c.activityName}</span>
+                <span className="text-xs text-emerald-700/70 dark:text-emerald-300/70">
+                  {formatTimeOfDay(c.occurredAt)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
       {visible.length === 0 ? (
         <p className="rounded-md border border-dashed border-zinc-200 px-3 py-2 text-center text-xs text-zinc-400 dark:border-zinc-800">
           Free.
@@ -331,6 +363,15 @@ function scrollContainerTo(
 function cssEscape(s: string): string {
   if (typeof CSS !== "undefined" && CSS.escape) return CSS.escape(s);
   return s.replace(/[^a-zA-Z0-9_-]/g, "\\$&");
+}
+
+function formatTimeOfDay(isoTimestamp: string): string {
+  const d = new Date(isoTimestamp);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 function parseLocalDate(yyyyMmDd: string): Date {
