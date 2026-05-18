@@ -48,19 +48,22 @@ Future direction (per user spec):
   group remaining banners by their first tag; show top N tag-counts.
 - Banners colored by first tag (when tags become first-class).
 
-## NEXT TURN: Grid / Habit-Tracker view
+## Grid view follow-ups
 
-Per user spec — see "Grid / Habit-Tracker view" section below for full
-details. A separate `?view=grid` entry on the home dashboard:
+Grid view shipped with week + month ranges. Still to do:
 
-- Far-left column: every recurring activity (one row per activity).
-- Top row: dates across the chosen date range.
-- Cells: filled/struck when completed, empty/red/grey if skipped or
-  missed.
-- Far-right column: success percentage for the row over the range.
-- Range picker: default current week.
-- First pass can reuse the existing `?date=` URL param + a new
-  `range=week|month|custom` param.
+- **Year range** — 365-day grid is unreadable at normal cell sizes.
+  Either compress cells (heatmap-style, no glyphs) or jump to a
+  separate "summary" layout (1 column per week, cell = "X of Y done"
+  that week).
+- **Custom range picker** — start/end date inputs for arbitrary windows.
+- **Row sort** — currently alphabetical; add toggles for "lowest success
+  %" (where am I slipping) and "most active this period."
+- **Color cells by activity tag** when tags become first-class.
+- **Click an empty/overdue cell → quick-complete it inline** instead of
+  jumping to the day view. Could be a small popover on click.
+- **Frequency rhythms ("3× per week")** currently get one cell per
+  anchor day. Consider showing "2/3 done" per period instead.
 
 ## Calendar export — subscribe to Mission from iPhone/Android/Google/Outlook
 
@@ -156,23 +159,35 @@ Also still pending from prior rounds (defer until mobile polish):
   Add a `revertCompletion(instanceId)` server action and make green boxes
   click-to-revert (with `window.confirm("Mark this as not done?")`).
 
-## Grid / Habit-Tracker view (asked for, not started)
+## Architectural: projection-model recurrence (defer until scale demands it)
 
-A separate "GRID" / habit-tracker view on the dashboard:
+Today every occurrence of every recurring activity is *materialized* —
+a real row in `activity_instances`. We picked this because each
+occurrence carries its own state (pending / completed / missed,
+X-of-Y progress, FK joins from `completion_instances`), and simple
+SQL joins beat projecting-at-query-time for the dashboard views.
 
-- Far-left column: every recurring activity (one row per activity).
-- Top row: dates across the chosen date range.
-- Cells: filled or struck if the user completed the activity on that day,
-  empty/red/grey if skipped or missed.
-- Far-right column: success percentage for the row over the range.
-- Range picker: default current week, jump to month / year / arbitrary
-  start-end.
-- Visual progress / accountability at a glance.
+The cost: indefinite rhythms have to be materialized to *some*
+horizon. We currently top up to ~1 year ahead via
+`ensureInstancesBackfilled` so "forever" rhythms feel forever as the
+user navigates. At 10 active daily activities, 1 year = ~3,650 rows
+per user; trivial.
 
-Implementation notes: query completion_instances joined to
-activity_instances + activities for the range, group by activity + date,
-roll up status. Color cells by activity tag (when tag colors exist).
-Probably its own `?view=grid` entry on the home dashboard.
+The "right" answer at larger scale is a **projection model**, the
+same shape iPhone Calendar / Google Calendar use:
+- Store the recurrence RULE only on `activities`.
+- At view time, expand the rule against the visible window and join
+  against a small `instance_overrides` table that only has rows for
+  occurrences whose state diverged from default (completed, missed,
+  user-edited time, etc.).
+- Mutations that touch an occurrence (complete / miss / progress)
+  INSERT into `instance_overrides` lazily.
+
+Tradeoff: query-time projection is more code than a simple `WHERE
+scheduled_for BETWEEN x AND y`. The 1-year materialization gives us
+~95% of the UX win at ~5% of the engineering cost. Revisit when
+either (a) per-user row counts cross a few hundred thousand or (b)
+backfill latency becomes user-visible.
 
 ## Permanent-delete from Archived only
 

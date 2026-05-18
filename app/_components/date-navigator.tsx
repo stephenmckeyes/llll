@@ -12,7 +12,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 type ViewKind = "day" | "week" | "month" | "year";
 
@@ -30,8 +30,16 @@ export function DateNavigator({
   label: string;
 }) {
   const router = useRouter();
+  // Mirror the `currentDate` prop into local state during render rather
+  // than in an effect — React 19 lints `useEffect(() => setX(prop),
+  // [prop])` because it triggers a cascading render. See React's
+  // "you might not need an effect" docs.
   const [val, setVal] = useState(currentDate);
-  useEffect(() => setVal(currentDate), [currentDate]);
+  const [snapshot, setSnapshot] = useState(currentDate);
+  if (snapshot !== currentDate) {
+    setSnapshot(currentDate);
+    setVal(currentDate);
+  }
 
   return (
     <div className="flex flex-col gap-1">

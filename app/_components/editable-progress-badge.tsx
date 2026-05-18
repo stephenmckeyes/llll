@@ -36,11 +36,19 @@ export function EditableProgressBadge({
   const [isPending, startTransition] = useTransition();
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // When `current` changes from above (server revalidates), sync the draft
-  // so the displayed badge follows truth on next render.
-  useEffect(() => {
+  // When `current` changes from above (e.g., server revalidated after a
+  // setInstanceProgress call), sync the displayed draft so the badge
+  // follows the truth on the next render. Done as derived state during
+  // render rather than in an effect — React 19 lints
+  // `useEffect(() => setX(prop), [prop])` because it causes a cascading
+  // render. The `lastSyncedCurrent` snapshot lets us notice the change
+  // exactly once. We skip the resync while the user is mid-edit so we
+  // don't blow away what they typed.
+  const [lastSyncedCurrent, setLastSyncedCurrent] = useState(current);
+  if (current !== lastSyncedCurrent) {
+    setLastSyncedCurrent(current);
     if (!editing) setDraft(String(current));
-  }, [current, editing]);
+  }
 
   // Auto-focus + select when entering edit mode.
   useEffect(() => {

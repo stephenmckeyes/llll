@@ -114,12 +114,17 @@ export function DayList({
   }, [initialDate]);
 
   // Sync the date input with the URL's initial date if it changes
-  // externally (e.g., the user used the View Switcher to navigate
-  // and came back).
-  useEffect(() => {
+  // externally (e.g., the user used the View Switcher to navigate and
+  // came back). Done as derived state during render rather than in an
+  // effect — React 19 lints `useEffect(() => setX(prop), [prop])`
+  // because it triggers a cascading render. The snapshot below lets us
+  // detect the prop change exactly once per change.
+  const [initialDateSnapshot, setInitialDateSnapshot] = useState(initialDate);
+  if (initialDateSnapshot !== initialDate) {
+    setInitialDateSnapshot(initialDate);
     setCurrentDate(initialDate);
     setDateInputValue(initialDate);
-  }, [initialDate]);
+  }
 
   // Track the topmost visible day section while scrolling.
   useEffect(() => {
