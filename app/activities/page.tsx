@@ -1,8 +1,11 @@
 // ---------------------------------------------------------------------------
-// /activities — manage-all page.
+// /activities — Archive page.
 //
-// Lists every activity the user owns, split into Active and Archived. v1
-// supports Archive / Unarchive. Edit lands in a follow-up (BACKLOG).
+// Per spec: shows ONLY archived activities. Active activities are
+// managed inline through the Calendar / Grid views (open the modal,
+// edit / archive / drop straight from there). This page exists to
+// surface archived items so the user can unarchive or permanently
+// delete them — i.e. the Recently-Deleted-style trash bin.
 // ---------------------------------------------------------------------------
 
 import Link from "next/link";
@@ -44,11 +47,10 @@ export default async function ActivitiesPage() {
     .select(
       "id, name, notes, rhythm, start_date, end_date, priority, default_skill_tags, scheduled_times, archived_at, created_at"
     )
-    .order("created_at", { ascending: false });
+    .not("archived_at", "is", null)
+    .order("archived_at", { ascending: false });
 
-  const rows = (data ?? []) as unknown as ActivityRow[];
-  const active = rows.filter((r) => r.archived_at === null);
-  const archived = rows.filter((r) => r.archived_at !== null);
+  const archived = (data ?? []) as unknown as ActivityRow[];
 
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-8 p-6">
@@ -61,27 +63,18 @@ export default async function ActivitiesPage() {
             ← Mission
           </Link>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight">
-            Activities
+            Archive
           </h1>
           <p className="text-sm text-zinc-500">
-            {active.length} active · {archived.length} archived
+            {archived.length} archived activit{archived.length === 1 ? "y" : "ies"}
           </p>
         </div>
-        <Link
-          href="/activities/new"
-          className="shrink-0 rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
-        >
-          + Add Activity
-        </Link>
       </header>
 
-      <Section title="Active" empty="Nothing active yet.">
-        {active.map((a) => (
-          <ActivityCard key={a.id} activity={a} />
-        ))}
-      </Section>
-
-      <Section title="Archived" empty="No archived activities.">
+      <Section
+        title="Archived"
+        empty="Nothing archived. Activities you drop from the Calendar / Grid views land here."
+      >
         {archived.map((a) => (
           <ActivityCard key={a.id} activity={a} archived />
         ))}

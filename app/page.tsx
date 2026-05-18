@@ -13,6 +13,7 @@
 import {
   addDays,
   addMonths,
+  eachDayOfInterval,
   endOfMonth,
   endOfWeek,
   format,
@@ -141,7 +142,7 @@ export default async function HomePage({
               href="/activities"
               className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
             >
-              Manage
+              Archive
             </Link>
             <form action={signOut}>
               <button
@@ -206,43 +207,54 @@ export default async function HomePage({
 async function fetchIncompleteInfo(
   supabase: Awaited<ReturnType<typeof createClient>>
 ): Promise<IncompleteInfo> {
-  // Strictly-past pending instances on still-active activities. We use
-  // strictly less-than today so the chip doesn't pester the user about
-  // things they haven't yet had a chance to finish today.
+  // Strictly-past pending instances on still-active activities. "Strictly
+  // less than today" so the chip doesn't pester the user about things
+  // they still have today to finish.
   //
-  // Two tiny queries: one for the oldest date (ASC limit 1) and one for
-  // the exact count via { count: 'exact', head: true }. PostgREST does
-  // not return count + ordered rows in one trip without fetching the
-  // rows, so this is the cleanest split.
-  const oldestPromise = supabase
-    .from("activity_instances")
-    .select("scheduled_for, activities!inner(archived_at)")
-    .eq("status", "pending")
-    .lt("scheduled_for", TODAY_STR)
-    .is("activities.archived_at", null)
-    .order("scheduled_for", { ascending: true })
-    .limit(1)
-    .maybeSingle();
+  // Two-step pattern (rather than a single nested-FK query):
+  //   1. Fetch active activity IDs.
+  //   2. Count & find oldest pending instance by `activity_id in (...)`.
+  //
+  // Why not a one-trip `activities!inner` + `head: true` + count: "exact"?
+  // PostgREST's count semantics when an inner-join filter is layered on
+  // a head-only query were undercounting in practice (the per-activity
+  // "Unlabeled N" badges in the grid would show a number while the
+  // page-level chip stayed at 0 — visible mismatch the user reported).
+  // Two simple queries cost a tiny extra round-trip but are reliable.
+  const { data: activeIds } = await supabase
+    .from("activities")
+    .select("id")
+    .is("archived_at", null);
 
-  const countPromise = supabase
-    .from("activity_instances")
-    .select("id, activities!inner(archived_at)", {
-      count: "exact",
-      head: true,
-    })
-    .eq("status", "pending")
-    .lt("scheduled_for", TODAY_STR)
-    .is("activities.archived_at", null);
+  const ids = ((activeIds ?? []) as Array<{ id: string }>).map((a) => a.id);
 
-  const [{ data: oldest }, { count }] = await Promise.all([
-    oldestPromise,
-    countPromise,
+  if (ids.length === 0) {
+    return { count: 0, oldestDate: null };
+  }
+
+  const [countResult, oldestResult] = await Promise.all([
+    supabase
+      .from("activity_instances")
+      .select("id", { count: "exact", head: true })
+      .in("activity_id", ids)
+      .eq("status", "pending")
+      .lt("scheduled_for", TODAY_STR),
+    supabase
+      .from("activity_instances")
+      .select("scheduled_for")
+      .in("activity_id", ids)
+      .eq("status", "pending")
+      .lt("scheduled_for", TODAY_STR)
+      .order("scheduled_for", { ascending: true })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
   return {
-    count: count ?? 0,
+    count: countResult.count ?? 0,
     oldestDate:
-      (oldest as { scheduled_for?: string } | null)?.scheduled_for ?? null,
+      (oldestResult.data as { scheduled_for?: string } | null)?.scheduled_for ??
+      null,
   };
 }
 
@@ -1062,14 +1074,14 @@ async function GridView({
   const rangeStartStr = format(rangeStart, "yyyy-MM-dd");
   const rangeEndStr = format(rangeEnd, "yyyy-MM-dd");
 
-  const dayCount =
-    Math.round(
-      (rangeEnd.getTime() - rangeStart.getTime()) / (24 * 60 * 60 * 1000)
-    ) + 1;
-  const dateCols: GridDateCol[] = Array.from({ length: dayCount }, (_, i) => {
-    const d = addDays(rangeStart, i);
-    return { date: d, dateStr: format(d, "yyyy-MM-dd") };
-  });
+  // eachDayOfInterval works in CALENDAR days — immune to the
+  // "endOfWeek returns Sunday 23:59:59.999" off-by-one bug that the
+  // previous millisecond-diff + Math.round was producing (Week was
+  // rendering 8 days; Month silently rendered N+1).
+  const dateCols: GridDateCol[] = eachDayOfInterval({
+    start: rangeStart,
+    end: rangeEnd,
+  }).map((d) => ({ date: d, dateStr: format(d, "yyyy-MM-dd") }));
 
   // ---- 3. Split rhythmic vs single, then hide always-inactive ------------
   // An activity is "always inactive" inside the viewed range when its
@@ -1112,27 +1124,51 @@ async function GridView({
             .lte("scheduled_for", rangeEndStr)
         ).data ?? []) as unknown as InstanceRow[]);
 
+  // For singles we need the full instance + completion-count payload
+  // so the expandable banner can open each into the same ActivityModal
+  // that pending rows open. The fields mirror what InstanceRow shape
+  // expects (DayInstance).
+  type SingleInstanceRow = {
+    id: string;
+    activity_id: string;
+    scheduled_for: string;
+    status: string;
+    completion_instances: Array<{ completion_id: string }> | null;
+  };
   const singlesInstances =
     singleIds.length === 0
       ? []
-      : ((
+      : (((
           await supabase
             .from("activity_instances")
-            .select("activity_id, scheduled_for, status")
+            .select(
+              "id, activity_id, scheduled_for, status, completion_instances ( completion_id )"
+            )
             .in("activity_id", singleIds)
             .gte("scheduled_for", rangeStartStr)
             .lte("scheduled_for", rangeEndStr)
-        ).data ?? []) as Array<{
-          activity_id: string;
-          scheduled_for: string;
-          status: string;
-        }>;
+            .order("scheduled_for", { ascending: true })
+        ).data ?? []) as unknown as SingleInstanceRow[]);
 
   let singlesDone = 0;
   const singlesTotal = singlesInstances.length;
   for (const s of singlesInstances) {
     if (s.status === "completed") singlesDone++;
   }
+
+  // Build the DayInstance list the GridTable's expandable banner will
+  // render. Join each instance back to its parent single-activity (so
+  // the modal opens with the right name / notes / etc.).
+  const singleActivitiesById = new Map(
+    singleActivities.map((a) => [a.id, a])
+  );
+  const singlesForBanner: DayInstance[] = singlesInstances
+    .map((s): DayInstance | null => {
+      const act = singleActivitiesById.get(s.activity_id);
+      if (!act) return null;
+      return toDayInstance(s, act);
+    })
+    .filter((v): v is DayInstance => v !== null);
 
   // ---- 5. Index instances per (activity, date) for fast lookup ----------
   const instancesByActivityDate = new Map<string, Map<string, InstanceRow>>();
@@ -1252,6 +1288,7 @@ async function GridView({
         rangeLabel={bannerRangeLabel}
         singlesDone={singlesDone}
         singlesTotal={singlesTotal}
+        singles={singlesForBanner}
         userId={userId}
       />
     </div>

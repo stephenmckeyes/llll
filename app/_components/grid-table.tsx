@@ -30,6 +30,8 @@
 
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 
+import { summarizeRhythm } from "@/lib/domain/rhythm-summary";
+
 import { ActivityModal } from "./activity-modal";
 import type { DayInstance } from "./day-list";
 
@@ -62,13 +64,15 @@ export type DateCol = { date: Date; dateStr: string };
 
 export type GridMode = "week" | "month" | "total";
 
-// Cell-size caps per mode (pixels). These are the MAX cell width; the
-// actual size is min(cap, container_width / cols), so cells shrink
-// when content would overflow.
-const WEEK_CELL_MAX_PX = 22;
-const MONTH_CELL_MAX_PX = 14;
+// Cell-size caps per mode (pixels). MAX cell width; actual size is
+// min(cap, container_width / cols). Total uses a hard cap so the
+// heatmap scales for long histories (tiny squares for power users,
+// bigger for new users). Week and Month don't cap — they let cells
+// fill the entire available column horizontally via `1fr` columns.
 const TOTAL_CELL_MAX_PX = 12;
-const CELL_GAP_PX = 1;
+const WEEK_CELL_GAP_PX = 4;
+const MONTH_CELL_GAP_PX = 4;
+const TOTAL_CELL_GAP_PX = 1;
 
 // ---------------------------------------------------------------------------
 
@@ -80,6 +84,7 @@ export function GridTable({
   rangeLabel,
   singlesDone,
   singlesTotal,
+  singles,
   userId,
 }: {
   mode: GridMode;
@@ -89,6 +94,8 @@ export function GridTable({
   rangeLabel: string;
   singlesDone: number;
   singlesTotal: number;
+  /** Every one-time activity instance in range, expanded under the banner. */
+  singles: DayInstance[];
   userId: string;
 }) {
   const [openInstance, setOpenInstance] = useState<DayInstance | null>(null);
@@ -134,6 +141,8 @@ export function GridTable({
         done={singlesDone}
         total={singlesTotal}
         rangeLabel={rangeLabel}
+        singles={singles}
+        onOpenInstance={setOpenInstance}
       />
 
       <GridLegend />
@@ -229,7 +238,13 @@ function WeekTable({
   onToggle: (id: string) => void;
   onOpenInstance: (i: DayInstance) => void;
 }) {
-  const stripMaxWidthPx = 7 * WEEK_CELL_MAX_PX + 6 * CELL_GAP_PX;
+  // Cells fill the entire Activity-cells column horizontally via 1fr.
+  // No hard cap — the column's auto width drives cell size. With
+  // aspect-square cells AND name col line-clamp-1, the row stays
+  // roughly one cell tall, regardless of name length.
+  const gridStyle: React.CSSProperties = {
+    gap: `${WEEK_CELL_GAP_PX}px`,
+  };
 
   return (
     <table className="w-full table-fixed border-separate border-spacing-0 text-xs">
@@ -244,14 +259,11 @@ function WeekTable({
           <TH>Activity</TH>
           <TH>Type</TH>
           <TH>
-            <div
-              className="grid grid-cols-7 gap-px"
-              style={{ maxWidth: `${stripMaxWidthPx}px` }}
-            >
+            <div className="grid grid-cols-7" style={gridStyle}>
               {dateCols.map((c) => (
                 <div
                   key={c.dateStr}
-                  className={`text-center text-[9px] leading-tight ${
+                  className={`text-center text-[10px] leading-tight ${
                     c.dateStr === todayStr
                       ? "font-semibold text-zinc-900 dark:text-zinc-50"
                       : "text-zinc-500"
@@ -284,11 +296,8 @@ function WeekTable({
               ) : (
                 <>
                   <TypeCell row={row} />
-                  <td className="border-b border-zinc-100 px-1 py-1 dark:border-zinc-900">
-                    <div
-                      className="grid grid-cols-7 gap-px"
-                      style={{ maxWidth: `${stripMaxWidthPx}px` }}
-                    >
+                  <td className="border-b border-zinc-100 px-1 py-1 align-middle dark:border-zinc-900">
+                    <div className="grid grid-cols-7" style={gridStyle}>
                       {row.cells.map((cell) => (
                         <CellButton
                           key={cell.dateStr}
@@ -334,7 +343,13 @@ function MonthTable({
   onOpenInstance: (i: DayInstance) => void;
 }) {
   const padBefore = dateCols.length > 0 ? mondayPad(dateCols[0].date) : 0;
-  const stripMaxWidthPx = 7 * MONTH_CELL_MAX_PX + 6 * CELL_GAP_PX;
+
+  // Like Week: 1fr cells with aspect-square fill the column horizontally.
+  // For a 5-week month at ~336px col width that's ~44px square cells —
+  // big, distinct, calendar-y.
+  const gridStyle: React.CSSProperties = {
+    gap: `${MONTH_CELL_GAP_PX}px`,
+  };
 
   return (
     <table className="w-full table-fixed border-separate border-spacing-0 text-xs">
@@ -349,14 +364,11 @@ function MonthTable({
           <TH>Activity</TH>
           <TH>Type</TH>
           <TH>
-            <div
-              className="grid grid-cols-7 gap-px"
-              style={{ maxWidth: `${stripMaxWidthPx}px` }}
-            >
+            <div className="grid grid-cols-7" style={gridStyle}>
               {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
                 <div
                   key={i}
-                  className="text-center text-[9px] font-medium text-zinc-400"
+                  className="text-center text-[10px] font-medium text-zinc-400"
                 >
                   {d}
                 </div>
@@ -383,15 +395,9 @@ function MonthTable({
                 <>
                   <TypeCell row={row} />
                   <td className="border-b border-zinc-100 px-1 py-1.5 align-top dark:border-zinc-900">
-                    <div
-                      className="grid grid-cols-7 gap-px"
-                      style={{ maxWidth: `${stripMaxWidthPx}px` }}
-                    >
+                    <div className="grid grid-cols-7" style={gridStyle}>
                       {Array.from({ length: padBefore }, (_, i) => (
-                        <div
-                          key={`pad-${i}`}
-                          className="aspect-square"
-                        />
+                        <div key={`pad-${i}`} className="aspect-square" />
                       ))}
                       {row.cells.map((cell) => (
                         <CellButton
@@ -399,7 +405,7 @@ function MonthTable({
                           cell={cell}
                           todayStr={todayStr}
                           activityName={row.activity.name}
-                          showGlyph={false}
+                          showGlyph={true}
                           hideOutside={false}
                           onOpen={onOpenInstance}
                         />
@@ -450,7 +456,8 @@ function TotalTable({
   const padAfter = (7 - (totalWithStart % 7)) % 7;
   const weekCount = (totalWithStart + padAfter) / 7;
   const stripMaxWidthPx =
-    weekCount * TOTAL_CELL_MAX_PX + Math.max(0, weekCount - 1) * CELL_GAP_PX;
+    weekCount * TOTAL_CELL_MAX_PX +
+    Math.max(0, weekCount - 1) * TOTAL_CELL_GAP_PX;
 
   const headerLabel =
     dateCols.length > 0
@@ -496,7 +503,7 @@ function TotalTable({
                         gridTemplateColumns: `repeat(${weekCount}, minmax(0, 1fr))`,
                         gridTemplateRows: "repeat(7, auto)",
                         gridAutoFlow: "column",
-                        gap: `${CELL_GAP_PX}px`,
+                        gap: `${TOTAL_CELL_GAP_PX}px`,
                         maxWidth: `${stripMaxWidthPx}px`,
                       }}
                     >
@@ -815,11 +822,17 @@ function SinglesBanner({
   done,
   total,
   rangeLabel,
+  singles,
+  onOpenInstance,
 }: {
   done: number;
   total: number;
   rangeLabel: string;
+  singles: DayInstance[];
+  onOpenInstance: (i: DayInstance) => void;
 }) {
+  // Zero singles in the range → static "nothing here" banner, no
+  // expand affordance.
   if (total === 0 && done === 0) {
     return (
       <p className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-center text-xs text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
@@ -827,14 +840,88 @@ function SinglesBanner({
       </p>
     );
   }
+
+  // Expandable via native <details>. The summary keeps the original
+  // "X/Y" sentence; opening it reveals one clickable banner per
+  // single-event instance. Each banner opens the same ActivityModal a
+  // normal Day-view row opens — so the user can mark complete /
+  // missed / edit / add notes / etc. straight from the grid.
   return (
-    <p className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-center text-xs text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
-      You have also completed{" "}
-      <strong className="tabular-nums">
-        {done}/{total}
-      </strong>{" "}
-      one-time events {rangeLabel}.
-    </p>
+    <details className="rounded-md border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900">
+      <summary className="cursor-pointer list-none px-3 py-2 text-center text-xs text-zinc-700 dark:text-zinc-300">
+        You have also completed{" "}
+        <strong className="tabular-nums">
+          {done}/{total}
+        </strong>{" "}
+        one-time events {rangeLabel}.
+        <span className="ml-2 text-[10px] text-zinc-400">
+          (click to expand)
+        </span>
+      </summary>
+      <ul className="flex flex-col gap-1 border-t border-zinc-200 px-2 py-2 dark:border-zinc-800">
+        {singles.map((inst) => (
+          <li key={inst.id}>
+            <SinglesRow inst={inst} onOpen={onOpenInstance} />
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+function SinglesRow({
+  inst,
+  onOpen,
+}: {
+  inst: DayInstance;
+  onOpen: (i: DayInstance) => void;
+}) {
+  // One row per one-time instance. Status dot on the left mirrors the
+  // grid's cell colors so the user can see at a glance which singles
+  // are done / missed / unlabeled / still upcoming.
+  const a = inst.activity;
+  const isCompleted = inst.completionCount > 0;
+
+  let dotCls: string;
+  let label: string;
+  if (isCompleted) {
+    dotCls = "bg-emerald-500";
+    label = "Completed";
+  } else {
+    // Pending. Whether it's "missed/unlabeled/scheduled" depends on
+    // the scheduled date vs today — easier to just say "Pending" here
+    // and let the modal show the full picture.
+    dotCls = "bg-zinc-300 dark:bg-zinc-700";
+    label = "Pending";
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(inst)}
+      title="Click to open — mark complete / missed / edit"
+      className="flex w-full min-w-0 items-start gap-2 rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-left text-xs transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900"
+    >
+      <span
+        aria-hidden
+        title={label}
+        className={`mt-1 inline-block h-2 w-2 shrink-0 rounded-full ${dotCls}`}
+      />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate font-medium text-zinc-800 dark:text-zinc-200">
+          {a.name}
+        </span>
+        <span className="block truncate text-[11px] text-zinc-500">
+          {summarizeRhythm(a.rhythm, a.scheduled_times)} ·{" "}
+          {formatDateDmy(inst.scheduled_for)}
+        </span>
+        {a.notes && (
+          <span className="block truncate text-[11px] text-zinc-500">
+            {a.notes}
+          </span>
+        )}
+      </span>
+    </button>
   );
 }
 
