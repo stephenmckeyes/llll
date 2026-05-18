@@ -1,20 +1,20 @@
 "use client";
 
 // ---------------------------------------------------------------------------
-// GridNavigator — top bar of the Grid view.
+// GridNavigator — date controls for the Grid view.
 //
-// Three rows stacked:
-//   1. Range tabs:        [Week] [Month]
-//   2. Friendly label:     "May 11 – 17, 2026"  (or "May 2026")
-//   3. Controls:           [← date-input → Today]
+// Two rows stacked:
+//   1. Friendly label:     "May 11 – 17, 2026"  (or "May 2026", or "All time")
+//   2. Controls:           [← date-input → Today]  +  Unlabeled badge
 //
 // The date input is FIXED WIDTH and sits between the arrows. Same trick
-// as DateNavigator: changes in label width on row 2 can't shift the
-// arrows on row 3 because they're on a different row, and the input
-// itself doesn't change width when the date string changes.
+// as DateNavigator: changes in label width on row 1 can't shift the
+// arrows on row 2 because they're on a different row.
 //
-// Range tabs preserve the current date; switching from week → month
-// keeps the same day in view, just shows the surrounding month instead.
+// The Week / Month / Total range tabs live in the page-level
+// ViewSwitcher (under the Calendar/Grid section tabs) — they aren't
+// rendered here. In Total mode the date-stepping controls hide
+// entirely; only the Unlabeled chip remains.
 // ---------------------------------------------------------------------------
 
 import Link from "next/link";
@@ -42,10 +42,8 @@ export function GridNavigator({
 }) {
   const router = useRouter();
   // Derived state from `currentDate` (a prop coming from the URL).
-  // React 19 lints `useEffect(() => setX(prop), [prop])` because it
-  // causes a cascading render. The pattern below mirrors the prop into
-  // local state during render itself — recommended in React's
-  // "you might not need an effect" doc.
+  // React 19 lints the equivalent useEffect; the snapshot pattern
+  // mirrors the prop into local state during render itself.
   const [val, setVal] = useState(currentDate);
   const [snapshot, setSnapshot] = useState(currentDate);
   if (snapshot !== currentDate) {
@@ -55,38 +53,11 @@ export function GridNavigator({
 
   // Total mode has no notion of a "current period" or "previous/next"
   // window — it summarizes across all time. Hide the date-stepping
-  // controls in that mode; just show the range tabs + label + the
-  // Today/Incomplete jump buttons.
+  // controls; just show the label + the Unlabeled chip.
   const isTotal = range === "total";
 
   return (
     <div className="flex flex-col gap-2">
-      {/* Range tabs — preserve the in-view date, just change the window
-          width around it. Total summarizes all activity (no per-day cells). */}
-      <nav
-        className="mx-auto flex w-fit gap-1 rounded-md border border-zinc-200 p-1 dark:border-zinc-800"
-        aria-label="Grid range"
-      >
-        {(["week", "month", "total"] as const).map((r) => {
-          const active = r === range;
-          return (
-            <Link
-              key={r}
-              href={hrefFor(r, currentDate)}
-              className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
-                active
-                  ? "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
-                  : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
-              }`}
-            >
-              {r === "week" ? "Week" : r === "month" ? "Month" : "Total"}
-            </Link>
-          );
-        })}
-      </nav>
-
-      {/* Friendly label on its own row so its width can never shift the
-          arrows below. */}
       <p className="text-center text-sm font-medium text-zinc-700 dark:text-zinc-300">
         {label}
       </p>

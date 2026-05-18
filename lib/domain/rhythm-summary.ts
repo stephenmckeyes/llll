@@ -70,6 +70,47 @@ export function summarizeDateRange(
 }
 
 /**
+ * Short categorical label for a rhythm — used in the Grid view's
+ * "Type" column. Buckets:
+ *   - "Multi":        multiple occurrences per day (multi-daily under the
+ *                     hood is `frequency` with perCount=1, perUnit=days,
+ *                     count > 1).
+ *   - "Daily":        once every day (rhythm.type === 'daily', and the
+ *                     1-per-day case of frequency / interval).
+ *   - "Specific":     specific weekdays (rhythm.type === 'weekdays').
+ *   - "N per Period": every-N-days intervals OR N-times-per-period
+ *                     frequency (per user spec, these group together).
+ *   - "Once":         single events. Grid view filters these out today,
+ *                     so this is mostly defensive — surfacing the label
+ *                     elsewhere is harmless.
+ */
+export function rhythmCategoryLabel(rhythm: Rhythm): string {
+  switch (rhythm.type) {
+    case "single":
+      return "Once";
+    case "daily":
+      return "Daily";
+    case "weekdays":
+      return "Specific";
+    case "interval":
+      // 1-day interval == daily; anything else is "N per Period".
+      return rhythm.days === 1 ? "Daily" : "N per Period";
+    case "frequency": {
+      const { perCount, perUnit } = normalizeFrequencyPeriod(rhythm);
+      // Multi-daily: count >= 2 occurrences within a single day.
+      if (perUnit === "days" && perCount === 1 && rhythm.count >= 2) {
+        return "Multi";
+      }
+      // 1× per day is just "Daily".
+      if (perUnit === "days" && perCount === 1 && rhythm.count === 1) {
+        return "Daily";
+      }
+      return "N per Period";
+    }
+  }
+}
+
+/**
  * Format scheduled times for display: "8:00 AM, 12:00 PM, 6:00 PM".
  * Uses browser locale. Returns "" for no times.
  */

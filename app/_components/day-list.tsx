@@ -25,6 +25,7 @@ import {
   useState,
 } from "react";
 
+import { summarizeRhythm } from "@/lib/domain/rhythm-summary";
 import {
   normalizeFrequencyPeriod,
   type Rhythm,
@@ -57,21 +58,25 @@ export type DayInstance = {
   };
 };
 
-export type CompletedItem = {
+// A row in the Completed/Missed dropdown. Holds the full DayInstance so
+// the row click can open the same ActivityModal a pending row would
+// open — no follow-up fetch needed.
+export type DayMarkedItem = {
   id: string;
-  occurredAt: string;
-  activityName: string;
+  instance: DayInstance;
 };
 
 export function DayList({
   initialDate,
   instances,
   completedByDate,
+  missedByDate,
   todayStr,
   incompleteInfo,
 }: {
   initialDate: string;
-  completedByDate: Record<string, CompletedItem[]>;
+  completedByDate: Record<string, DayMarkedItem[]>;
+  missedByDate: Record<string, DayMarkedItem[]>;
   instances: DayInstance[];
   todayStr: string;
   incompleteInfo: IncompleteInfo;
@@ -82,10 +87,38 @@ export function DayList({
   const [dateInputValue, setDateInputValue] = useState(initialDate);
   const [openInstance, setOpenInstance] = useState<DayInstance | null>(null);
 
-  // Group instances by date for fast lookup.
+  // Optimistic "I just clicked complete/missed" set. Drives instant UI
+  // feedback so the user doesn't sit watching the row for ~6 seconds
+  // while the server action + revalidation round-trips. We reset the
+  // set on every fresh `instances` prop change — once the server returns
+  // a list that no longer contains the pending instance, the optimistic
+  // hide is no longer needed (and would be stale if we kept it).
+  const [optimisticIds, setOptimisticIds] = useState<ReadonlySet<string>>(
+    new Set()
+  );
+  const instancesKey = instances.map((i) => `${i.id}:${i.completionCount}`).join(",");
+  const [lastKey, setLastKey] = useState(instancesKey);
+  if (lastKey !== instancesKey) {
+    setLastKey(instancesKey);
+    setOptimisticIds(new Set());
+  }
+
+  const dispatchOptimistic = useCallback((id: string) => {
+    setOptimisticIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  }, []);
+
+  // Group instances by date for fast lookup, filtering archived AND
+  // optimistically-dispatched rows.
   const live = useMemo(
-    () => instances.filter((i) => !i.activity.archived_at),
-    [instances]
+    () =>
+      instances.filter(
+        (i) => !i.activity.archived_at && !optimisticIds.has(i.id)
+      ),
+    [instances, optimisticIds]
   );
 
   // Build the day sections in chronological order.
@@ -255,8 +288,10 @@ export function DayList({
               dateStr={d.dateStr}
               visible={d.visible}
               completed={completedByDate[d.dateStr] ?? []}
+              missed={missedByDate[d.dateStr] ?? []}
               todayStr={todayStr}
               onOpenInstance={setOpenInstance}
+              onDispatchOptimistic={dispatchOptimistic}
             />
           ))}
         </div>
@@ -280,17 +315,22 @@ function DaySection({
   dateStr,
   visible,
   completed,
+  missed,
   todayStr,
   onOpenInstance,
+  onDispatchOptimistic,
 }: {
   date: Date;
   dateStr: string;
   visible: DayInstance[];
-  completed: CompletedItem[];
+  completed: DayMarkedItem[];
+  missed: DayMarkedItem[];
   todayStr: string;
   onOpenInstance: (inst: DayInstance) => void;
+  onDispatchOptimistic: (id: string) => void;
 }) {
   const isToday = dateStr === todayStr;
+  const totalMarked = completed.length + missed.length;
   return (
     <section
       id={`day-${dateStr}`}
@@ -306,32 +346,32 @@ function DaySection({
         )}
       </h2>
 
-      {/* "Completed" banner — renders on EVERY day, even when the count
-          is zero, so the layout stays consistent and the user can scan
-          "what did I get done today" at a glance without hunting. When
-          empty, expanding it just shows "Nothing yet." rather than the
-          list. Uses native <details>/<summary> so we get keyboard +
-          accessibility + collapse state for free, no client React state. */}
-      <details className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 dark:border-emerald-900 dark:bg-emerald-950">
-        <summary className="cursor-pointer text-xs font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-300 marker:text-emerald-500">
-          Completed ({completed.length})
+      {/* "Completed/Missed" dropdown — renders on EVERY day, even when
+          the count is zero, so the layout stays consistent and the user
+          can scan history at a glance. Native <details>/<summary> for
+          accessibility + collapse-state with no client React state.
+          Inside: two sub-tables (Completed, Missed) so the user can see
+          what they did and what they actively gave up on, both bucketed
+          to the day they were scheduled for (NOT to the click date).
+          Each row is a button that opens the same ActivityModal a
+          pending row opens — so you can revert a misclick (e.g. fix
+          "completed" → "missed", add notes, etc.) the same way. */}
+      <details className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900">
+        <summary className="cursor-pointer text-xs font-medium uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
+          Completed/Missed ({totalMarked})
         </summary>
-        {completed.length === 0 ? (
-          <p className="mt-2 text-sm italic text-emerald-700/70 dark:text-emerald-300/70">
-            Nothing yet.
-          </p>
-        ) : (
-          <ul className="mt-2 flex flex-col gap-1 text-sm text-emerald-900 dark:text-emerald-100">
-            {completed.map((c) => (
-              <li key={c.id} className="flex items-baseline gap-2">
-                <span className="flex-1 truncate">{c.activityName}</span>
-                <span className="text-xs text-emerald-700/70 dark:text-emerald-300/70">
-                  {formatTimeOfDay(c.occurredAt)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
+        <div className="mt-2 flex flex-col gap-3">
+          <MarkedTable
+            kind="completed"
+            items={completed}
+            onOpen={onOpenInstance}
+          />
+          <MarkedTable
+            kind="missed"
+            items={missed}
+            onOpen={onOpenInstance}
+          />
+        </div>
       </details>
       {visible.length === 0 ? (
         <p className="rounded-md border border-dashed border-zinc-200 px-3 py-2 text-center text-xs text-zinc-400 dark:border-zinc-800">
@@ -345,11 +385,94 @@ function DaySection({
               instance={inst}
               todayStr={todayStr}
               onOpen={() => onOpenInstance(inst)}
+              onDispatchOptimistic={onDispatchOptimistic}
             />
           ))}
         </div>
       )}
     </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// MarkedTable — one sub-section inside the Completed/Missed dropdown.
+// Each row is a button so a misclick can be reverted via the same modal
+// that pending rows use.
+// ---------------------------------------------------------------------------
+
+function MarkedTable({
+  kind,
+  items,
+  onOpen,
+}: {
+  kind: "completed" | "missed";
+  items: DayMarkedItem[];
+  onOpen: (inst: DayInstance) => void;
+}) {
+  const title = kind === "completed" ? "Completed" : "Missed";
+  const headerCls =
+    kind === "completed"
+      ? "text-emerald-700 dark:text-emerald-300"
+      : "text-red-700 dark:text-red-300";
+  const swatch =
+    kind === "completed"
+      ? "bg-emerald-500"
+      : "bg-red-500";
+
+  if (items.length === 0) {
+    return (
+      <div>
+        <p
+          className={`text-[10px] font-medium uppercase tracking-wide ${headerCls}`}
+        >
+          {title} (0)
+        </p>
+        <p className="mt-1 text-xs italic text-zinc-500">None.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <p
+        className={`text-[10px] font-medium uppercase tracking-wide ${headerCls}`}
+      >
+        {title} ({items.length})
+      </p>
+      <ul className="mt-1 flex flex-col gap-1">
+        {items.map((it) => (
+          <li key={it.id}>
+            <button
+              type="button"
+              onClick={() => onOpen(it.instance)}
+              title="Click to open — you can revert or edit"
+              className="flex w-full min-w-0 items-start gap-2 rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-left text-xs transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900"
+            >
+              <span
+                aria-hidden
+                className={`mt-1 inline-block h-2 w-2 shrink-0 rounded-full ${swatch}`}
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-medium text-zinc-800 dark:text-zinc-200">
+                  {it.instance.activity.name}
+                </span>
+                <span className="block truncate text-[11px] text-zinc-500">
+                  {summarizeRhythm(
+                    it.instance.activity.rhythm,
+                    it.instance.activity.scheduled_times
+                  )}
+                </span>
+                {it.instance.activity.notes && (
+                  <span className="block truncate text-[11px] text-zinc-500">
+                    {it.instance.activity.notes}
+                  </span>
+                )}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -388,15 +511,6 @@ function scrollContainerTo(
 function cssEscape(s: string): string {
   if (typeof CSS !== "undefined" && CSS.escape) return CSS.escape(s);
   return s.replace(/[^a-zA-Z0-9_-]/g, "\\$&");
-}
-
-function formatTimeOfDay(isoTimestamp: string): string {
-  const d = new Date(isoTimestamp);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  });
 }
 
 function parseLocalDate(yyyyMmDd: string): Date {

@@ -39,10 +39,22 @@ export function InstanceRow({
   instance,
   todayStr,
   onOpen,
+  onDispatchOptimistic,
 }: {
   instance: DayInstance;
   todayStr: string;
   onOpen: () => void;
+  /**
+   * Optimistic-hide callback — fires BEFORE the server action so the
+   * row disappears from the list instantly. The parent DayList tracks
+   * the set of optimistic IDs and clears them whenever a fresh
+   * `instances` prop arrives (server-revalidated truth).
+   *
+   * Frequency rhythms don't optimistic-hide on a single +1 because the
+   * row needs to stay visible until X reaches the target — see
+   * handleComplete below.
+   */
+  onDispatchOptimistic: (id: string) => void;
 }) {
   const [isPending, startTransition] = useTransition();
   const activity = instance.activity;
@@ -73,6 +85,12 @@ export function InstanceRow({
       );
       if (!ok) return;
     }
+    // Optimistic hide for non-frequency rhythms (one click = done).
+    // Frequency rhythms stay visible until the X/Y counter reaches the
+    // target — hiding them on every +1 would be confusing.
+    if (!isFrequency || frequencyProgress + 1 >= frequencyTarget) {
+      onDispatchOptimistic(instance.id);
+    }
     startTransition(async () => {
       await completeInstance(instance.id);
     });
@@ -85,6 +103,7 @@ export function InstanceRow({
       );
       if (!ok) return;
     }
+    onDispatchOptimistic(instance.id);
     startTransition(async () => {
       await missInstance(instance.id);
     });
