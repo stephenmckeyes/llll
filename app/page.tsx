@@ -972,36 +972,9 @@ async function GridView({
   const supabase = await createClient();
   const refDate = parseDate(gridDate);
 
-  // ---- 1. Range bounds ---------------------------------------------------
-  // ALL modes produce a date range now (Total = last 365 days). Total
-  // gets a heatmap of cells; Week/Month get the classic calendar grid.
-  // This keeps the data path uniform and lets the cell-click hierarchy
-  // (Total → Month → Week → modal) reuse the same cell payload.
-  const rangeStart: Date =
-    range === "week"
-      ? startOfWeek(refDate, { weekStartsOn: 1 })
-      : range === "month"
-        ? startOfMonth(refDate)
-        : addDays(parseDate(TODAY_STR), -364);
-  const rangeEnd: Date =
-    range === "week"
-      ? endOfWeek(refDate, { weekStartsOn: 1 })
-      : range === "month"
-        ? endOfMonth(refDate)
-        : parseDate(TODAY_STR);
-  const rangeStartStr = format(rangeStart, "yyyy-MM-dd");
-  const rangeEndStr = format(rangeEnd, "yyyy-MM-dd");
-
-  const dayCount =
-    Math.round(
-      (rangeEnd.getTime() - rangeStart.getTime()) / (24 * 60 * 60 * 1000)
-    ) + 1;
-  const dateCols: GridDateCol[] = Array.from({ length: dayCount }, (_, i) => {
-    const d = addDays(rangeStart, i);
-    return { date: d, dateStr: format(d, "yyyy-MM-dd") };
-  });
-
-  // ---- 2. Fetch ALL non-archived activities ------------------------------
+  // ---- 1. Fetch ALL non-archived activities (need start_date BEFORE we
+  // compute Total's range, since Total spans from the earliest activity
+  // start to today) -------------------------------------------------------
   const { data: activitiesRaw } = await supabase
     .from("activities")
     .select(
@@ -1025,6 +998,45 @@ async function GridView({
     reminders: Array<{ amount: number; unit: string }>;
   };
   const activities = (activitiesRaw ?? []) as ActivityRow[];
+
+  // ---- 2. Range bounds ---------------------------------------------------
+  // Total = first rhythmic activity's start_date → today. NOT a fixed
+  // 365-day window — if the user has only been at this for two weeks,
+  // Total shows two weeks. If they've been at it for years, Total
+  // shows years. The heatmap layout (7-row, week-aligned, column-
+  // major flow) keeps the rendered width bounded regardless.
+  const rhythmicForRange = activities.filter((a) => a.rhythm.type !== "single");
+  const earliestStartStr =
+    rhythmicForRange.length === 0
+      ? TODAY_STR
+      : rhythmicForRange.reduce(
+          (min, a) => (a.start_date < min ? a.start_date : min),
+          "9999-12-31"
+        );
+
+  const rangeStart: Date =
+    range === "week"
+      ? startOfWeek(refDate, { weekStartsOn: 1 })
+      : range === "month"
+        ? startOfMonth(refDate)
+        : parseDate(earliestStartStr);
+  const rangeEnd: Date =
+    range === "week"
+      ? endOfWeek(refDate, { weekStartsOn: 1 })
+      : range === "month"
+        ? endOfMonth(refDate)
+        : parseDate(TODAY_STR);
+  const rangeStartStr = format(rangeStart, "yyyy-MM-dd");
+  const rangeEndStr = format(rangeEnd, "yyyy-MM-dd");
+
+  const dayCount =
+    Math.round(
+      (rangeEnd.getTime() - rangeStart.getTime()) / (24 * 60 * 60 * 1000)
+    ) + 1;
+  const dateCols: GridDateCol[] = Array.from({ length: dayCount }, (_, i) => {
+    const d = addDays(rangeStart, i);
+    return { date: d, dateStr: format(d, "yyyy-MM-dd") };
+  });
 
   // ---- 3. Split rhythmic vs single, then hide always-inactive ------------
   // An activity is "always inactive" inside the viewed range when its
@@ -1152,6 +1164,7 @@ async function GridView({
       done,
       missed,
       unlabeled,
+      onTheHook,
     };
   });
 
@@ -1174,14 +1187,16 @@ async function GridView({
       ? `${format(rangeStart, "MMM d")} – ${format(rangeEnd, "MMM d, yyyy")}`
       : range === "month"
         ? format(refDate, "MMMM yyyy")
-        : `Past year (${format(rangeStart, "MMM d, yyyy")} – ${format(rangeEnd, "MMM d, yyyy")})`;
+        : rhythmicForRange.length === 0
+          ? "All time (no activities yet)"
+          : `Since ${format(rangeStart, "MMM d, yyyy")}`;
 
   const bannerRangeLabel =
     range === "week"
       ? "this week"
       : range === "month"
         ? "this month"
-        : "in the past year";
+        : "in the visible range";
 
   return (
     <div className="flex flex-col gap-4">
@@ -1202,6 +1217,7 @@ async function GridView({
         rangeLabel={bannerRangeLabel}
         singlesDone={singlesDone}
         singlesTotal={singlesTotal}
+        userId={userId}
       />
     </div>
   );
@@ -1235,6 +1251,7 @@ type GridTableRow = {
   done: number;
   missed: number;
   unlabeled: number;
+  onTheHook: number;
 };
 
 function makeNonInstanceCell(

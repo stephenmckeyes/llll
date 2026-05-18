@@ -3,29 +3,36 @@
 // ---------------------------------------------------------------------------
 // GridTable — the actual table rendered by the Grid (habit-tracker) view.
 //
-// Mode-aware cell behavior:
-//   - Week mode:  cells are normal size, click opens the ActivityModal
-//                 (the same one the Day view uses) — most precise control.
-//   - Month mode: cells are smaller so a full month fits without
-//                 horizontal scrolling. Click drills DOWN to that day's
-//                 Week view in the grid (so you can find the cell at
-//                 larger size and then act on it).
-//   - Total mode: cells are tiny (heatmap-style), one per day across
-//                 the last year. Click drills DOWN to that day's Month
-//                 view. No Done/Missed numeric columns — the heatmap
-//                 IS the visualization.
+// Layout strategy (per-mode):
+//   - Week:  one big horizontal row of 7 cells per activity. Plenty of
+//            room to make each cell large enough to comfortably hover.
+//   - Month: a 7-column mini-month per activity (5–6 rows tall). Same
+//            calendar-grid shape the home Month view uses, just
+//            per-activity. Cells stay tappable without horizontal
+//            scroll.
+//   - Total: a 7-ROW heatmap per activity (week-aligned). Each column
+//            is a week, so a year's worth of data fits in ~52 columns.
+//            For longer histories the columns shrink with the
+//            container — at no point do we introduce horizontal scroll.
 //
-// The Year → Month → Week → Day drill-down hierarchy mirrors how the
-// iPhone Calendar app behaves. Clicking a coloured patch always takes
-// you "one level closer" to the actual day, where the modal lives.
+// Cell click — same in every mode:
+//   - Opens the same ActivityModal the Day view uses (complete, mark
+//     missed, edit, etc.). Per spec, we no longer drill Total→Month
+//     →Week — direct access from any heatmap cell is faster.
 //
-// Modal state lives here (not GridView) because GridView is a server
-// component. The server pre-builds every clickable cell's full
-// DayInstance payload up front so no follow-up fetch on click.
+// Hover tooltip:
+//   - Custom 3-line tooltip ("status / name / on DD/MM/YYYY"), shown
+//     on group-hover. Native title attr can't render multi-line
+//     reliably across browsers.
+//
+// Per-activity hide toggle:
+//   - Each row has a small "✕" button hiding that row. Hidden IDs
+//     persist in localStorage (`mission-grid-hidden-{userId}`), so
+//     the choice survives navigation. A footer chip strip lists the
+//     hidden activities for one-click un-hide.
 // ---------------------------------------------------------------------------
 
-import Link from "next/link";
-import { useState } from "react";
+import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 
 import { ActivityModal } from "./activity-modal";
 import type { DayInstance } from "./day-list";
@@ -33,7 +40,7 @@ import type { DayInstance } from "./day-list";
 export type GridCellState =
   | "completed"
   | "missed"
-  | "overdue"  // internal name; user-facing wording is "Unlabeled"
+  | "overdue" // internal name; user-facing wording is "Unlabeled"
   | "scheduled"
   | "not-scheduled"
   | "outside";
@@ -41,8 +48,8 @@ export type GridCellState =
 export type GridCell = {
   state: GridCellState;
   dateStr: string;
-  // null when the cell isn't tied to a real instance row (not-scheduled
-  // or outside-active). Clicking does nothing in that case.
+  // null when the cell isn't tied to a real instance row. Clicking
+  // does nothing in that case.
   instance: DayInstance | null;
 };
 
@@ -59,6 +66,8 @@ export type GridRow = {
   missed: number;
   /** Past-pending instances ("Unlabeled" in UI). */
   unlabeled: number;
+  /** On-the-hook count = done + missed + unlabeled. */
+  onTheHook: number;
 };
 
 export type DateCol = {
@@ -76,6 +85,7 @@ export function GridTable({
   rangeLabel,
   singlesDone,
   singlesTotal,
+  userId,
 }: {
   mode: GridMode;
   rows: GridRow[];
@@ -84,26 +94,51 @@ export function GridTable({
   rangeLabel: string;
   singlesDone: number;
   singlesTotal: number;
+  /** Used to namespace localStorage keys per user. */
+  userId: string;
 }) {
   const [openInstance, setOpenInstance] = useState<DayInstance | null>(null);
+  const { hidden, hide, show } = useHiddenActivities(userId);
+
+  const visibleRows = rows.filter((r) => !hidden.has(r.activity.id));
+  const hiddenRows = rows.filter((r) => hidden.has(r.activity.id));
 
   return (
     <>
-      {rows.length === 0 ? (
+      {visibleRows.length === 0 ? (
         <p className="rounded-md border border-dashed border-zinc-200 p-6 text-center text-sm text-zinc-500 dark:border-zinc-800">
-          No rhythmic activities active in this period. Add one (anything
-          except a one-time event), or pick a different time window.
+          {rows.length === 0
+            ? "No rhythmic activities active in this period. Add one, or pick a different time window."
+            : "Every activity is hidden — restore one from the strip below to see it."}
         </p>
       ) : mode === "total" ? (
-        <TotalHeatmap rows={rows} todayStr={todayStr} />
-      ) : (
-        <CalendarTable
-          mode={mode}
-          rows={rows}
+        <TotalTable
+          rows={visibleRows}
           dateCols={dateCols}
           todayStr={todayStr}
           onOpenInstance={setOpenInstance}
+          onHide={hide}
         />
+      ) : mode === "month" ? (
+        <MonthTable
+          rows={visibleRows}
+          dateCols={dateCols}
+          todayStr={todayStr}
+          onOpenInstance={setOpenInstance}
+          onHide={hide}
+        />
+      ) : (
+        <WeekTable
+          rows={visibleRows}
+          dateCols={dateCols}
+          todayStr={todayStr}
+          onOpenInstance={setOpenInstance}
+          onHide={hide}
+        />
+      )}
+
+      {hiddenRows.length > 0 && (
+        <HiddenStrip rows={hiddenRows} onShow={show} />
       )}
 
       <SinglesBanner
@@ -112,7 +147,7 @@ export function GridTable({
         rangeLabel={rangeLabel}
       />
 
-      <GridLegend mode={mode} />
+      <GridLegend />
 
       {openInstance && (
         <ActivityModal
@@ -126,291 +161,396 @@ export function GridTable({
 }
 
 // ---------------------------------------------------------------------------
-// CalendarTable — Week + Month layouts.
+// Per-user localStorage-backed hide set.
 //
-// Cell size scales by mode (Month cells are smaller so 28-31 days fit).
-// Cell click behavior:
-//   - week  → open modal (act on the instance)
-//   - month → drill to that day's week in the grid
+// Implemented via useSyncExternalStore (the React 19 idiomatic way to
+// subscribe to an external data source like localStorage). Server
+// snapshot is always empty so SSR renders nothing as hidden; the
+// hydrated client picks up the real set after mount. Writes dispatch
+// a custom event so same-window subscribers re-snapshot — the native
+// `storage` event only fires in OTHER tabs.
 // ---------------------------------------------------------------------------
 
-function CalendarTable({
-  mode,
+const HIDDEN_CHANGE_EVENT = "mission-grid-hidden-changed";
+const EMPTY_HIDDEN: ReadonlySet<string> = new Set();
+
+function useHiddenActivities(userId: string) {
+  const key = `mission-grid-hidden:${userId}`;
+
+  // Cache: useSyncExternalStore requires getSnapshot to return a stable
+  // reference when the underlying data hasn't changed. We key the cache
+  // on the raw JSON string so we only build a new Set when the string
+  // actually differs.
+  const cacheRef = useRef<{ raw: string | null; set: ReadonlySet<string> }>({
+    raw: null,
+    set: EMPTY_HIDDEN,
+  });
+
+  const subscribe = useCallback((cb: () => void) => {
+    if (typeof window === "undefined") return () => {};
+    window.addEventListener(HIDDEN_CHANGE_EVENT, cb);
+    window.addEventListener("storage", cb);
+    return () => {
+      window.removeEventListener(HIDDEN_CHANGE_EVENT, cb);
+      window.removeEventListener("storage", cb);
+    };
+  }, []);
+
+  const getSnapshot = useCallback((): ReadonlySet<string> => {
+    if (typeof window === "undefined") return EMPTY_HIDDEN;
+    const raw = window.localStorage.getItem(key);
+    if (raw === cacheRef.current.raw) return cacheRef.current.set;
+    let set: ReadonlySet<string> = EMPTY_HIDDEN;
+    if (raw) {
+      try {
+        const arr = JSON.parse(raw) as unknown;
+        if (Array.isArray(arr)) {
+          set = new Set(arr.filter((v): v is string => typeof v === "string"));
+        }
+      } catch {
+        // Corrupt JSON — pretend it's empty.
+      }
+    }
+    cacheRef.current = { raw, set };
+    return set;
+  }, [key]);
+
+  const hidden = useSyncExternalStore(
+    subscribe,
+    getSnapshot,
+    () => EMPTY_HIDDEN
+  );
+
+  function commit(next: Set<string>) {
+    try {
+      window.localStorage.setItem(key, JSON.stringify(Array.from(next)));
+      // Notify same-window subscribers — `storage` only fires for
+      // OTHER windows, so this component would miss its own writes
+      // without an explicit nudge.
+      window.dispatchEvent(new Event(HIDDEN_CHANGE_EVENT));
+    } catch {
+      // Quota / privacy mode — best-effort.
+    }
+  }
+
+  function hide(id: string) {
+    const next = new Set(hidden);
+    next.add(id);
+    commit(next);
+  }
+
+  function show(id: string) {
+    const next = new Set(hidden);
+    next.delete(id);
+    commit(next);
+  }
+
+  return { hidden, hide, show };
+}
+
+// ---------------------------------------------------------------------------
+// WeekTable — 7 cells per activity, plenty of room per cell.
+// ---------------------------------------------------------------------------
+
+function WeekTable({
   rows,
   dateCols,
   todayStr,
   onOpenInstance,
+  onHide,
 }: {
-  mode: "week" | "month";
   rows: GridRow[];
   dateCols: DateCol[];
   todayStr: string;
   onOpenInstance: (i: DayInstance) => void;
+  onHide: (id: string) => void;
 }) {
-  const cellSize = mode === "week" ? "w-7" : "w-5";
-  const cellText = mode === "week" ? "text-[10px]" : "text-[8px]";
-  const dayHeaderText = mode === "week" ? "text-sm" : "text-[10px]";
-
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-max border-separate border-spacing-0 text-xs">
-        <thead>
-          <tr>
-            <th
-              scope="col"
-              className="sticky left-0 z-20 border-b border-zinc-200 bg-white px-2 py-2 text-left text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950"
-            >
-              Activity
-            </th>
-            <th
-              scope="col"
-              className="border-b border-zinc-200 px-1 py-2 text-left text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:border-zinc-800"
-            >
-              Type
-            </th>
-            {dateCols.map((c) => (
-              <th
-                key={c.dateStr}
-                scope="col"
-                className={`border-b border-zinc-200 px-0.5 py-2 text-center text-[10px] font-medium dark:border-zinc-800 ${
-                  c.dateStr === todayStr
-                    ? "text-zinc-900 dark:text-zinc-50"
-                    : "text-zinc-500"
-                }`}
-              >
-                <div className="uppercase tracking-wide">
-                  {formatWeekday(c.date, mode)}
-                </div>
+    <table className="w-full table-fixed border-separate border-spacing-0 text-xs">
+      <colgroup>
+        <col className="w-[6.5rem]" />
+        <col className="w-[4.5rem]" />
+        <col />
+        <col className="w-[5.5rem]" />
+      </colgroup>
+      <thead>
+        <tr>
+          <TH>Activity</TH>
+          <TH>Type</TH>
+          <TH>
+            <div className="grid grid-cols-7 gap-px">
+              {dateCols.map((c) => (
                 <div
-                  className={`${dayHeaderText} ${
-                    c.dateStr === todayStr ? "font-semibold" : "font-normal"
+                  key={c.dateStr}
+                  className={`text-center text-[10px] ${
+                    c.dateStr === todayStr
+                      ? "font-semibold text-zinc-900 dark:text-zinc-50"
+                      : "text-zinc-500"
                   }`}
                 >
-                  {c.date.getDate()}
+                  <div className="uppercase tracking-wide">
+                    {c.date.toLocaleDateString(undefined, { weekday: "short" })}
+                  </div>
+                  <div className="text-sm">{c.date.getDate()}</div>
                 </div>
-              </th>
-            ))}
-            <th
-              scope="col"
-              className="sticky right-0 z-20 border-b border-l border-zinc-200 bg-white px-2 py-2 text-center text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950"
-            >
-              Success
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.activity.id}>
-              <th
-                scope="row"
-                className="sticky left-0 z-10 border-b border-zinc-100 bg-white px-2 py-1.5 text-left text-xs font-medium text-zinc-800 dark:border-zinc-900 dark:bg-zinc-950 dark:text-zinc-200"
-              >
-                <span
-                  className="block max-w-[6rem] truncate"
-                  title={row.activity.name}
-                >
-                  {row.activity.name}
-                </span>
-              </th>
-              <td className="border-b border-zinc-100 px-2 py-1.5 text-left text-[11px] text-zinc-500 dark:border-zinc-900">
-                {row.rhythmCategory}
-              </td>
-              {row.cells.map((cell) => (
-                <td
-                  key={cell.dateStr}
-                  className="border-b border-zinc-100 p-0.5 dark:border-zinc-900"
-                >
+              ))}
+            </div>
+          </TH>
+          <TH className="text-center">Success</TH>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr key={row.activity.id}>
+            <NameCell row={row} onHide={onHide} />
+            <TypeCell row={row} />
+            <td className="border-b border-zinc-100 px-1 py-1.5 dark:border-zinc-900">
+              <div className="grid grid-cols-7 gap-px">
+                {row.cells.map((cell) => (
                   <CellButton
+                    key={cell.dateStr}
                     cell={cell}
                     todayStr={todayStr}
                     activityName={row.activity.name}
-                    sizeClass={cellSize}
-                    textClass={cellText}
-                    clickMode={mode === "week" ? "modal" : "drill-week"}
                     onOpen={onOpenInstance}
                   />
-                </td>
-              ))}
-              <td
-                className={`sticky right-0 z-10 border-b border-l border-zinc-100 bg-white px-2 py-1.5 text-center text-xs dark:border-zinc-900 dark:bg-zinc-950 ${pctClass(
-                  row.pct
-                )}`}
-              >
-                {row.pct === null ? "—" : `${row.pct}%`}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+                ))}
+              </div>
+            </td>
+            <SuccessCell row={row} />
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
 // ---------------------------------------------------------------------------
-// TotalHeatmap — Total view. Tiny cells, no glyphs, no Done/Missed
-// numeric columns. Each row is a year of activity at a glance.
+// MonthTable — 7-column mini-month per activity.
 //
-// Per user spec:
-//   - No row-click. Only individual cells are clickable.
-//   - No Overdue column. The unlabeled count appears as a small inline
-//     badge next to the activity name when > 0.
-//   - Cell click drills down to the Month view for that day.
+// We pad before the first date and after the last to align with
+// Mon..Sun columns, so each row inside the grid is a real calendar
+// week. Padding cells are blank.
 // ---------------------------------------------------------------------------
 
-function TotalHeatmap({
+function MonthTable({
   rows,
+  dateCols,
   todayStr,
+  onOpenInstance,
+  onHide,
 }: {
   rows: GridRow[];
+  dateCols: DateCol[];
   todayStr: string;
+  onOpenInstance: (i: DayInstance) => void;
+  onHide: (id: string) => void;
 }) {
+  const padBefore = dateCols.length > 0 ? mondayPad(dateCols[0].date) : 0;
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-max border-separate border-spacing-0 text-xs">
-        <thead>
-          <tr>
-            <th
-              scope="col"
-              className="sticky left-0 z-20 border-b border-zinc-200 bg-white px-2 py-2 text-left text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950"
-            >
-              Activity
-            </th>
-            <th
-              scope="col"
-              className="border-b border-zinc-200 px-2 py-2 text-left text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:border-zinc-800"
-            >
-              Type
-            </th>
-            <th
-              scope="col"
-              className="border-b border-zinc-200 px-2 py-2 text-left text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:border-zinc-800"
-            >
-              Past year
-            </th>
-            <th
-              scope="col"
-              className="sticky right-0 z-20 border-b border-l border-zinc-200 bg-white px-2 py-2 text-center text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950"
-            >
-              Success
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.activity.id}>
-              {/* Activity name + inline "X unlabeled" warning badge (no
-                  longer its own column). The row itself is NOT clickable
-                  in Total — per spec, drilling only happens on individual
-                  cells. */}
-              <th
-                scope="row"
-                className="sticky left-0 z-10 border-b border-zinc-100 bg-white px-2 py-1.5 text-left text-xs font-medium text-zinc-800 dark:border-zinc-900 dark:bg-zinc-950 dark:text-zinc-200"
-              >
-                <span className="flex min-w-0 items-center gap-1.5">
-                  <span
-                    className="block max-w-[6rem] truncate"
-                    title={row.activity.name}
-                  >
-                    {row.activity.name}
-                  </span>
-                  {row.unlabeled > 0 && (
-                    <span
-                      title={`${row.unlabeled} past-due occurrences still need a verdict (mark complete or missed)`}
-                      className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-800 dark:bg-amber-950 dark:text-amber-200"
-                    >
-                      ⚠ {row.unlabeled} unlabeled
-                    </span>
-                  )}
-                </span>
-              </th>
-              <td className="border-b border-zinc-100 px-2 py-1.5 text-left text-[11px] text-zinc-500 dark:border-zinc-900">
-                {row.rhythmCategory}
-              </td>
-              <td className="border-b border-zinc-100 px-2 py-1.5 dark:border-zinc-900">
-                <div className="flex items-center gap-px">
-                  {row.cells.map((cell) => (
-                    <HeatmapCell
-                      key={cell.dateStr}
-                      cell={cell}
-                      todayStr={todayStr}
-                      activityName={row.activity.name}
-                    />
-                  ))}
+    <table className="w-full table-fixed border-separate border-spacing-0 text-xs">
+      <colgroup>
+        <col className="w-[6.5rem]" />
+        <col className="w-[4.5rem]" />
+        <col />
+        <col className="w-[5.5rem]" />
+      </colgroup>
+      <thead>
+        <tr>
+          <TH>Activity</TH>
+          <TH>Type</TH>
+          <TH>
+            <div className="grid grid-cols-7 gap-px">
+              {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
+                <div
+                  key={i}
+                  className="text-center text-[10px] font-medium text-zinc-400"
+                >
+                  {d}
                 </div>
-              </td>
-              <td
-                className={`sticky right-0 z-10 border-b border-l border-zinc-100 bg-white px-2 py-1.5 text-center text-xs dark:border-zinc-900 dark:bg-zinc-950 ${pctClass(
-                  row.pct
-                )}`}
-              >
-                {row.pct === null ? "—" : `${row.pct}%`}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+              ))}
+            </div>
+          </TH>
+          <TH className="text-center">Success</TH>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr key={row.activity.id}>
+            <NameCell row={row} onHide={onHide} />
+            <TypeCell row={row} />
+            <td className="border-b border-zinc-100 px-1 py-1.5 dark:border-zinc-900">
+              <div className="grid grid-cols-7 gap-px">
+                {Array.from({ length: padBefore }, (_, i) => (
+                  <div key={`pad-${i}`} className="aspect-square" />
+                ))}
+                {row.cells.map((cell) => (
+                  <CellButton
+                    key={cell.dateStr}
+                    cell={cell}
+                    todayStr={todayStr}
+                    activityName={row.activity.name}
+                    onOpen={onOpenInstance}
+                  />
+                ))}
+              </div>
+            </td>
+            <SuccessCell row={row} />
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
 // ---------------------------------------------------------------------------
+// TotalTable — 7-row heatmap (column-major), one column per calendar
+// week. Cells flow top-to-bottom (Mon..Sun), then left-to-right
+// week-by-week. Width shrinks via 1fr columns — no horizontal scroll.
+// ---------------------------------------------------------------------------
 
-type ClickMode = "modal" | "drill-week" | "drill-month";
+function TotalTable({
+  rows,
+  dateCols,
+  todayStr,
+  onOpenInstance,
+  onHide,
+}: {
+  rows: GridRow[];
+  dateCols: DateCol[];
+  todayStr: string;
+  onOpenInstance: (i: DayInstance) => void;
+  onHide: (id: string) => void;
+}) {
+  // Pad the start of the first week (Mon..) and the end of the last
+  // week so the column-major grid stays neatly week-aligned.
+  const padBefore = dateCols.length > 0 ? mondayPad(dateCols[0].date) : 0;
+  const totalSoFar = padBefore + dateCols.length;
+  const padAfter = (7 - (totalSoFar % 7)) % 7;
+  const weekCount = (totalSoFar + padAfter) / 7;
+
+  return (
+    <table className="w-full table-fixed border-separate border-spacing-0 text-xs">
+      <colgroup>
+        <col className="w-[6.5rem]" />
+        <col className="w-[4.5rem]" />
+        <col />
+        <col className="w-[5.5rem]" />
+      </colgroup>
+      <thead>
+        <tr>
+          <TH>Activity</TH>
+          <TH>Type</TH>
+          <TH className="text-left text-[10px] text-zinc-400">
+            {dateCols.length > 0 ? (
+              <span>
+                {dateCols[0].date.toLocaleDateString(undefined, {
+                  month: "short",
+                  year: "numeric",
+                })}
+                {" → today"}
+              </span>
+            ) : (
+              ""
+            )}
+          </TH>
+          <TH className="text-center">Success</TH>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr key={row.activity.id}>
+            <NameCell row={row} onHide={onHide} />
+            <TypeCell row={row} />
+            <td className="border-b border-zinc-100 px-1 py-1.5 dark:border-zinc-900">
+              <div
+                className="grid gap-px"
+                style={{
+                  gridTemplateRows: "repeat(7, minmax(0, 1fr))",
+                  gridTemplateColumns: `repeat(${weekCount}, minmax(0, 1fr))`,
+                  gridAutoFlow: "column",
+                }}
+              >
+                {Array.from({ length: padBefore }, (_, i) => (
+                  <div key={`pad-b-${i}`} />
+                ))}
+                {row.cells.map((cell) => (
+                  <CellButton
+                    key={cell.dateStr}
+                    cell={cell}
+                    todayStr={todayStr}
+                    activityName={row.activity.name}
+                    onOpen={onOpenInstance}
+                  />
+                ))}
+                {Array.from({ length: padAfter }, (_, i) => (
+                  <div key={`pad-a-${i}`} />
+                ))}
+              </div>
+            </td>
+            <SuccessCell row={row} />
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// CellButton — the actual clickable square that opens the modal.
+//
+// Always renders as a button (or a plain span if there's no instance
+// behind it). Three-line custom tooltip on hover, since native title
+// attr can't render multi-line text reliably.
+// ---------------------------------------------------------------------------
 
 function CellButton({
   cell,
   todayStr,
   activityName,
-  sizeClass,
-  textClass,
-  clickMode,
   onOpen,
 }: {
   cell: GridCell;
   todayStr: string;
   activityName: string;
-  sizeClass: string;
-  textClass: string;
-  clickMode: ClickMode;
   onOpen: (i: DayInstance) => void;
 }) {
   const isToday = cell.dateStr === todayStr;
-  const base = `flex aspect-square ${sizeClass} items-center justify-center rounded ${textClass} font-medium transition-colors`;
-  let cls = base;
-  let label: string;
-  let inner: React.ReactNode = "";
+  let bg = "";
+  let glyph: React.ReactNode = "";
+  let statusLine: string;
   let style: React.CSSProperties | undefined;
 
   switch (cell.state) {
     case "completed":
-      cls += " bg-emerald-500 text-white hover:bg-emerald-600";
-      inner = "✓";
-      label = `Completed — ${activityName} on ${cell.dateStr}`;
+      bg = "bg-emerald-500 text-white hover:bg-emerald-600";
+      glyph = "✓";
+      statusLine = "Completed";
       break;
     case "missed":
-      cls += " bg-red-500 text-white hover:bg-red-600";
-      inner = "✗";
-      label = `Missed — ${activityName} on ${cell.dateStr}`;
+      bg = "bg-red-500 text-white hover:bg-red-600";
+      glyph = "✗";
+      statusLine = "Missed";
       break;
     case "overdue":
-      cls +=
-        " bg-amber-300 text-amber-900 hover:bg-amber-400 dark:bg-amber-700 dark:text-amber-100";
-      inner = "!";
-      label = `Unlabeled — ${activityName} on ${cell.dateStr}`;
+      bg =
+        "bg-amber-300 text-amber-900 hover:bg-amber-400 dark:bg-amber-700 dark:text-amber-100";
+      glyph = "!";
+      statusLine = "Unlabeled";
       break;
     case "scheduled":
-      cls +=
-        " border border-zinc-300 bg-zinc-50 text-zinc-400 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900";
-      inner = "·";
-      label = `Scheduled — ${activityName} on ${cell.dateStr}`;
+      bg =
+        "border border-zinc-300 bg-zinc-50 text-zinc-400 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900";
+      glyph = "·";
+      statusLine = "Scheduled";
       break;
     case "not-scheduled":
-      cls += " text-zinc-300 dark:text-zinc-700";
-      label = `${activityName} — not scheduled on ${cell.dateStr}`;
+      bg = "text-zinc-300 dark:text-zinc-700";
+      statusLine = "Not scheduled";
       break;
     case "outside":
-      cls += " text-zinc-300 dark:text-zinc-700";
-      label = `${activityName} — not active on ${cell.dateStr}`;
+      bg = "text-zinc-300 dark:text-zinc-700";
+      statusLine = "Not active";
       style = {
         backgroundImage:
           "repeating-linear-gradient(45deg, rgb(228 228 231 / 0.6) 0 2px, transparent 2px 6px)",
@@ -418,35 +558,25 @@ function CellButton({
       break;
   }
 
-  if (isToday) cls += " ring-1 ring-zinc-900 dark:ring-zinc-50";
+  const baseCls = `group/cell relative flex aspect-square items-center justify-center rounded text-[10px] font-medium leading-none transition-colors ${bg}`;
+  const ringCls = isToday ? " ring-1 ring-zinc-900 dark:ring-zinc-50" : "";
 
-  // No instance → not clickable. Render as a plain span.
-  if (!cell.instance && clickMode === "modal") {
-    return (
-      <span className={cls} style={style} title={label} aria-label={label}>
-        {inner}
-      </span>
-    );
-  }
+  const tooltip = (
+    <Tooltip
+      statusLine={statusLine}
+      activityName={activityName}
+      dateStr={cell.dateStr}
+    />
+  );
 
-  // Drill modes always render as a Link (even cells without an instance
-  // can be drilled into — e.g. a not-scheduled day still has a Week view
-  // for the user to look at).
-  if (clickMode !== "modal") {
-    const href =
-      clickMode === "drill-week"
-        ? `/?view=grid&range=week&date=${cell.dateStr}`
-        : `/?view=grid&range=month&date=${cell.dateStr}`;
+  // Non-clickable: render as a plain div (still gets the hover tooltip
+  // so the user sees why it's blank).
+  if (!cell.instance) {
     return (
-      <Link
-        href={href}
-        className={cls}
-        style={style}
-        title={label}
-        aria-label={label}
-      >
-        {inner}
-      </Link>
+      <div className={baseCls + ringCls} style={style} aria-label={statusLine}>
+        {glyph}
+        {tooltip}
+      </div>
     );
   }
 
@@ -454,77 +584,169 @@ function CellButton({
     <button
       type="button"
       onClick={() => cell.instance && onOpen(cell.instance)}
-      className={cls}
+      className={baseCls + ringCls + " cursor-pointer"}
       style={style}
-      title={label}
-      aria-label={label}
+      aria-label={`${statusLine} — ${activityName} on ${cell.dateStr}`}
     >
-      {inner}
+      {glyph}
+      {tooltip}
     </button>
   );
 }
 
-// HeatmapCell — Total-mode cell. Tiny (8px), no glyph, click drills to
-// Month view for that date. We keep this distinct from CellButton
-// because the styling shortcuts (no glyph, no `aspect-square wN` flex
-// helper, color-only) get in each other's way otherwise.
-function HeatmapCell({
-  cell,
-  todayStr,
+// ---------------------------------------------------------------------------
+
+function Tooltip({
+  statusLine,
   activityName,
+  dateStr,
 }: {
-  cell: GridCell;
-  todayStr: string;
+  statusLine: string;
   activityName: string;
+  dateStr: string;
 }) {
-  const isToday = cell.dateStr === todayStr;
-  let cls =
-    "block h-2 w-2 rounded-sm transition-colors hover:ring-2 hover:ring-zinc-400";
-  let label: string;
-  let style: React.CSSProperties | undefined;
-
-  switch (cell.state) {
-    case "completed":
-      cls += " bg-emerald-500";
-      label = `Completed — ${activityName} on ${cell.dateStr}`;
-      break;
-    case "missed":
-      cls += " bg-red-500";
-      label = `Missed — ${activityName} on ${cell.dateStr}`;
-      break;
-    case "overdue":
-      cls += " bg-amber-400 dark:bg-amber-600";
-      label = `Unlabeled — ${activityName} on ${cell.dateStr}`;
-      break;
-    case "scheduled":
-      cls += " bg-zinc-200 dark:bg-zinc-800";
-      label = `Scheduled — ${activityName} on ${cell.dateStr}`;
-      break;
-    case "not-scheduled":
-    case "outside":
-      cls += " bg-transparent";
-      label = `${activityName} — ${cell.dateStr}`;
-      if (cell.state === "outside") {
-        style = {
-          backgroundImage:
-            "repeating-linear-gradient(45deg, rgb(228 228 231 / 0.4) 0 1px, transparent 1px 3px)",
-        };
-      }
-      break;
-  }
-
-  if (isToday) cls += " ring-1 ring-zinc-900 dark:ring-zinc-50";
-
-  // Drill to Month view. Even blank cells get a link — the user might
-  // want to inspect that month even though this activity wasn't active.
+  // 3 lines per spec: status / name / on DD/MM/YYYY.
+  // Custom popover (not native title) so we can render multiple lines
+  // reliably across browsers and size it readably.
+  const [y, m, d] = dateStr.split("-");
   return (
-    <Link
-      href={`/?view=grid&range=month&date=${cell.dateStr}`}
-      className={cls}
-      style={style}
-      title={label}
-      aria-label={label}
-    />
+    <span
+      // pointer-events-none so the tooltip never eats the cell's click
+      role="tooltip"
+      className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-left text-[11px] font-normal leading-snug text-zinc-50 shadow-lg group-hover/cell:block dark:border-zinc-300 dark:bg-zinc-50 dark:text-zinc-900"
+    >
+      <span className="block font-semibold">{statusLine}</span>
+      <span className="block">{activityName}</span>
+      <span className="block text-zinc-300 dark:text-zinc-600">{`on ${d}/${m}/${y}`}</span>
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+function TH({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <th
+      scope="col"
+      className={`border-b border-zinc-200 px-2 py-2 text-left text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:border-zinc-800 ${className}`}
+    >
+      {children}
+    </th>
+  );
+}
+
+// Activity-name cell — shows the (truncated) name, the small unlabeled
+// red-circle badge when there are past-due occurrences, and a tiny
+// "hide row" button on the right edge.
+function NameCell({
+  row,
+  onHide,
+}: {
+  row: GridRow;
+  onHide: (id: string) => void;
+}) {
+  return (
+    <th
+      scope="row"
+      className="border-b border-zinc-100 px-2 py-1.5 text-left text-xs font-medium text-zinc-800 dark:border-zinc-900 dark:text-zinc-200"
+    >
+      <span className="flex min-w-0 items-center gap-1.5">
+        <span
+          className="block min-w-0 flex-1 truncate"
+          title={row.activity.name}
+        >
+          {row.activity.name}
+        </span>
+        {row.unlabeled > 0 && <UnlabeledBadge count={row.unlabeled} />}
+        <button
+          type="button"
+          onClick={() => onHide(row.activity.id)}
+          aria-label={`Hide ${row.activity.name}`}
+          title={`Hide ${row.activity.name}`}
+          className="shrink-0 rounded p-0.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+        >
+          ✕
+        </button>
+      </span>
+    </th>
+  );
+}
+
+function TypeCell({ row }: { row: GridRow }) {
+  return (
+    <td className="border-b border-zinc-100 px-2 py-1.5 text-left text-[11px] text-zinc-500 dark:border-zinc-900">
+      {row.rhythmCategory}
+    </td>
+  );
+}
+
+// SuccessCell shows "X/Y | Z%" per spec — fraction + percent together,
+// both useful at different scales. Color-coded by Z%.
+function SuccessCell({ row }: { row: GridRow }) {
+  return (
+    <td
+      className={`border-b border-zinc-100 px-2 py-1.5 text-center text-[11px] tabular-nums dark:border-zinc-900 ${pctClass(
+        row.pct
+      )}`}
+    >
+      {row.pct === null ? (
+        "—"
+      ) : (
+        <span>
+          {row.done}/{row.onTheHook} | {row.pct}%
+        </span>
+      )}
+    </td>
+  );
+}
+
+// Small red-circle count badge — same visual shape as the Unlabeled
+// chip's inner badge in the IncompleteButton, so the two are
+// recognizably the same thing.
+function UnlabeledBadge({ count }: { count: number }) {
+  return (
+    <span
+      title={`${count} past-due occurrences still need a verdict (mark complete or missed)`}
+      className="inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white"
+    >
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+function HiddenStrip({
+  rows,
+  onShow,
+}: {
+  rows: GridRow[];
+  onShow: (id: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-[11px] text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+      <span className="uppercase tracking-wide text-[10px] text-zinc-500">
+        Hidden ({rows.length}):
+      </span>
+      {rows.map((r) => (
+        <button
+          key={r.activity.id}
+          type="button"
+          onClick={() => onShow(r.activity.id)}
+          title="Click to show again"
+          className="inline-flex items-center gap-1 rounded border border-zinc-300 bg-white px-1.5 py-0.5 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:bg-zinc-800"
+        >
+          <span className="max-w-[8rem] truncate">{r.activity.name}</span>
+          <span aria-hidden className="text-zinc-400">↻</span>
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -559,18 +781,11 @@ function SinglesBanner({
 
 // ---------------------------------------------------------------------------
 
-function GridLegend({ mode }: { mode: GridMode }) {
-  // Total mode's heatmap uses the same color semantics; legend is still
-  // useful. The "Unlabeled" wording is unified across modes per user
-  // spec — internally we still call the state "overdue" but the user
-  // never sees that word.
+function GridLegend() {
   const items: Array<{ label: string; swatch: string; hatch?: boolean }> = [
     { label: "Done", swatch: "bg-emerald-500" },
     { label: "Missed", swatch: "bg-red-500" },
-    {
-      label: "Unlabeled",
-      swatch: "bg-amber-300 dark:bg-amber-700",
-    },
+    { label: "Unlabeled", swatch: "bg-amber-300 dark:bg-amber-700" },
     {
       label: "Scheduled",
       swatch:
@@ -580,11 +795,6 @@ function GridLegend({ mode }: { mode: GridMode }) {
   ];
   return (
     <p className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-zinc-500">
-      {mode === "total" && (
-        <span className="mr-1 text-[10px] uppercase tracking-wide text-zinc-400">
-          (click a cell to drill in)
-        </span>
-      )}
       {items.map((it) => (
         <span key={it.label} className="inline-flex items-center gap-1">
           <span
@@ -615,11 +825,10 @@ function pctClass(pct: number | null): string {
   return "text-red-700 dark:text-red-300";
 }
 
-function formatWeekday(d: Date, mode: "week" | "month"): string {
-  // For Month, single-letter weekday header keeps cells narrow.
-  if (mode === "month") {
-    const letters = ["S", "M", "T", "W", "T", "F", "S"];
-    return letters[d.getDay()];
-  }
-  return d.toLocaleDateString(undefined, { weekday: "short" });
+// Number of empty cells to insert before the first real cell so a
+// Monday-start week-grid lines up. Mon == 0 leading empty cells, Sun
+// == 6 leading empty cells.
+function mondayPad(date: Date): number {
+  const day = date.getDay(); // Sun = 0 .. Sat = 6
+  return (day + 6) % 7; // Mon = 0, Sun = 6
 }

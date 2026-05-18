@@ -373,11 +373,11 @@ function DaySection({
           />
         </div>
       </details>
-      {visible.length === 0 ? (
-        <p className="rounded-md border border-dashed border-zinc-200 px-3 py-2 text-center text-xs text-zinc-400 dark:border-zinc-800">
-          Free.
-        </p>
-      ) : (
+      {/* If there's nothing scheduled for the day, render NOTHING — not
+          even a "Free" placeholder. The day header + completed/missed
+          dropdown alone communicate "empty day" cleanly without adding
+          a hollow card every row. */}
+      {visible.length > 0 && (
         <div className="flex flex-col gap-2">
           {visible.map((inst) => (
             <InstanceRow

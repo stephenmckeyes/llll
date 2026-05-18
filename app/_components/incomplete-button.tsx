@@ -33,7 +33,10 @@ export function IncompleteButton({ info }: { info: IncompleteInfo }) {
       className="relative inline-flex shrink-0 items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200 dark:hover:bg-amber-900"
     >
       Unlabeled
-      <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold text-white">
+      {/* Red circle badge — matches the inline UnlabeledBadge that
+          appears next to activity names in the grid view, so the two
+          surfaces feel like the same warning. */}
+      <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
         {info.count > 99 ? "99+" : info.count}
       </span>
     </Link>
