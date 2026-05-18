@@ -4,25 +4,28 @@
 // GridTable — the actual table rendered by the Grid (habit-tracker) view.
 //
 // Layout per mode:
-//   - Week:  one horizontal row of 7 normal-size cells (glyphs visible,
-//            comfortable hover targets).
-//   - Month: a 7-ROW column-major mini-heatmap. Each column = a calendar
-//            week (Mon..Sun top to bottom), columns flow left→right
-//            chronologically. Cells are tiny (no glyphs, color only).
-//   - Total: same shape as Month, just stretches across the full
-//            range from the earliest activity start to today.
-//            "Not active" days hide entirely in Total (per spec) so
-//            the heatmap is pure history.
+//   - Week:  one row of 7 cells per activity, cells capped at ~22px so the
+//            whole row is one visual line (no wrapping). Glyphs visible.
+//   - Month: a 7-COL row-major mini-calendar (Mon..Sun across, weeks down).
+//            Days sit in their actual weekday columns — the most
+//            intuitive layout for a calendar month. Cells ~14px square.
+//   - Total: a 7-ROW column-major heatmap. Each column is a calendar
+//            week (Mon..Sun top to bottom). Cells SCALE: capped at
+//            ~12px each for new users (few weeks of history → bigger,
+//            more legible squares) but shrink down to fit the
+//            container for power users with hundreds of weeks. Row
+//            height varies with cell size since cells stay square.
 //
-// Per-row visibility toggle:
-//   - A slide switch replaces the old "✕" hide button. Off collapses
-//     the row to just [name + toggle] (cells / type / success columns
-//     blank out) — the row STAYS in position so the layout doesn't
-//     jump. No separate hidden footer anymore.
-//   - Off state persists in localStorage per user.
+// Cells: aspect-square inside a grid whose total `maxWidth` is
+// `weekCount * MAX_CELL_PX + gaps`. The grid is `1fr` columns, so
+// when content fits within maxWidth cells are at the cap; when content
+// exceeds the container width, cells shrink uniformly to fit. No
+// horizontal scrollbars at typical user scales.
 //
-// Cell click — always opens the ActivityModal (no drill-down).
-// Hover — custom 3-line tooltip: status / activity name / "DD Mon YYYY".
+// Cell click — always opens the ActivityModal.
+// Hover  — custom 3-line tooltip: status / activity name / "DD Mon YYYY".
+// Per-row slide toggle (replaces the old hide-footer): off collapses
+// the row to just [name + toggle], on shows everything.
 // ---------------------------------------------------------------------------
 
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
@@ -33,7 +36,7 @@ import type { DayInstance } from "./day-list";
 export type GridCellState =
   | "completed"
   | "missed"
-  | "overdue" // internal name; user-facing wording is "Unlabeled"
+  | "overdue"
   | "scheduled"
   | "not-scheduled"
   | "outside";
@@ -58,6 +61,14 @@ export type GridRow = {
 export type DateCol = { date: Date; dateStr: string };
 
 export type GridMode = "week" | "month" | "total";
+
+// Cell-size caps per mode (pixels). These are the MAX cell width; the
+// actual size is min(cap, container_width / cols), so cells shrink
+// when content would overflow.
+const WEEK_CELL_MAX_PX = 22;
+const MONTH_CELL_MAX_PX = 14;
+const TOTAL_CELL_MAX_PX = 12;
+const CELL_GAP_PX = 1;
 
 // ---------------------------------------------------------------------------
 
@@ -99,9 +110,17 @@ export function GridTable({
           onToggle={toggle}
           onOpenInstance={setOpenInstance}
         />
+      ) : mode === "month" ? (
+        <MonthTable
+          rows={rows}
+          dateCols={dateCols}
+          todayStr={todayStr}
+          off={off}
+          onToggle={toggle}
+          onOpenInstance={setOpenInstance}
+        />
       ) : (
-        <HeatmapTable
-          mode={mode}
+        <TotalTable
           rows={rows}
           dateCols={dateCols}
           todayStr={todayStr}
@@ -131,11 +150,8 @@ export function GridTable({
 }
 
 // ---------------------------------------------------------------------------
-// Per-user localStorage-backed off-set (rows that are toggled to "off").
-//
-// Same key the previous "hidden" set used — the data shape is the same
-// (a Set of activity IDs), only the visual treatment changed (collapse
-// in place rather than hide entirely).
+// Per-user localStorage-backed off-set (rows toggled to "off").
+// Same key the previous "hidden" set used.
 // ---------------------------------------------------------------------------
 
 const OFF_CHANGE_EVENT = "mission-grid-off-changed";
@@ -195,8 +211,7 @@ function useRowOffSet(userId: string) {
 }
 
 // ---------------------------------------------------------------------------
-// WeekTable — 7 cells per activity in a single row. Normal-size cells
-// with glyphs, since there's plenty of room.
+// WeekTable — single row of 7 cells, capped so the whole row is one line.
 // ---------------------------------------------------------------------------
 
 function WeekTable({
@@ -214,6 +229,8 @@ function WeekTable({
   onToggle: (id: string) => void;
   onOpenInstance: (i: DayInstance) => void;
 }) {
+  const stripMaxWidthPx = 7 * WEEK_CELL_MAX_PX + 6 * CELL_GAP_PX;
+
   return (
     <table className="w-full table-fixed border-separate border-spacing-0 text-xs">
       <colgroup>
@@ -227,20 +244,23 @@ function WeekTable({
           <TH>Activity</TH>
           <TH>Type</TH>
           <TH>
-            <div className="grid grid-cols-7 gap-px">
+            <div
+              className="grid grid-cols-7 gap-px"
+              style={{ maxWidth: `${stripMaxWidthPx}px` }}
+            >
               {dateCols.map((c) => (
                 <div
                   key={c.dateStr}
-                  className={`text-center text-[10px] ${
+                  className={`text-center text-[9px] leading-tight ${
                     c.dateStr === todayStr
                       ? "font-semibold text-zinc-900 dark:text-zinc-50"
                       : "text-zinc-500"
                   }`}
                 >
                   <div className="uppercase tracking-wide">
-                    {c.date.toLocaleDateString(undefined, { weekday: "short" })}
+                    {c.date.toLocaleDateString(undefined, { weekday: "narrow" })}
                   </div>
-                  <div className="text-sm">{c.date.getDate()}</div>
+                  <div>{c.date.getDate()}</div>
                 </div>
               ))}
             </div>
@@ -253,21 +273,29 @@ function WeekTable({
           const isOff = off.has(row.activity.id);
           return (
             <tr key={row.activity.id}>
-              <NameCell row={row} isOff={isOff} onToggle={onToggle} />
+              <NameCell
+                row={row}
+                isOff={isOff}
+                onToggle={onToggle}
+                linesMax={1}
+              />
               {isOff ? (
                 <CollapsedRow span={3} />
               ) : (
                 <>
                   <TypeCell row={row} />
-                  <td className="border-b border-zinc-100 px-1 py-1.5 dark:border-zinc-900">
-                    <div className="grid grid-cols-7 gap-px">
+                  <td className="border-b border-zinc-100 px-1 py-1 dark:border-zinc-900">
+                    <div
+                      className="grid grid-cols-7 gap-px"
+                      style={{ maxWidth: `${stripMaxWidthPx}px` }}
+                    >
                       {row.cells.map((cell) => (
                         <CellButton
                           key={cell.dateStr}
                           cell={cell}
                           todayStr={todayStr}
                           activityName={row.activity.name}
-                          compact={false}
+                          showGlyph={true}
                           hideOutside={false}
                           onOpen={onOpenInstance}
                         />
@@ -286,20 +314,11 @@ function WeekTable({
 }
 
 // ---------------------------------------------------------------------------
-// HeatmapTable — Month + Total. 7-row column-major mini-heatmap per
-// activity. Columns are weeks (each column flows Mon→Sun top to bottom).
-//
-// Cell size is FIXED (tiny) per spec, with the strip allowed to
-// horizontal-scroll if the range is long. The activity name + type +
-// success columns stay put.
-//
-// In Total mode, "outside" (activity not yet started / already ended)
-// cells render as nothing — per spec the Total heatmap is pure history
-// without the diagonal-hatch placeholder.
+// MonthTable — 7-COL row-major calendar grid. Days in their actual
+// weekday columns (Mon..Sun). Padded so the 1st of the month lines up.
 // ---------------------------------------------------------------------------
 
-function HeatmapTable({
-  mode,
+function MonthTable({
   rows,
   dateCols,
   todayStr,
@@ -307,7 +326,6 @@ function HeatmapTable({
   onToggle,
   onOpenInstance,
 }: {
-  mode: "month" | "total";
   rows: GridRow[];
   dateCols: DateCol[];
   todayStr: string;
@@ -315,23 +333,129 @@ function HeatmapTable({
   onToggle: (id: string) => void;
   onOpenInstance: (i: DayInstance) => void;
 }) {
-  // Align the first column with Monday by padding the start. Trailing
-  // padding fills the last week to keep the grid rectangular.
+  const padBefore = dateCols.length > 0 ? mondayPad(dateCols[0].date) : 0;
+  const stripMaxWidthPx = 7 * MONTH_CELL_MAX_PX + 6 * CELL_GAP_PX;
+
+  return (
+    <table className="w-full table-fixed border-separate border-spacing-0 text-xs">
+      <colgroup>
+        <col className="w-[8rem]" />
+        <col className="w-[4.5rem]" />
+        <col />
+        <col className="w-[5.5rem]" />
+      </colgroup>
+      <thead>
+        <tr>
+          <TH>Activity</TH>
+          <TH>Type</TH>
+          <TH>
+            <div
+              className="grid grid-cols-7 gap-px"
+              style={{ maxWidth: `${stripMaxWidthPx}px` }}
+            >
+              {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
+                <div
+                  key={i}
+                  className="text-center text-[9px] font-medium text-zinc-400"
+                >
+                  {d}
+                </div>
+              ))}
+            </div>
+          </TH>
+          <TH className="text-center">Success</TH>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => {
+          const isOff = off.has(row.activity.id);
+          return (
+            <tr key={row.activity.id}>
+              <NameCell
+                row={row}
+                isOff={isOff}
+                onToggle={onToggle}
+                linesMax={3}
+              />
+              {isOff ? (
+                <CollapsedRow span={3} />
+              ) : (
+                <>
+                  <TypeCell row={row} />
+                  <td className="border-b border-zinc-100 px-1 py-1.5 align-top dark:border-zinc-900">
+                    <div
+                      className="grid grid-cols-7 gap-px"
+                      style={{ maxWidth: `${stripMaxWidthPx}px` }}
+                    >
+                      {Array.from({ length: padBefore }, (_, i) => (
+                        <div
+                          key={`pad-${i}`}
+                          className="aspect-square"
+                        />
+                      ))}
+                      {row.cells.map((cell) => (
+                        <CellButton
+                          key={cell.dateStr}
+                          cell={cell}
+                          todayStr={todayStr}
+                          activityName={row.activity.name}
+                          showGlyph={false}
+                          hideOutside={false}
+                          onOpen={onOpenInstance}
+                        />
+                      ))}
+                    </div>
+                  </td>
+                  <SuccessCell row={row} />
+                </>
+              )}
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// TotalTable — 7-ROW column-major heatmap that SCALES.
+//
+// Each column = one calendar week (Mon..Sun top to bottom). The grid's
+// maxWidth = weekCount * MAX_CELL_PX, with `1fr` columns inside — so:
+//   - For new users (few weeks): the strip is naturally narrow at the
+//     cap, cells sit at MAX_CELL_PX → big, legible.
+//   - For long histories: cells shrink uniformly to fit the container
+//     width, no horizontal scrollbar.
+// Outside days (activity not yet started / already ended) are hidden
+// entirely — Total reads as pure history.
+// ---------------------------------------------------------------------------
+
+function TotalTable({
+  rows,
+  dateCols,
+  todayStr,
+  off,
+  onToggle,
+  onOpenInstance,
+}: {
+  rows: GridRow[];
+  dateCols: DateCol[];
+  todayStr: string;
+  off: ReadonlySet<string>;
+  onToggle: (id: string) => void;
+  onOpenInstance: (i: DayInstance) => void;
+}) {
   const padBefore = dateCols.length > 0 ? mondayPad(dateCols[0].date) : 0;
   const totalWithStart = padBefore + dateCols.length;
   const padAfter = (7 - (totalWithStart % 7)) % 7;
   const weekCount = (totalWithStart + padAfter) / 7;
-
-  const cellPx = 7; // tiny square cells, per spec
-  const gapPx = 1;
-  const stripWidthPx = weekCount * cellPx + (weekCount - 1) * gapPx;
+  const stripMaxWidthPx =
+    weekCount * TOTAL_CELL_MAX_PX + Math.max(0, weekCount - 1) * CELL_GAP_PX;
 
   const headerLabel =
-    mode === "total"
-      ? dateCols.length > 0
-        ? `${formatMonthYearShort(dateCols[0].date)} → today`
-        : ""
-      : ""; // Month header is implicit from the page-level nav label.
+    dateCols.length > 0
+      ? `${formatMonthYearShort(dateCols[0].date)} → today`
+      : "";
 
   return (
     <table className="w-full table-fixed border-separate border-spacing-0 text-xs">
@@ -354,45 +478,51 @@ function HeatmapTable({
           const isOff = off.has(row.activity.id);
           return (
             <tr key={row.activity.id}>
-              <NameCell row={row} isOff={isOff} onToggle={onToggle} />
+              <NameCell
+                row={row}
+                isOff={isOff}
+                onToggle={onToggle}
+                linesMax={3}
+              />
               {isOff ? (
                 <CollapsedRow span={3} />
               ) : (
                 <>
                   <TypeCell row={row} />
                   <td className="border-b border-zinc-100 px-1 py-1.5 align-top dark:border-zinc-900">
-                    {/* The heatmap is allowed to scroll horizontally
-                        within its own cell when the range is huge — the
-                        rest of the row stays put. */}
-                    <div className="overflow-x-auto">
-                      <div
-                        className="grid"
-                        style={{
-                          gridTemplateRows: `repeat(7, ${cellPx}px)`,
-                          gridTemplateColumns: `repeat(${weekCount}, ${cellPx}px)`,
-                          gridAutoFlow: "column",
-                          gap: `${gapPx}px`,
-                          width: `${stripWidthPx}px`,
-                        }}
-                      >
-                        {Array.from({ length: padBefore }, (_, i) => (
-                          <div key={`pad-b-${i}`} />
-                        ))}
-                        {row.cells.map((cell) => (
-                          <CellButton
-                            key={cell.dateStr}
-                            cell={cell}
-                            todayStr={todayStr}
-                            activityName={row.activity.name}
-                            compact={true}
-                            hideOutside={mode === "total"}
-                            onOpen={onOpenInstance}
-                          />
-                        ))}
-                        {Array.from({ length: padAfter }, (_, i) => (
-                          <div key={`pad-a-${i}`} />
-                        ))}
-                      </div>
+                    <div
+                      className="grid"
+                      style={{
+                        gridTemplateColumns: `repeat(${weekCount}, minmax(0, 1fr))`,
+                        gridTemplateRows: "repeat(7, auto)",
+                        gridAutoFlow: "column",
+                        gap: `${CELL_GAP_PX}px`,
+                        maxWidth: `${stripMaxWidthPx}px`,
+                      }}
+                    >
+                      {Array.from({ length: padBefore }, (_, i) => (
+                        <div
+                          key={`pad-b-${i}`}
+                          className="aspect-square"
+                        />
+                      ))}
+                      {row.cells.map((cell) => (
+                        <CellButton
+                          key={cell.dateStr}
+                          cell={cell}
+                          todayStr={todayStr}
+                          activityName={row.activity.name}
+                          showGlyph={false}
+                          hideOutside={true}
+                          onOpen={onOpenInstance}
+                        />
+                      ))}
+                      {Array.from({ length: padAfter }, (_, i) => (
+                        <div
+                          key={`pad-a-${i}`}
+                          className="aspect-square"
+                        />
+                      ))}
                     </div>
                   </td>
                   <SuccessCell row={row} />
@@ -409,9 +539,6 @@ function HeatmapTable({
 // ---------------------------------------------------------------------------
 
 function CollapsedRow({ span }: { span: number }) {
-  // Empty cells maintaining row position when the activity is toggled
-  // off. Single line of vertical padding so the row stays "thin" but
-  // still visible enough to find its toggle.
   return (
     <td
       colSpan={span}
@@ -423,34 +550,30 @@ function CollapsedRow({ span }: { span: number }) {
 }
 
 // ---------------------------------------------------------------------------
-// CellButton — clickable square (or plain div if not tied to an
-// instance). Opens the modal in any mode.
-//
-// `compact` mode strips the glyph and tightens leading so cells can be
-// as small as ~6-8px and still look like deliberate squares.
-//
-// `hideOutside` (used only in Total) renders "outside" cells as fully
-// blank — no hatch, no border. So a Total heatmap looks like clean
-// history with no clutter for days the activity wasn't even active.
+// CellButton — aspect-square clickable cell. `showGlyph` controls
+// whether the ✓ / ✗ / ! / · char renders (drop it when cells get
+// smaller than ~14px). `hideOutside` renders "outside" cells as
+// invisible (Total mode only).
 // ---------------------------------------------------------------------------
 
 function CellButton({
   cell,
   todayStr,
   activityName,
-  compact,
+  showGlyph,
   hideOutside,
   onOpen,
 }: {
   cell: GridCell;
   todayStr: string;
   activityName: string;
-  compact: boolean;
+  showGlyph: boolean;
   hideOutside: boolean;
   onOpen: (i: DayInstance) => void;
 }) {
   if (hideOutside && cell.state === "outside") {
-    return <div />;
+    // Render an empty grid slot so the column-major flow stays aligned.
+    return <div className="aspect-square" />;
   }
 
   const isToday = cell.dateStr === todayStr;
@@ -487,6 +610,8 @@ function CellButton({
       statusLine = "Not scheduled";
       break;
     case "outside":
+      // Used in Month (where hideOutside is false). In Total this path
+      // is short-circuited above.
       bg = "text-zinc-300 dark:text-zinc-700";
       statusLine = "Not active";
       style = {
@@ -496,13 +621,11 @@ function CellButton({
       break;
   }
 
-  // Compact mode: drop the glyph (cells are too small to render it
-  // anyway) and use a square sized by parent grid. Non-compact (Week):
-  // larger square with the glyph visible.
-  const sizingCls = compact
-    ? "h-full w-full"
-    : "flex aspect-square items-center justify-center text-[10px] font-medium leading-none";
-  const baseCls = `group/cell relative rounded-[1px] ${sizingCls} transition-colors ${bg}`;
+  const baseCls = `group/cell relative aspect-square rounded-[1px] ${bg}${
+    showGlyph
+      ? " flex items-center justify-center text-[10px] font-medium leading-none"
+      : ""
+  } transition-colors`;
   const ringCls = isToday ? " ring-1 ring-zinc-900 dark:ring-zinc-50" : "";
 
   const tooltip = (
@@ -516,7 +639,7 @@ function CellButton({
   if (!cell.instance) {
     return (
       <div className={baseCls + ringCls} style={style} aria-label={statusLine}>
-        {!compact && glyph}
+        {showGlyph && glyph}
         {tooltip}
       </div>
     );
@@ -530,7 +653,7 @@ function CellButton({
       style={style}
       aria-label={`${statusLine} — ${activityName} on ${cell.dateStr}`}
     >
-      {!compact && glyph}
+      {showGlyph && glyph}
       {tooltip}
     </button>
   );
@@ -547,9 +670,6 @@ function Tooltip({
   activityName: string;
   dateStr: string;
 }) {
-  // 3-line custom popover. Native title attr can't render multiline
-  // reliably across browsers.
-  // pointer-events-none so the tooltip never eats the cell's click.
   return (
     <span
       role="tooltip"
@@ -583,18 +703,22 @@ function TH({
   );
 }
 
-// Activity-name cell — wraps text (up to ~3 lines per row to fill the
-// heatmap row height) before line-clamping. Hosts the slide toggle on
-// the right.
+// Activity-name cell. `linesMax` lets each mode decide how many lines
+// the name can wrap to before truncating:
+//   - Week: 1 (single visual row, no wrapping)
+//   - Month/Total: 3 (wrap to fill the heatmap row height)
 function NameCell({
   row,
   isOff,
   onToggle,
+  linesMax,
 }: {
   row: GridRow;
   isOff: boolean;
   onToggle: (id: string) => void;
+  linesMax: 1 | 3;
 }) {
+  const clampCls = linesMax === 1 ? "line-clamp-1" : "line-clamp-3";
   return (
     <th
       scope="row"
@@ -602,19 +726,13 @@ function NameCell({
     >
       <div className="flex items-start gap-1.5">
         <div className="min-w-0 flex-1">
-          {/* line-clamp-3 lets the name wrap to up to 3 lines before
-              showing "...". Three lines pairs naturally with the
-              ~48–56px heatmap row height (Month/Total). For Week, the
-              clamp just means very long names truncate at 3 lines. */}
           <span
-            className="block break-words font-medium leading-tight line-clamp-3"
+            className={`block break-words font-medium leading-tight ${clampCls}`}
             title={row.activity.name}
           >
             {row.activity.name}
           </span>
-          {row.unlabeled > 0 && (
-            <UnlabeledBadge count={row.unlabeled} />
-          )}
+          {row.unlabeled > 0 && <UnlabeledBadge count={row.unlabeled} />}
         </div>
         <SlideToggle isOff={isOff} onClick={() => onToggle(row.activity.id)} />
       </div>
@@ -659,9 +777,6 @@ function UnlabeledBadge({ count }: { count: number }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// SlideToggle — iOS-style on/off switch. ON = full row visible
-// (default), OFF = row collapsed in place.
 // ---------------------------------------------------------------------------
 
 function SlideToggle({
@@ -726,7 +841,7 @@ function SinglesBanner({
 // ---------------------------------------------------------------------------
 
 function GridLegend() {
-  const items: Array<{ label: string; swatch: string; hatch?: boolean }> = [
+  const items: Array<{ label: string; swatch: string }> = [
     { label: "Done", swatch: "bg-emerald-500" },
     { label: "Missed", swatch: "bg-red-500" },
     { label: "Unlabeled", swatch: "bg-amber-300 dark:bg-amber-700" },
@@ -743,14 +858,6 @@ function GridLegend() {
           <span
             aria-hidden
             className={`inline-block h-3 w-3 rounded ${it.swatch}`}
-            style={
-              it.hatch
-                ? {
-                    backgroundImage:
-                      "repeating-linear-gradient(45deg, rgb(228 228 231 / 0.6) 0 2px, transparent 2px 6px)",
-                  }
-                : undefined
-            }
           />
           {it.label}
         </span>
@@ -769,7 +876,6 @@ function pctClass(pct: number | null): string {
 }
 
 function mondayPad(date: Date): number {
-  // JS getDay: Sun=0..Sat=6. We want Monday-start: Mon=0..Sun=6.
   const day = date.getDay();
   return (day + 6) % 7;
 }
@@ -778,8 +884,6 @@ function formatMonthYearShort(d: Date): string {
   return d.toLocaleDateString(undefined, { month: "short", year: "numeric" });
 }
 
-// "17 May 2026" / "04 Apr 2028" — day-month-year per user spec.
-// Always two-digit day.
 function formatDateDmy(yyyyMmDd: string): string {
   const [y, m, d] = yyyyMmDd.split("-").map(Number);
   const date = new Date(y, m - 1, d);
