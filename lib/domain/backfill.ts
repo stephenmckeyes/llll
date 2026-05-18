@@ -3,15 +3,23 @@
 // on activity_instances being populated up to some future date.
 //
 // At activity-creation time we only generate INSTANCE_HORIZON_DAYS of
-// instances. For indefinite rhythms (no end_date), this means the calendar
-// "runs out" once the horizon is past. This helper extends every active
-// activity's instance set up to `throughDateStr`, idempotently — already-
-// present instances are skipped via the (activity_id, scheduled_for) unique
-// index + ignoreDuplicates on upsert.
+// instances. For indefinite rhythms (no end_date), the calendar would
+// silently "run out" once the user looks past that horizon. This helper
+// extends every active activity's instance set up to `throughDateStr`,
+// idempotently — already-present instances are skipped via the
+// (activity_id, scheduled_for) unique index + ignoreDuplicates on upsert.
 //
-// Idea: rhythms can change mid-life (rhythm edits regenerate the future),
-// so this helper looks at each activity's CURRENT rhythm rather than the
-// historical one. Past instances are preserved as-is regardless.
+// Performance:
+//   - In-memory throttle: re-runs at most once per hour per user. The
+//     cache resets on server restart (in dev). For production
+//     deployments, we'll migrate this to a profiles.last_backfilled_at
+//     column.
+//   - Only fetches FUTURE instances when checking "what's the latest
+//     scheduled date per activity" — past instances aren't relevant for
+//     extending forward, so they don't need to come back across the wire.
+//   - Edits that affect generation (rhythm changes, date changes,
+//     archive/unarchive) call invalidateBackfillCache(userId) so the
+//     next page load runs backfill immediately, not an hour from now.
 // ---------------------------------------------------------------------------
 
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -20,32 +28,50 @@ import { addDays } from "date-fns";
 import { generateInstances } from "@/lib/domain/rhythms";
 import type { Rhythm } from "@/lib/validators/rhythm";
 
+const THROTTLE_MS = 60 * 60 * 1000; // 1 hour
+const lastBackfillByUser = new Map<string, number>();
+
+export function invalidateBackfillCache(userId: string): void {
+  lastBackfillByUser.delete(userId);
+}
+
 export async function ensureInstancesBackfilled(
   supabase: SupabaseClient,
   userId: string,
   throughDateStr: string
 ): Promise<void> {
+  const last = lastBackfillByUser.get(userId);
+  if (last && Date.now() - last < THROTTLE_MS) return;
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+
   const { data: activities } = await supabase
     .from("activities")
     .select("id, rhythm, start_date, end_date")
     .eq("user_id", userId)
     .is("archived_at", null);
 
-  if (!activities || activities.length === 0) return;
+  if (!activities || activities.length === 0) {
+    lastBackfillByUser.set(userId, Date.now());
+    return;
+  }
 
   const activityIds = activities.map((a) => a.id);
 
-  // Batched max-scheduled_for per activity. One query for the whole user.
-  const { data: existing } = await supabase
+  // Only fetch FUTURE instances — past ones don't affect "where do we
+  // need to extend to". Massively cuts the result size for users with
+  // years of history.
+  const { data: futureInstances } = await supabase
     .from("activity_instances")
     .select("activity_id, scheduled_for")
     .in("activity_id", activityIds)
+    .gte("scheduled_for", todayStr)
     .order("scheduled_for", { ascending: false });
 
-  const latestByActivity = new Map<string, string>();
-  for (const inst of existing ?? []) {
-    if (!latestByActivity.has(inst.activity_id)) {
-      latestByActivity.set(inst.activity_id, inst.scheduled_for);
+  const latestFutureByActivity = new Map<string, string>();
+  for (const inst of futureInstances ?? []) {
+    if (!latestFutureByActivity.has(inst.activity_id)) {
+      latestFutureByActivity.set(inst.activity_id, inst.scheduled_for);
     }
   }
 
@@ -60,12 +86,19 @@ export async function ensureInstancesBackfilled(
         ? activity.end_date
         : throughDateStr;
 
-    const latest = latestByActivity.get(activity.id);
-    if (latest && latest >= effectiveEnd) continue; // already covered
+    const latestFuture = latestFutureByActivity.get(activity.id);
+    if (latestFuture && latestFuture >= effectiveEnd) continue; // covered
 
-    const fromDate = latest
-      ? addOneDay(latest)
-      : activity.start_date;
+    // If we have no future instances at all, start either at today (so we
+    // don't recreate already-completed past instances) or at start_date if
+    // it's in the future.
+    let fromDate: string;
+    if (latestFuture) {
+      fromDate = addOneDay(latestFuture);
+    } else {
+      fromDate =
+        activity.start_date > todayStr ? activity.start_date : todayStr;
+    }
     if (fromDate > effectiveEnd) continue;
 
     let toGenerate: { scheduledFor: string }[] = [];
@@ -75,7 +108,7 @@ export async function ensureInstancesBackfilled(
         to: effectiveEnd,
       });
     } catch {
-      continue; // skip malformed rhythms
+      continue;
     }
 
     if (toGenerate.length === 0) continue;
@@ -86,8 +119,6 @@ export async function ensureInstancesBackfilled(
       status: "pending" as const,
     }));
 
-    // ignoreDuplicates uses ON CONFLICT DO NOTHING — safe to call even if
-    // some target rows already exist (race conditions, manual SQL, etc.).
     await supabase
       .from("activity_instances")
       .upsert(rows, {
@@ -95,6 +126,8 @@ export async function ensureInstancesBackfilled(
         ignoreDuplicates: true,
       });
   }
+
+  lastBackfillByUser.set(userId, Date.now());
 }
 
 function addOneDay(yyyyMmDd: string): string {

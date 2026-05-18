@@ -48,34 +48,49 @@ Future direction (per user spec):
   group remaining banners by their first tag; show top N tag-counts.
 - Banners colored by first tag (when tags become first-class).
 
-## NEXT TURN: Edit-Rhythm modal with future-instance regeneration
+## NEXT TURN: Grid / Habit-Tracker view
 
-(Edit-activity ships in-place in the modal; Edit-rhythm is the larger
-remaining piece because it requires regenerating the future instance
-set when the rhythm changes mid-window.)
+Per user spec — see "Grid / Habit-Tracker view" section below for full
+details. A separate `?view=grid` entry on the home dashboard:
 
-Edit-activity (name / notes / tags / priority) ships in the activity
-modal as an in-place form — done. Edit-rhythm is the larger remaining
-piece because it requires regenerating the future instance set:
+- Far-left column: every recurring activity (one row per activity).
+- Top row: dates across the chosen date range.
+- Cells: filled/struck when completed, empty/red/grey if skipped or
+  missed.
+- Far-right column: success percentage for the row over the range.
+- Range picker: default current week.
+- First pass can reuse the existing `?date=` URL param + a new
+  `range=week|month|custom` param.
 
-- New `updateActivityRhythm(activityId, { rhythm, start_date, end_date,
-  scheduled_times })` server action.
-- Confirmation popup before applying: "Changing the rhythm will replace
-  all future pending occurrences. Past occurrences and their
-  completions stay untouched." Past = scheduled_for < today.
-- On confirm:
-  1. UPDATE the activity row with the new rhythm/dates/times.
-  2. DELETE FROM activity_instances WHERE activity_id = X AND
-     scheduled_for >= today AND status = 'pending'.
-  3. Re-run generateInstances() with the new rhythm + the activity's
-     effective date range, starting from max(today, start_date), and
-     bulk-insert.
-- Render inside the same activity modal (mode = 'edit-rhythm'), using
-  the same rhythm picker as the create form.
-- Reuse ActivityForm's rhythm-picker subtree — likely worth extracting
-  it into a shared `RhythmPicker` component first.
+## Calendar export — subscribe to Mission from iPhone/Android/Google/Outlook
 
-Then the standalone `/activities/[id]/edit` page can go away.
+(Asked for: "Eventually, let's add functionality to link our calendar
+with other calendars.") Plan:
+
+- Expose a per-user **read-only ICS feed** at
+  `/api/calendar/:userToken.ics`. The token is a random per-user secret
+  stored on `profiles.ics_token`; the user can rotate it from settings
+  to revoke old subscriptions. The token must NOT be the user id.
+- The feed emits a `VEVENT` per scheduled `activity_instance` in a
+  rolling window (e.g., -30 days .. +180 days) and includes a stable
+  `UID` of `instance-<uuid>@mission` so calendar apps deduplicate
+  correctly on resync.
+- DTSTART picks the first entry from `scheduled_times` if present;
+  otherwise an all-day event (`DTSTART;VALUE=DATE:`).
+- Each event's `LAST-MODIFIED` reflects the activity's `updated_at`
+  so edits propagate on the next sync.
+- Subscribe URLs the user copies into their calendar app:
+  - iOS: Settings → Calendar → Accounts → Add → Other → Subscribed
+    Calendar (or open `webcal://...` link from Mail).
+  - Google Calendar: "Other calendars" → "From URL".
+  - Outlook: Add calendar → Subscribe from web.
+  - Android: depends on the calendar app; most modern ones consume the
+    same URL via Google Calendar sync.
+- Done as a follow-up phase; doesn't block dashboard work.
+
+Two-way sync (Mission ↔ Google Calendar via OAuth) is a much bigger
+piece (token refresh, change-detection, conflict resolution) and is
+explicitly out of scope for this read-only ICS phase.
 
 ## OLD: Edit-Activity / Edit-Rhythm as in-place modals (not new pages)
 

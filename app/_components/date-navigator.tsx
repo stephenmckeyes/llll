@@ -1,10 +1,13 @@
 "use client";
 
 // ---------------------------------------------------------------------------
-// DateNavigator — ← / → arrows + a date picker that jumps the view to any
-// date, plus a "Today" reset. Used by all three calendar views.
+// DateNavigator — friendly date label on top, [← input → Today] row below.
 //
-// Server component owns the data; this client component owns user gestures.
+// The arrows sit immediately to the left/right of the native date input,
+// which has a fixed visual width regardless of the date it shows. So the
+// arrows stay in EXACTLY the same screen position when the user clicks
+// repeatedly to step day-by-day — long date strings like "Saturday, May 23"
+// vs "Friday, May 22" no longer push them around.
 // ---------------------------------------------------------------------------
 
 import Link from "next/link";
@@ -31,44 +34,46 @@ export function DateNavigator({
   useEffect(() => setVal(currentDate), [currentDate]);
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <Link
-        href={hrefFor(view, prevDate)}
-        aria-label="Previous"
-        className="rounded-md border border-zinc-300 px-2 py-1 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-      >
-        ←
-      </Link>
-      {/* Fixed-width label keeps the ← / → arrows in EXACTLY the same
-          screen position no matter what date is selected. Text truncates
-          if it doesn't fit (rare given 18rem ≈ 288px). */}
-      <span className="block w-[18rem] max-w-full truncate text-center text-sm font-medium text-zinc-700 dark:text-zinc-300">
+    <div className="flex flex-col gap-1">
+      {/* Friendly label above the controls — changes in length here can't
+          shift the arrows below because they're on a different row. */}
+      <p className="text-center text-sm font-medium text-zinc-700 dark:text-zinc-300">
         {label}
-      </span>
-      <Link
-        href={hrefFor(view, nextDate)}
-        aria-label="Next"
-        className="rounded-md border border-zinc-300 px-2 py-1 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-      >
-        →
-      </Link>
-      <input
-        type="date"
-        value={val}
-        onChange={(e) => {
-          setVal(e.target.value);
-          if (/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) {
-            router.push(hrefFor(view, e.target.value));
-          }
-        }}
-        className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-      />
-      <Link
-        href={`/?view=${view}`}
-        className="rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
-      >
-        Today
-      </Link>
+      </p>
+
+      <div className="flex items-center justify-center gap-2">
+        <Link
+          href={hrefFor(view, prevDate)}
+          aria-label="Previous"
+          className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+        >
+          ←
+        </Link>
+        <input
+          type="date"
+          value={val}
+          onChange={(e) => {
+            setVal(e.target.value);
+            if (/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) {
+              router.push(hrefFor(view, e.target.value));
+            }
+          }}
+          className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+        />
+        <Link
+          href={hrefFor(view, nextDate)}
+          aria-label="Next"
+          className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+        >
+          →
+        </Link>
+        <Link
+          href={`/?view=${view}`}
+          className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
+        >
+          Today
+        </Link>
+      </div>
     </div>
   );
 }

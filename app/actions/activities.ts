@@ -10,6 +10,7 @@ import { redirect } from "next/navigation";
 
 import { z } from "zod";
 
+import { invalidateBackfillCache } from "@/lib/domain/backfill";
 import { logCompletion } from "@/lib/domain/completions";
 import { generateInstances } from "@/lib/domain/rhythms";
 import { createClient } from "@/lib/supabase/server";
@@ -203,6 +204,10 @@ export async function createActivity(
     }
   }
 
+  // New activity = new generation work that backfill will need to do for any
+  // far-future view. Reset the per-user throttle so it runs immediately.
+  invalidateBackfillCache(user.id);
+
   redirect("/");
 }
 
@@ -218,6 +223,7 @@ export async function completeInstance(instanceId: string) {
   if (!user) redirect("/login");
 
   await logCompletion(supabase, user.id, { instanceIds: [instanceId] });
+  invalidateBackfillCache(user.id);
   revalidatePath("/");
 }
 
@@ -365,6 +371,10 @@ export async function updateActivityRhythm(
     await supabase.from("activity_instances").insert(rows);
   }
 
+  // Rhythm change ⇒ generation rules change ⇒ throttle must reset so the
+  // next view paints from the new rhythm immediately, not in an hour.
+  invalidateBackfillCache(user.id);
+
   revalidatePath("/");
   revalidatePath("/activities");
   revalidatePath(`/activities/${activityId}`);
@@ -438,6 +448,7 @@ export async function setInstanceProgress(
     .update({ status: newStatus })
     .eq("id", instanceId);
 
+  invalidateBackfillCache(user.id);
   revalidatePath("/");
 }
 
@@ -459,6 +470,9 @@ export async function archiveActivity(activityId: string) {
     .update({ archived_at: new Date().toISOString() })
     .eq("id", activityId);
 
+  // Archived activities are excluded from backfill — drop the cache so the
+  // next page-load doesn't keep extending an activity the user just hid.
+  invalidateBackfillCache(user.id);
   revalidatePath("/");
   revalidatePath("/activities");
 }
@@ -562,6 +576,10 @@ export async function updateActivityFields(
     .eq("status", "pending")
     .lt("scheduled_for", parsed.data.startDate);
 
+  // Date-range edits change what backfill needs to extend; force the next
+  // page-load to recompute instead of waiting an hour.
+  invalidateBackfillCache(user.id);
+
   revalidatePath("/");
   revalidatePath("/activities");
   revalidatePath(`/activities/${activityId}`);
@@ -580,6 +598,8 @@ export async function unarchiveActivity(activityId: string) {
     .update({ archived_at: null })
     .eq("id", activityId);
 
+  // Re-included in the active set ⇒ backfill needs to re-extend it.
+  invalidateBackfillCache(user.id);
   revalidatePath("/");
   revalidatePath("/activities");
 }
@@ -604,6 +624,7 @@ export async function missInstance(instanceId: string) {
     .update({ status: "missed" })
     .eq("id", instanceId);
 
+  invalidateBackfillCache(user.id);
   revalidatePath("/");
 }
 
@@ -640,6 +661,7 @@ export async function deleteActivity(activityId: string) {
 
   await supabase.from("activities").delete().eq("id", activityId);
 
+  invalidateBackfillCache(user.id);
   revalidatePath("/activities");
   revalidatePath("/");
 }

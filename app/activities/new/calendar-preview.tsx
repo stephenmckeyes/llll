@@ -83,12 +83,18 @@ export function CalendarPreview({
   // instance and each reminder, the reminder fires `r.days` days earlier.
   // Reminders with days = 0 (same-day offset) aren't marked separately —
   // they're implied by the instance day itself.
+  // Mark every day on which a reminder fires for an instance — INCLUDING
+  // same-day reminders (r.days === 0). For same-day reminders the marker
+  // lands on the event day itself; the cell then shows both the event
+  // banner AND the small reminder indicator.
   const reminderDays = new Set<string>();
   if (reminders.length > 0) {
     for (const inst of instances) {
       for (const r of reminders) {
-        if (r.days <= 0) continue;
-        const day = format(addDays(parseLocalDate(inst.scheduledFor), -r.days), "yyyy-MM-dd");
+        const day = format(
+          addDays(parseLocalDate(inst.scheduledFor), -r.days),
+          "yyyy-MM-dd"
+        );
         reminderDays.add(day);
       }
     }
@@ -105,7 +111,7 @@ export function CalendarPreview({
       inRange:
         dateStr >= startDate && (endDate === null || dateStr <= endDate),
       hasInstance: instanceDays.has(dateStr),
-      hasReminder: !instanceDays.has(dateStr) && reminderDays.has(dateStr),
+      hasReminder: reminderDays.has(dateStr),
       isToday: dateStr === TODAY_STR,
       isStartDate: dateStr === startDate,
     };
@@ -141,7 +147,7 @@ export function CalendarPreview({
         {reminders.length > 0 && (
           <>
             {" · "}
-            <span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-amber-400 align-middle dark:bg-amber-500" />
+            <span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-amber-300 align-middle dark:bg-amber-700" />
             Reminder
           </>
         )}
@@ -219,24 +225,22 @@ function Cell({
 
   if (hasInstance) {
     cls += " bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900";
-  } else if (hasReminder) {
-    cls += " bg-amber-50 text-amber-900 ring-1 ring-amber-300 dark:bg-amber-950 dark:text-amber-200 dark:ring-amber-700";
   } else if (inRange) {
     cls += " text-zinc-700 dark:text-zinc-300";
   } else {
     cls += " text-zinc-300 dark:text-zinc-700";
   }
-  if (isToday && !hasInstance && !hasReminder) cls += " ring-1 ring-zinc-900 dark:ring-zinc-50";
-  if (isStartDate && !hasInstance && !hasReminder && !isToday) cls += " underline underline-offset-2";
+  if (isToday && !hasInstance) cls += " ring-1 ring-zinc-900 dark:ring-zinc-50";
+  if (isStartDate && !hasInstance && !isToday) cls += " underline underline-offset-2";
 
   return (
     <div
       className={cls}
       title={
         hasInstance
-          ? `${activityName || "Activity"} — ${date.toDateString()}`
+          ? `${activityName || "Activity"}${hasReminder ? " (reminder)" : ""} — ${date.toDateString()}`
           : hasReminder
-            ? `Reminder for an upcoming occurrence — ${date.toDateString()}`
+            ? `Reminder fires this day — ${date.toDateString()}`
             : date.toDateString()
       }
     >
@@ -246,11 +250,17 @@ function Cell({
           {activityName}
         </span>
       )}
+      {/* Small reminder strip at the bottom — doesn't block the day; coexists
+          with the event banner above it. Single character keeps it visible
+          even when the cell is tiny. */}
       {hasReminder && (
         <span
           aria-hidden
-          className="absolute bottom-1 right-1 text-[10px]"
-          title="Reminder fires this day"
+          className={`absolute inset-x-0 bottom-0 truncate px-1 text-[8px] font-medium leading-tight ${
+            hasInstance
+              ? "bg-amber-400/90 text-zinc-900 dark:bg-amber-500/90"
+              : "bg-amber-200 text-amber-900 dark:bg-amber-900 dark:text-amber-200"
+          }`}
         >
           🔔
         </span>
