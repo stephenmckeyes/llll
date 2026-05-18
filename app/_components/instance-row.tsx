@@ -66,9 +66,28 @@ export function InstanceRow({
       ? daysBetween(instance.scheduled_for, todayStr)
       : 0;
 
-  const frequencyTarget =
-    activity.rhythm.type === "frequency" ? activity.rhythm.count : 0;
-  const frequencyProgress = instance.completionCount;
+  // "Accumulating" mode = +1 button + editable X/Y progress badge,
+  // and a single instance only flips to "completed" once N
+  // completions are logged. Fires for:
+  //   - frequency rhythms (count comes from rhythm.count)
+  //   - ANY rhythm with multiple scheduled_times — multi-time daily,
+  //     multi-time weekdays, "do it 3 times today" Once events,
+  //     etc. Target = scheduled_times.length.
+  // This matches the user's expectation that a multi-times task
+  // shouldn't be done after one click.
+  const scheduledTimes = activity.scheduled_times ?? [];
+  const isMultiTime = scheduledTimes.length > 1;
+  const isAccumulating = isFrequency || isMultiTime;
+  // TS can't narrow rhythm.count from `isFrequency` (boolean) alone,
+  // so re-check inline. For non-frequency multi-time activities the
+  // target is just the number of scheduled times.
+  const accumulatingTarget =
+    activity.rhythm.type === "frequency"
+      ? activity.rhythm.count
+      : isMultiTime
+        ? scheduledTimes.length
+        : 0;
+  const accumulatingProgress = instance.completionCount;
 
   // For frequency rhythms the X/Y is shown as a separate badge next to the
   // +1 button (more discoverable). For singles we still surface an overdue
@@ -85,10 +104,14 @@ export function InstanceRow({
       );
       if (!ok) return;
     }
-    // Optimistic hide for non-frequency rhythms (one click = done).
-    // Frequency rhythms stay visible until the X/Y counter reaches the
-    // target — hiding them on every +1 would be confusing.
-    if (!isFrequency || frequencyProgress + 1 >= frequencyTarget) {
+    // Optimistic hide only when the click finishes the activity:
+    //   - Non-accumulating: one click = done → hide immediately
+    //   - Accumulating: only the last +1 (reaching target) hides
+    // Hiding mid-accumulation would be confusing.
+    if (
+      !isAccumulating ||
+      accumulatingProgress + 1 >= accumulatingTarget
+    ) {
       onDispatchOptimistic(instance.id);
     }
     startTransition(async () => {
@@ -150,14 +173,16 @@ export function InstanceRow({
         </div>
       </button>
 
-      {/* Frequency progress badge. Editable: click to set exactly (handy
-          when the user mass-fills at end of day, or accidentally over-
-          clicked +1). */}
-      {isFrequency && (
+      {/* Accumulating progress badge. Shown for frequency rhythms AND
+          for any rhythm with multiple scheduled_times — both surface
+          a "+1 of N" workflow rather than one-and-done. Click the
+          badge to set the count exactly (handy for end-of-day mass-
+          fill or undoing an over-click). */}
+      {isAccumulating && (
         <EditableProgressBadge
           instanceId={instance.id}
-          current={frequencyProgress}
-          target={frequencyTarget}
+          current={accumulatingProgress}
+          target={accumulatingTarget}
           scheduledFor={instance.scheduled_for}
           todayStr={todayStr}
           className={FREQUENCY_BADGE_CLASSES}
@@ -171,7 +196,7 @@ export function InstanceRow({
         onClick={handleComplete}
         className="shrink-0 touch-manipulation rounded-md bg-zinc-900 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-zinc-700 active:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
       >
-        {isPending ? "…" : isFrequency ? "+1" : "Complete"}
+        {isPending ? "…" : isAccumulating ? "+1" : "Complete"}
       </button>
       <button
         type="button"

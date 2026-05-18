@@ -140,7 +140,7 @@ export async function logCompletion(
       .from("activity_instances")
       .select(
         `
-        activities ( rhythm ),
+        activities ( rhythm, scheduled_times ),
         completion_instances ( completion_id )
       `
       )
@@ -148,18 +148,32 @@ export async function logCompletion(
       .single();
 
     const wrapper = row as {
-      activities?: { rhythm?: unknown } | null;
+      activities?: {
+        rhythm?: unknown;
+        scheduled_times?: string[] | null;
+      } | null;
       completion_instances?: Array<unknown> | null;
     } | null;
     const rhythm = wrapper?.activities?.rhythm as
       | { type?: string; count?: number }
       | undefined;
+    const scheduledTimes = wrapper?.activities?.scheduled_times ?? [];
     const linkedCount = wrapper?.completion_instances?.length ?? 0;
 
-    const shouldComplete =
+    // Target count for "completed" status:
+    //   - frequency rhythms: rhythm.count
+    //   - any rhythm with > 1 scheduled times: scheduled_times.length
+    //     (so a multi-time daily / weekdays / interval activity still
+    //     needs N completions to flip to completed — matches the +1
+    //     UX in InstanceRow)
+    //   - everything else: 1 (one click = done)
+    const target =
       rhythm?.type === "frequency"
-        ? linkedCount >= (rhythm.count ?? 1)
-        : true;
+        ? rhythm.count ?? 1
+        : scheduledTimes.length > 1
+          ? scheduledTimes.length
+          : 1;
+    const shouldComplete = linkedCount >= target;
 
     if (shouldComplete) {
       await supabase

@@ -46,6 +46,7 @@ const VALID_SORTS: ReadonlySet<SortKey> = new Set([
   "created",
   "name",
   "rhythm",
+  "tag",
   "lastuse",
 ]);
 
@@ -175,6 +176,16 @@ function sortActivities(
         const ra = rhythmCategoryLabel(a.rhythm, a.scheduled_times);
         const rb = rhythmCategoryLabel(b.rhythm, b.scheduled_times);
         if (ra !== rb) return ra.localeCompare(rb);
+        return a.name.localeCompare(b.name);
+      });
+      break;
+    case "tag":
+      // Sort by first tag alphabetically; activities with no tags
+      // sort to the bottom (tilde sorts after letters).
+      out.sort((a, b) => {
+        const ta = (a.default_skill_tags[0] ?? "~").toLowerCase();
+        const tb = (b.default_skill_tags[0] ?? "~").toLowerCase();
+        if (ta !== tb) return ta.localeCompare(tb);
         return a.name.localeCompare(b.name);
       });
       break;

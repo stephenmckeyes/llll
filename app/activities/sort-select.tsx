@@ -10,12 +10,13 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
 
-export type SortKey = "rhythm" | "created" | "lastuse" | "name";
+export type SortKey = "rhythm" | "created" | "lastuse" | "name" | "tag";
 
 const SORT_OPTIONS: ReadonlyArray<{ value: SortKey; label: string }> = [
   { value: "created", label: "Date created (newest)" },
   { value: "name", label: "Name (A→Z)" },
   { value: "rhythm", label: "Rhythm type" },
+  { value: "tag", label: "Tag (A→Z)" },
   { value: "lastuse", label: "Last completion" },
 ];
 

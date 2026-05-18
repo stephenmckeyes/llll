@@ -6,6 +6,74 @@ startup.
 
 ## Pending features (asked for, deferred on purpose)
 
+### Tags as first-class entities (color-coded, dropdown picker)
+
+Asked for. Today `activities.default_skill_tags` is a free-text
+`text[]` column. User wants:
+
+- **Tag dropdown** in the create / edit activity form (not a free
+  text input), with the user's existing tags listed + a "+ New tag"
+  option that opens an inline name + color editor.
+- **Color per tag**, picked from a predefined palette (probably
+  ~12 colors — emerald, sky, amber, red, violet, etc.) — keeps
+  rendering simple and the visual identity recognizable across
+  views.
+- **Display per view:**
+  - **Day**: full color chips on the row banner (name on the chip).
+  - **Week**: small color dots prepended to each banner — one dot
+    per tag.
+  - **Month**: tiny color dots at the bottom of each cell (max ~3
+    visible before "+N").
+  - **Year**: nothing (cells are too small to read color hints).
+- **Grid Type column**: per-row "Tags" link that opens a small popup
+  listing the activity's tags as chips. Editing still goes through
+  the existing Edit-Activity flow (which we'd update to use the new
+  dropdown).
+
+Implementation sketch:
+- New `tags` table: `id uuid pk, user_id uuid fk, name text not null,
+  color text not null, created_at timestamptz default now(),
+  unique (user_id, name)`.
+- Keep `activities.default_skill_tags` as `text[]` (names) for back-
+  compat — the new `tags` table is just a (per-user) name→color
+  lookup. Activities don't need to change shape.
+- Tag colors are stored as a palette key ("emerald" / "amber" / ...)
+  rather than a raw hex, so we can map to Tailwind classes for both
+  light + dark modes.
+- Server actions: `createTag(name, color)`, `deleteTag(id)`. List
+  query for the dropdown is cheap (per-user, usually <50).
+- Migration of existing free-text tag values: on first form open
+  after this lands, treat any `default_skill_tags[]` value not in
+  the user's tags table as needing creation (auto-create with a
+  random palette color, user can re-color later).
+
+### Multi-time reminders verification
+
+Asked for. After the multi-time refactor (every rhythm can now have
+multiple `scheduled_times[]`), verify that **reminders fire for
+each time of day**, not just the first one. The reminders table
++ delivery pipeline isn't built yet (Phase 2c+), but when it ships,
+the per-time fan-out has to be in the reminder-schedule generator,
+not the activity model. Easy to forget — leaving this here as a
+specific check item.
+
+### Settings page / timezone change
+
+Asked for. Today we display the user's browser-detected timezone in
+the page header (`TimeChip` component) but there's no way to change
+it. Plan:
+
+- **Settings page** at `/settings` collects:
+  - Timezone override (defaults to browser-detected, falls back to
+    profile column on server).
+  - 12h vs 24h time format toggle (paired entry from the existing
+    backlog item).
+  - Default activity visibility / notification preferences (later).
+- **`profiles.timezone`** already exists from migration 0001 (defaults
+  to `'UTC'`); the onboarding-flow item plans to populate it.
+- Change should NOT be in the main UI — it's a "set once" decision
+  that shouldn't be hit by accident.
+
 ### Alternate Grid-view visualizations
 
 Today the Grid view renders activity history as colored cells (a

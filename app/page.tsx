@@ -40,6 +40,7 @@ import { GridNavigator } from "./_components/grid-navigator";
 import { GridTable } from "./_components/grid-table";
 import { type IncompleteInfo } from "./_components/incomplete-button";
 import { MonthInstanceBox } from "./_components/month-instance-box";
+import { TimeChip } from "./_components/time-chip";
 
 type ViewKind = "day" | "week" | "month" | "year" | "grid";
 type GridRange = "week" | "month" | "total";
@@ -135,7 +136,11 @@ export default async function HomePage({
         <div className="flex items-start justify-between gap-3">
           <div>
             <h1 className="text-3xl font-semibold tracking-tight">Mission</h1>
-            <p className="text-xs text-zinc-500">{user.email}</p>
+            <p className="flex flex-wrap items-center gap-x-2 text-xs text-zinc-500">
+              <span>{user.email}</span>
+              <span aria-hidden>·</span>
+              <TimeChip />
+            </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <Link
@@ -407,15 +412,20 @@ function ViewSwitcher({
 }
 
 // StickyNav — wrapper that pins each view's date navigator just below
-// the page-level ViewSwitcher (which sticks at top-0). The fixed
-// `top-[6.5rem]` offset assumes ViewSwitcher's rendered height of
-// ~88px plus the wrapping py-2; tweak both together if either changes.
-// The negative margin + matching horizontal padding lets the
-// background color extend across the page's p-6 so scrolled content
-// doesn't leak through behind the navigator.
+// the page-level ViewSwitcher (which sticks at top-0).
+//
+// Measured ViewSwitcher height: ~100px (section-tab row ~42 + gap-2
+// 8 + sub-tab row ~34 + wrapper py-2 16). Setting Navigator at
+// `top-[6.25rem]` (100px) makes the two abut exactly — no transparent
+// strip between them. The previous `top-[6.5rem]` was 4px below the
+// VS bottom, which in dark mode showed as a thin visible gap.
+//
+// The negative horizontal margin + matching padding lets the bg
+// extend across the page's p-6 so scrolled content doesn't leak
+// through behind the navigator.
 function StickyNav({ children }: { children: React.ReactNode }) {
   return (
-    <div className="sticky top-[6.5rem] z-20 -mx-6 bg-white px-6 py-2 dark:bg-zinc-950">
+    <div className="sticky top-[6.25rem] z-20 -mx-6 bg-white px-6 py-2 dark:bg-zinc-950">
       {children}
     </div>
   );

@@ -476,15 +476,31 @@ export async function setInstanceProgress(
   }
 
   // Sync the instance status against the activity's target.
+  // Target matches logCompletion's logic: frequency → rhythm.count;
+  // any rhythm with > 1 scheduled times → scheduled_times.length;
+  // otherwise → 1. Keeps multi-time daily/weekdays/etc. consistent
+  // with the per-row +1 UX.
   const { data: inst } = await supabase
     .from("activity_instances")
-    .select("activities ( rhythm )")
+    .select("activities ( rhythm, scheduled_times )")
     .eq("id", instanceId)
     .single();
-  const rhythm = (
-    inst as { activities?: { rhythm?: { type?: string; count?: number } } } | null
-  )?.activities?.rhythm;
-  const target = rhythm?.type === "frequency" ? rhythm.count ?? 1 : 1;
+  const activity = (
+    inst as {
+      activities?: {
+        rhythm?: { type?: string; count?: number };
+        scheduled_times?: string[] | null;
+      };
+    } | null
+  )?.activities;
+  const rhythm = activity?.rhythm;
+  const scheduledTimes = activity?.scheduled_times ?? [];
+  const target =
+    rhythm?.type === "frequency"
+      ? rhythm.count ?? 1
+      : scheduledTimes.length > 1
+        ? scheduledTimes.length
+        : 1;
   const newStatus = safeTarget >= target ? "completed" : "pending";
 
   await supabase

@@ -85,11 +85,12 @@ const WEEK_CELL_ASPECT = "aspect-square";
 const MONTH_CELL_ASPECT = "aspect-[2/1]"; // 2:1, wider than tall
 const TOTAL_CELL_ASPECT = "aspect-square";
 
-// Sticky-thead offset. ViewSwitcher (top-0, ~104px tall incl. py-2)
-// + Navigator (top-[6.5rem], ~64px tall) stack at the top of the
-// viewport. The grid's thead pins just below them. If either of
-// those layouts changes height, adjust this offset to match.
-const STICKY_THEAD_TOP = "top-[10.5rem]";
+// Sticky-thead offset. ViewSwitcher (top-0, ~100px tall incl. py-2)
+// + Navigator (top-[6.25rem], ~72px tall) stack at the top of the
+// viewport. The grid's thead pins just below them at ~172px. If
+// either of those layouts changes height, adjust this offset to
+// match.
+const STICKY_THEAD_TOP = "top-[10.75rem]";
 
 // ---------------------------------------------------------------------------
 

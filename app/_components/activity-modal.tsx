@@ -377,6 +377,21 @@ function EditActivityBody({
       <div className="flex-1 overflow-y-auto px-5 py-4">
         <input type="hidden" name="priority" value={priority} />
 
+        {/* Scope warning. The edit fields here change activity-level
+            metadata (name / notes / tags / priority / date range), not
+            the rhythm. Schedule changes (when/how often it repeats)
+            go through Edit Rhythm so the future instances get
+            regenerated cleanly. Surface this up-front so the user
+            doesn't expect "edit activity" to retroactively reshuffle
+            their calendar. */}
+        <p className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+          <strong>Heads up:</strong> these edits apply to this activity
+          itself (name, notes, tags, dates, priority, reminders). To
+          change the schedule (when / how often it repeats), use{" "}
+          <em>Edit Rhythm</em> instead — that regenerates future
+          occurrences.
+        </p>
+
         <label className="block">
           <span className="text-sm font-medium">Activity</span>
           <input
