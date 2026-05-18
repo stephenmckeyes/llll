@@ -28,7 +28,6 @@ import { CalendarPreview } from "./calendar-preview";
 type RhythmKind =
   | "single"
   | "selection"
-  | "multi_daily"
   | "daily"
   | "weekdays"
   | "interval"
@@ -46,7 +45,10 @@ const WEEKDAYS: ReadonlyArray<{ value: DayOfWeek; label: string }> = [
 
 const TODAY_ISO = new Date().toISOString().slice(0, 10);
 
-const DEFAULT_MULTI_DAILY_TIMES = ["08:00", "18:00"];
+// Default time of day for newly added activities. Noon is the most
+// neutral default — neither morning nor evening, easy to adjust to
+// the user's actual schedule.
+const DEFAULT_TIME = "12:00";
 
 export function ActivityForm() {
   const [state, formAction, isPending] = useActionState<
@@ -67,9 +69,14 @@ export function ActivityForm() {
   const [frequencyPerCountStr, setFrequencyPerCountStr] = useState<string>("1");
   const [frequencyPerUnit, setFrequencyPerUnit] =
     useState<PeriodUnit>("weeks");
-  const [multiDailyTimes, setMultiDailyTimes] = useState<string[]>(
-    DEFAULT_MULTI_DAILY_TIMES
-  );
+  // Times of day. ALL rhythms (except Once) can have multiple — adding
+  // more than one makes the activity "multi" (annotated in the Grid
+  // view's Type column). For Daily specifically the server converts
+  // multi-time to a frequency rhythm with count = times.length so the
+  // existing X/Y progress UI on the Day list still works.
+  const [scheduledTimes, setScheduledTimes] = useState<string[]>([
+    DEFAULT_TIME,
+  ]);
   const [startDate, setStartDate] = useState<string>(TODAY_ISO);
   const [endDate, setEndDate] = useState<string>("");
   const [reminders, setReminders] = useState<Reminder[]>([]);
@@ -90,7 +97,6 @@ export function ActivityForm() {
 
   const isSingle = rhythmKind === "single";
   const isSelection = rhythmKind === "selection";
-  const isMultiDaily = rhythmKind === "multi_daily";
   // "selection" is shown to the server as a flag — each picked date
   // becomes its own `single` activity. So for the preview / end-date
   // logic, treat selection the same as single.
@@ -107,20 +113,18 @@ export function ActivityForm() {
     frequencyCount,
     frequencyPerCount,
     frequencyPerUnit,
-    multiDailyTimes,
+    scheduledTimes,
   });
 
-  // ---- Multi-Daily times handlers ---------------------------------------
-  function updateMultiDailyTime(i: number, value: string) {
-    setMultiDailyTimes((prev) =>
-      prev.map((t, idx) => (idx === i ? value : t))
-    );
+  // ---- Times-of-day handlers --------------------------------------------
+  function updateScheduledTime(i: number, value: string) {
+    setScheduledTimes((prev) => prev.map((t, idx) => (idx === i ? value : t)));
   }
-  function addMultiDailyTime() {
-    setMultiDailyTimes((prev) => [...prev, "12:00"]);
+  function addScheduledTime() {
+    setScheduledTimes((prev) => [...prev, DEFAULT_TIME]);
   }
-  function removeMultiDailyTime(i: number) {
-    setMultiDailyTimes((prev) =>
+  function removeScheduledTime(i: number) {
+    setScheduledTimes((prev) =>
       prev.length === 1 ? prev : prev.filter((_, idx) => idx !== i)
     );
   }
@@ -219,13 +223,6 @@ export function ActivityForm() {
           label="Unrhythmic Selection"
           hint="Several one-offs, shared details"
         />
-        <RhythmRadio
-          value="multi_daily"
-          current={rhythmKind}
-          onChange={setRhythmKind}
-          label="Multi-Daily"
-          hint="Specific times every day"
-        />
         <RhythmRadio value="daily" current={rhythmKind} onChange={setRhythmKind} label="Daily" />
         <RhythmRadio
           value="weekdays"
@@ -248,43 +245,6 @@ export function ActivityForm() {
       </fieldset>
 
       {/* Conditional rhythm config */}
-      {isMultiDaily && (
-        <ConfigBox column>
-          <p className="text-xs text-zinc-500">
-            Specify each time of day. Add or remove rows as needed.
-          </p>
-          <ul className="flex flex-col gap-2">
-            {multiDailyTimes.map((t, i) => (
-              <li key={i} className="flex items-center gap-2">
-                <input
-                  type="time"
-                  name="scheduledTime"
-                  value={t}
-                  onChange={(e) => updateMultiDailyTime(i, e.target.value)}
-                  required
-                  className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-                />
-                <button
-                  type="button"
-                  onClick={() => removeMultiDailyTime(i)}
-                  disabled={multiDailyTimes.length === 1}
-                  className="rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-30 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
-                >
-                  Remove
-                </button>
-              </li>
-            ))}
-          </ul>
-          <button
-            type="button"
-            onClick={addMultiDailyTime}
-            className="self-start rounded-md border border-zinc-300 px-3 py-1 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-          >
-            + Add time
-          </button>
-        </ConfigBox>
-      )}
-
       {rhythmKind === "weekdays" && (
         <ConfigBox column>
           <p className="text-xs text-zinc-500">Pick at least one.</p>
@@ -466,20 +426,58 @@ export function ActivityForm() {
           </ConfigBox>
         )}
 
-        {!isMultiDaily && (
-          <FieldLabel
-            label={
-              <>
-                Time of day{" "}
-                <span className="font-normal text-zinc-500">(optional)</span>
-              </>
-            }
+        {/* Times of day — every rhythm gets the multi-row list.
+            "X times per day" comes for free since the user can add /
+            remove rows. Behavioral mapping:
+              - Once / Selection: each picked date gets all listed times
+              - Daily + multi: server converts to a frequency rhythm so
+                the X/Y progress UI still works
+              - Weekdays / Interval / Frequency + multi: rhythm stays
+                as-is; multi-times are stored on scheduled_times[].
+                The Grid view's Type column annotates "Multi {rhythm}"
+                whenever scheduled_times.length > 1. */}
+        <FieldLabel
+          label={
+            <>
+              Times of day{" "}
+              <span className="font-normal text-zinc-500">
+                ({scheduledTimes.length} per day)
+              </span>
+            </>
+          }
+        >
+          <ul className="flex flex-col gap-2">
+            {scheduledTimes.map((t, i) => (
+              <li key={i} className="flex items-center gap-2">
+                <input
+                  type="time"
+                  name="scheduledTime"
+                  value={t}
+                  onChange={(e) => updateScheduledTime(i, e.target.value)}
+                  required
+                  className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeScheduledTime(i)}
+                  disabled={scheduledTimes.length === 1}
+                  className="rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-30 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            onClick={addScheduledTime}
+            className="mt-2 self-start rounded-md border border-zinc-300 px-3 py-1 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
           >
-            <input type="time" name="scheduledTime" className={inputClasses} />
-          </FieldLabel>
-        )}
+            + Add time
+          </button>
+        </FieldLabel>
 
-        {!isSingleLike && !isMultiDaily && (
+        {!isSingleLike && (
           <p className="text-xs text-zinc-500">
             Leave end date blank for an open-ended rhythm.
           </p>
@@ -508,6 +506,10 @@ export function ActivityForm() {
         endDate={effectiveEndDate}
         activityName={name}
         reminders={reminders}
+        // Selection's "+ Add date" entries land on the preview as
+        // extra scheduled cells; dates outside the 35-day window are
+        // surfaced as a "+ N more" notice instead.
+        extraDates={isSelection ? extraStartDates : undefined}
       />
 
       {/* Error */}
@@ -543,7 +545,7 @@ function derivePreviewRhythm({
   frequencyCount,
   frequencyPerCount,
   frequencyPerUnit,
-  multiDailyTimes,
+  scheduledTimes,
 }: {
   kind: RhythmKind;
   weekdays: DayOfWeek[];
@@ -551,8 +553,9 @@ function derivePreviewRhythm({
   frequencyCount: number;
   frequencyPerCount: number;
   frequencyPerUnit: PeriodUnit;
-  multiDailyTimes: string[];
+  scheduledTimes: string[];
 }): Rhythm | null {
+  const validTimes = scheduledTimes.filter((t) => /^\d{2}:\d{2}$/.test(t));
   switch (kind) {
     case "single":
     case "selection":
@@ -560,6 +563,17 @@ function derivePreviewRhythm({
       // for the calendar preview we just show the primary date's single.
       return { type: "single" };
     case "daily":
+      // Multi-time daily → behaves like the old Multi-Daily (frequency
+      // count = N on a 1-day period). The server applies the same
+      // conversion on submit.
+      if (validTimes.length > 1) {
+        return {
+          type: "frequency",
+          count: validTimes.length,
+          perCount: 1,
+          perUnit: "days",
+        };
+      }
       return { type: "daily" };
     case "weekdays":
       return weekdays.length === 0
@@ -578,19 +592,6 @@ function derivePreviewRhythm({
             perUnit: frequencyPerUnit,
           }
         : null;
-    case "multi_daily": {
-      const validTimes = multiDailyTimes.filter((t) =>
-        /^\d{2}:\d{2}$/.test(t)
-      );
-      return validTimes.length === 0
-        ? null
-        : {
-            type: "frequency",
-            count: validTimes.length,
-            perCount: 1,
-            perUnit: "days",
-          };
-    }
   }
 }
 

@@ -313,7 +313,7 @@ function WeekTable({
               ) : (
                 <>
                   <TypeCell row={row} />
-                  <td className="border-b border-zinc-100 px-1 py-1 align-middle dark:border-zinc-900">
+                  <td className="border-b border-zinc-100 px-1 py-0.5 align-middle dark:border-zinc-900">
                     <div className="grid grid-cols-7" style={gridStyle}>
                       {row.cells.map((cell) => (
                         <CellButton
@@ -416,7 +416,7 @@ function MonthTable({
                       the row. 5 weeks at 2:1 cells (~44 × 22 px) = ~120px
                       row height instead of the ~230px that aspect-square
                       cells would produce. */}
-                  <td className="border-b border-zinc-100 px-1 py-1.5 align-top dark:border-zinc-900">
+                  <td className="border-b border-zinc-100 px-1 py-0.5 align-top dark:border-zinc-900">
                     <div className="grid grid-cols-7" style={gridStyle}>
                       {Array.from({ length: padBefore }, (_, i) => (
                         <div
@@ -521,7 +521,7 @@ function TotalTable({
               ) : (
                 <>
                   <TypeCell row={row} />
-                  <td className="border-b border-zinc-100 px-1 py-1.5 align-top dark:border-zinc-900">
+                  <td className="border-b border-zinc-100 px-1 py-0.5 align-top dark:border-zinc-900">
                     <div
                       className="grid"
                       style={{
@@ -758,12 +758,20 @@ function NameCell({
   return (
     <th
       scope="row"
-      className="border-b border-zinc-100 px-2 py-1.5 text-left align-top text-xs font-medium text-zinc-800 dark:border-zinc-900 dark:text-zinc-200"
+      className="border-b border-zinc-100 px-2 py-0.5 text-left align-top text-sm font-medium text-zinc-800 dark:border-zinc-900 dark:text-zinc-200"
     >
       <div className="flex items-start gap-1.5">
         <div className="min-w-0 flex-1">
+          {/* No `block` here — that overrides line-clamp's
+              `display: -webkit-box` and prevents the clamp from
+              taking effect, which is what was letting long unbroken
+              names like "testtttttttt..." spill past the line limit.
+              `break-all` (not `break-words`) is required so long
+              run-on words wrap at character boundaries; otherwise
+              they'd overflow horizontally and line-clamp wouldn't
+              save us. */}
           <span
-            className={`block break-words font-medium leading-tight ${clampCls}`}
+            className={`break-all font-medium leading-tight ${clampCls}`}
             title={row.activity.name}
           >
             {row.activity.name}
@@ -778,24 +786,21 @@ function NameCell({
 
 function TypeCell({ row }: { row: GridRow }) {
   return (
-    <td className="border-b border-zinc-100 px-2 py-1.5 align-top text-left text-[11px] text-zinc-500 dark:border-zinc-900">
+    <td className="border-b border-zinc-100 px-2 py-0.5 align-top text-left text-xs text-zinc-500 dark:border-zinc-900">
       {row.rhythmCategory}
     </td>
   );
 }
 
 function SuccessCell({ row }: { row: GridRow }) {
-  // Two stacked lines per spec: first the X/Y | Z% success metric,
-  // then a streak line. 🔥 burns when streak > 0 (text-orange-500),
-  // shows zinc-400 at 0 so the user sees "no current run" rather
-  // than wondering whether streak is supported.
+  // Two stacked lines: X/Y | Z% on top, streak below.
   const streakColorCls =
     row.streak > 0
       ? "text-orange-500 dark:text-orange-400"
       : "text-zinc-400";
   return (
     <td
-      className="border-b border-zinc-100 px-2 py-1.5 align-top text-center text-[11px] tabular-nums dark:border-zinc-900"
+      className="border-b border-zinc-100 px-2 py-0.5 align-top text-center text-xs tabular-nums dark:border-zinc-900"
     >
       <div className={pctClass(row.pct)}>
         {row.pct === null ? (
@@ -806,7 +811,7 @@ function SuccessCell({ row }: { row: GridRow }) {
           </span>
         )}
       </div>
-      <div className={`${streakColorCls} text-[10px]`}>
+      <div className={`${streakColorCls} text-[11px]`}>
         🔥{row.streak}
       </div>
     </td>

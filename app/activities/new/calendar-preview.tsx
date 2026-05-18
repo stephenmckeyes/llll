@@ -29,12 +29,20 @@ export function CalendarPreview({
   endDate,
   activityName,
   reminders = [],
+  extraDates = [],
 }: {
   rhythm: Rhythm | null;
   startDate: string; // YYYY-MM-DD
   endDate: string | null; // YYYY-MM-DD or null = open-ended
   activityName: string;
   reminders?: Reminder[];
+  /**
+   * Extra start dates from Unrhythmic Selection — each becomes a
+   * scheduled cell on the preview alongside the primary startDate.
+   * Dates that fall outside the 35-day preview window get counted
+   * in a "+ N more" notice below.
+   */
+  extraDates?: string[];
 }) {
   // Guard: a date input mid-edit can hand us "" or partial strings like
   // "2026-05-" — these used to bubble Invalid Date through addDays/format
@@ -78,6 +86,19 @@ export function CalendarPreview({
     instances = [];
   }
   const instanceDays = new Set(instances.map((i) => i.scheduledFor));
+  // Fold Selection's extra dates in so they highlight on the grid the
+  // same way the primary date does. Only dates within the visible
+  // window land in `instanceDays`; the rest are counted in
+  // `extraOutsideWindow` for the notice below the grid.
+  let extraOutsideWindow = 0;
+  for (const d of extraDates) {
+    if (!isValidDateString(d) || d === startDate) continue;
+    if (d >= startDate && d <= windowEndStr) {
+      instanceDays.add(d);
+    } else {
+      extraOutsideWindow++;
+    }
+  }
 
   // Build the set of days that will trigger a reminder. For each scheduled
   // instance and each reminder, the reminder fires `r.days` days earlier.
@@ -154,6 +175,13 @@ export function CalendarPreview({
         {" · "}
         <span className="text-zinc-400">faded</span> = outside window
       </p>
+      {extraOutsideWindow > 0 && (
+        <p className="text-[11px] italic text-zinc-500">
+          + {extraOutsideWindow} selected date
+          {extraOutsideWindow === 1 ? "" : "s"} outside this 5-week
+          window (still scheduled).
+        </p>
+      )}
     </Pane>
   );
 }

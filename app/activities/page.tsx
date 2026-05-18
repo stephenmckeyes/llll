@@ -110,11 +110,10 @@ export default async function ActivitiesPage({
           <span className="text-sm font-medium uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
             Archived ({archived.length})
           </span>
-          {/* Stop the click on the dropdown from toggling the <details>
-              parent — the user is changing sort, not collapsing. */}
-          <span onClick={(e) => e.preventDefault()}>
-            <SortSelect param="archivedSort" current={archivedSort} />
-          </span>
+          {/* SortSelect itself stops click propagation so the parent
+              <details>'s summary-toggle doesn't fire when the user
+              opens the dropdown. */}
+          <SortSelect param="archivedSort" current={archivedSort} />
         </summary>
         <div className="border-t border-zinc-200 p-3 dark:border-zinc-800">
           {archivedSorted.length === 0 ? (
@@ -134,9 +133,7 @@ export default async function ActivitiesPage({
           <span className="text-sm font-medium uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
             All activities ({all.length})
           </span>
-          <span onClick={(e) => e.preventDefault()}>
-            <SortSelect param="allSort" current={allSort} />
-          </span>
+          <SortSelect param="allSort" current={allSort} />
         </summary>
         <div className="border-t border-zinc-200 p-3 dark:border-zinc-800">
           {allSorted.length === 0 ? (
@@ -175,8 +172,8 @@ function sortActivities(
       break;
     case "rhythm":
       out.sort((a, b) => {
-        const ra = rhythmCategoryLabel(a.rhythm);
-        const rb = rhythmCategoryLabel(b.rhythm);
+        const ra = rhythmCategoryLabel(a.rhythm, a.scheduled_times);
+        const rb = rhythmCategoryLabel(b.rhythm, b.scheduled_times);
         if (ra !== rb) return ra.localeCompare(rb);
         return a.name.localeCompare(b.name);
       });

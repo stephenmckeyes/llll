@@ -56,6 +56,15 @@ export async function createActivity(
   // ---- 2. Reconstruct + validate the rhythm -------------------------------
 
   const rhythmType = String(formData.get("rhythmType") ?? "single");
+  // Multi-time daily activities still need to read like the old
+  // "Multi-Daily" rhythm so the X/Y progress UI on the Day list works.
+  // We count valid HH:MM entries up-front and convert daily+multi to a
+  // frequency rhythm below; other rhythms keep their times in
+  // scheduled_times[] and surface "Multi" via rhythmCategoryLabel only.
+  const validScheduledTimeCount = formData
+    .getAll("scheduledTime")
+    .map(String)
+    .filter((s) => /^\d{2}:\d{2}$/.test(s)).length;
   let candidateRhythm: unknown;
   switch (rhythmType) {
     case "single":
@@ -68,24 +77,21 @@ export async function createActivity(
       // from a "Once" activity created on its own.
       candidateRhythm = { type: "single" };
       break;
-    case "multi_daily":
-      // For Multi-Daily the count is derived from the number of time-of-day
-      // entries the user supplied (one per occurrence).
-      candidateRhythm = {
-        type: "frequency",
-        count: Math.max(
-          1,
-          formData
-            .getAll("scheduledTime")
-            .map(String)
-            .filter((s) => /^\d{2}:\d{2}$/.test(s)).length
-        ),
-        perCount: 1,
-        perUnit: "days",
-      };
-      break;
     case "daily":
-      candidateRhythm = { type: "daily" };
+      // Daily with multiple times of day → store as frequency (count =
+      // number of times, period = 1 day) so the existing per-instance
+      // X/Y progress UI handles "did I do all N today?". Single-time
+      // daily stays a plain `{type: "daily"}`.
+      if (validScheduledTimeCount > 1) {
+        candidateRhythm = {
+          type: "frequency",
+          count: validScheduledTimeCount,
+          perCount: 1,
+          perUnit: "days",
+        };
+      } else {
+        candidateRhythm = { type: "daily" };
+      }
       break;
     case "weekdays":
       candidateRhythm = {

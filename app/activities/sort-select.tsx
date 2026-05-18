@@ -39,19 +39,32 @@ export function SortSelect({
     });
   }
 
+  // Stop click propagation here (inside the client component) so the
+  // parent <details>'s summary-toggle doesn't fire when the user opens
+  // / changes the select. The previous setup had an inline onClick on
+  // the wrapping span inside a server component, which Next refused to
+  // serialize → the Archive page threw on render.
   return (
-    <select
-      value={current}
-      onChange={(e) => handleChange(e.target.value)}
-      disabled={isPending}
-      aria-label="Sort by"
-      className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs font-medium text-zinc-700 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+    <span
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        // Same protection for keyboard activation of the summary.
+        if (e.key === "Enter" || e.key === " ") e.stopPropagation();
+      }}
     >
-      {SORT_OPTIONS.map((opt) => (
-        <option key={opt.value} value={opt.value}>
-          {opt.label}
-        </option>
-      ))}
-    </select>
+      <select
+        value={current}
+        onChange={(e) => handleChange(e.target.value)}
+        disabled={isPending}
+        aria-label="Sort by"
+        className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs font-medium text-zinc-700 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+      >
+        {SORT_OPTIONS.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+    </span>
   );
 }

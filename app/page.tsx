@@ -125,7 +125,12 @@ export default async function HomePage({
   const incompleteInfo = await fetchIncompleteInfo(supabase);
 
   return (
-    <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-8 p-6">
+    <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-8 bg-white p-6 dark:bg-zinc-950">
+      {/* bg-white on <main> is what prevents the sticky header from
+          showing a transparent strip during scroll: previously the
+          `gap-8` between <header> and view body was a see-through
+          band, and scrolled-up rows were visible passing through it.
+          Solid bg on the container hides them. */}
       <header className="flex flex-col gap-4">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -1184,16 +1189,15 @@ async function GridView({
 
   // ---- 5b. Streak data --------------------------------------------------
   // For the per-row streak counter we need ALL past-or-today instances
-  // per activity, not just the in-range subset. We cap the lookback at
-  // 365 days so the query stays bounded for power users; a streak longer
-  // than one year is rare enough that the cap is acceptable for v1.
+  // per activity. No lookback cap — the streak walks back until it hits
+  // a missed/unlabeled or runs out of history. For typical users this
+  // is a few thousand rows; for a heavy multi-year user it scales
+  // linearly with their history. If that ever becomes a perf problem
+  // we can move to a per-activity DB-side aggregate (a `last_break_at`
+  // column updated on completion).
   //
   // Sorted DESC by scheduled_for so the streak walker can stop at the
   // first non-completed past period without scanning further history.
-  const streakLookbackStr = format(
-    addDays(parseDate(TODAY_STR), -365),
-    "yyyy-MM-dd"
-  );
   type StreakInst = { activity_id: string; scheduled_for: string; status: string };
   const streakInstances =
     rhythmicIds.length === 0
@@ -1203,7 +1207,6 @@ async function GridView({
             .from("activity_instances")
             .select("activity_id, scheduled_for, status")
             .in("activity_id", rhythmicIds)
-            .gte("scheduled_for", streakLookbackStr)
             .lte("scheduled_for", TODAY_STR)
             .order("scheduled_for", { ascending: false })
         ).data ?? []) as StreakInst[]);
@@ -1266,7 +1269,10 @@ async function GridView({
 
     return {
       activity: { id: act.id, name: act.name },
-      rhythmCategory: rhythmCategoryLabel(act.rhythm),
+      rhythmCategory: rhythmCategoryLabel(
+        act.rhythm,
+        act.scheduled_times ?? []
+      ),
       cells,
       pct,
       done,

@@ -71,10 +71,9 @@ export function summarizeDateRange(
 
 /**
  * Short categorical label for a rhythm — used in the Grid view's
- * "Type" column. Buckets:
- *   - "Multi":        multiple occurrences per day (multi-daily under the
- *                     hood is `frequency` with perCount=1, perUnit=days,
- *                     count > 1).
+ * "Type" column.
+ *
+ * Buckets (base rhythm):
  *   - "Daily":        once every day (rhythm.type === 'daily', and the
  *                     1-per-day case of frequency / interval).
  *   - "Specific":     specific weekdays (rhythm.type === 'weekdays').
@@ -83,8 +82,35 @@ export function summarizeDateRange(
  *   - "Once":         single events. Grid view filters these out today,
  *                     so this is mostly defensive — surfacing the label
  *                     elsewhere is harmless.
+ *
+ * "Multi" prefix: prepended when the activity has more than one time of
+ * day (e.g., "Multi Daily", "Multi Specific", "Multi N per Period").
+ * For daily activities the form converts multi-times to a frequency
+ * rhythm under the hood — that case ALSO returns "Multi Daily" so the
+ * two flavors look identical in the grid.
  */
-export function rhythmCategoryLabel(rhythm: Rhythm): string {
+export function rhythmCategoryLabel(
+  rhythm: Rhythm,
+  scheduledTimes: string[] = []
+): string {
+  const base = baseCategoryLabel(rhythm);
+  // Treat a frequency-day with count > 1 (the form's auto-conversion
+  // of "Daily + multi times") as multi too, even if scheduled_times is
+  // empty — its rhythm shape alone tells us it's multi-per-day.
+  const isAutoMultiDaily =
+    rhythm.type === "frequency" &&
+    normalizeFrequencyPeriod(rhythm).perUnit === "days" &&
+    normalizeFrequencyPeriod(rhythm).perCount === 1 &&
+    rhythm.count >= 2;
+  const isMulti = scheduledTimes.length > 1 || isAutoMultiDaily;
+  // For frequency-day-multi, the "base" is conceptually Daily (we just
+  // store it as frequency to drive the X/Y progress UI). Override the
+  // base label so it reads "Multi Daily" rather than "Multi N per Period".
+  const effectiveBase = isAutoMultiDaily ? "Daily" : base;
+  return isMulti ? `Multi ${effectiveBase}` : effectiveBase;
+}
+
+function baseCategoryLabel(rhythm: Rhythm): string {
   switch (rhythm.type) {
     case "single":
       return "Once";
@@ -93,15 +119,9 @@ export function rhythmCategoryLabel(rhythm: Rhythm): string {
     case "weekdays":
       return "Specific";
     case "interval":
-      // 1-day interval == daily; anything else is "N per Period".
       return rhythm.days === 1 ? "Daily" : "N per Period";
     case "frequency": {
       const { perCount, perUnit } = normalizeFrequencyPeriod(rhythm);
-      // Multi-daily: count >= 2 occurrences within a single day.
-      if (perUnit === "days" && perCount === 1 && rhythm.count >= 2) {
-        return "Multi";
-      }
-      // 1× per day is just "Daily".
       if (perUnit === "days" && perCount === 1 && rhythm.count === 1) {
         return "Daily";
       }
