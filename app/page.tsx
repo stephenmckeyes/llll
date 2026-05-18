@@ -154,13 +154,25 @@ export default async function HomePage({
           </div>
         </div>
 
+      </header>
+
+      {/* ViewSwitcher and each view's date navigator stay pinned at the
+          top while the user scrolls through the grid (or any long
+          view). The two stack via a fixed offset: ViewSwitcher at
+          top-0, navigator at top-[6.5rem] below it. The -mx-6 + px-6
+          lets the background extend across the page padding so
+          scrolled content doesn't show through their edges.
+          Per user spec: "make the grid view like the calendar view
+          where the date and view selections do not move/go out of
+          view as you scroll." */}
+      <div className="sticky top-0 z-30 -mx-6 bg-white px-6 py-2 dark:bg-zinc-950">
         <ViewSwitcher
           section={view === "grid" ? "grid" : "calendar"}
           currentView={view}
           range={range}
           date={date}
         />
-      </header>
+      </div>
 
       {view === "day" && (
         <DayView startDate={date} incompleteInfo={incompleteInfo} />
@@ -372,6 +384,21 @@ function ViewSwitcher({
           ))}
         </nav>
       )}
+    </div>
+  );
+}
+
+// StickyNav — wrapper that pins each view's date navigator just below
+// the page-level ViewSwitcher (which sticks at top-0). The fixed
+// `top-[6.5rem]` offset assumes ViewSwitcher's rendered height of
+// ~88px plus the wrapping py-2; tweak both together if either changes.
+// The negative margin + matching horizontal padding lets the
+// background color extend across the page's p-6 so scrolled content
+// doesn't leak through behind the navigator.
+function StickyNav({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="sticky top-[6.5rem] z-20 -mx-6 bg-white px-6 py-2 dark:bg-zinc-950">
+      {children}
     </div>
   );
 }
@@ -621,14 +648,16 @@ async function WeekView({
 
   return (
     <div className="flex flex-col gap-3">
-      <DateNavigator
-        view="week"
-        currentDate={weekDate}
-        prevDate={prevDate}
-        nextDate={nextDate}
-        label={`${format(weekStart, "MMM d")} – ${format(weekEnd, "MMM d, yyyy")}`}
-        incompleteInfo={incompleteInfo}
-      />
+      <StickyNav>
+        <DateNavigator
+          view="week"
+          currentDate={weekDate}
+          prevDate={prevDate}
+          nextDate={nextDate}
+          label={`${format(weekStart, "MMM d")} – ${format(weekEnd, "MMM d, yyyy")}`}
+          incompleteInfo={incompleteInfo}
+        />
+      </StickyNav>
 
       {/* Same 7-column grid on every viewport. Cells are intentionally
           compact (p-1, gap-1, tiny banner text) so that on a narrow
@@ -774,14 +803,16 @@ async function MonthView({
 
   return (
     <div className="flex flex-col gap-3">
-      <DateNavigator
-        view="month"
-        currentDate={monthDate}
-        prevDate={prevDate}
-        nextDate={nextDate}
-        label={format(refDate, "MMMM yyyy")}
-        incompleteInfo={incompleteInfo}
-      />
+      <StickyNav>
+        <DateNavigator
+          view="month"
+          currentDate={monthDate}
+          prevDate={prevDate}
+          nextDate={nextDate}
+          label={format(refDate, "MMMM yyyy")}
+          incompleteInfo={incompleteInfo}
+        />
+      </StickyNav>
 
       <div className="grid grid-cols-7 gap-1">
         {WEEK_HEADERS.map((d) => (
@@ -850,14 +881,16 @@ async function YearView({
 
   return (
     <div className="flex flex-col gap-3">
-      <DateNavigator
-        view="year"
-        currentDate={yearDate}
-        prevDate={prevDate}
-        nextDate={nextDate}
-        label={String(year)}
-        incompleteInfo={incompleteInfo}
-      />
+      <StickyNav>
+        <DateNavigator
+          view="year"
+          currentDate={yearDate}
+          prevDate={prevDate}
+          nextDate={nextDate}
+          label={String(year)}
+          incompleteInfo={incompleteInfo}
+        />
+      </StickyNav>
       <div className="grid grid-cols-3 gap-4">
         {months.map((m) => (
           <MiniMonth
@@ -1200,14 +1233,16 @@ async function GridView({
 
   return (
     <div className="flex flex-col gap-4">
-      <GridNavigator
-        range={range}
-        currentDate={gridDate}
-        prevDate={prevDate}
-        nextDate={nextDate}
-        label={label}
-        incompleteInfo={incompleteInfo}
-      />
+      <StickyNav>
+        <GridNavigator
+          range={range}
+          currentDate={gridDate}
+          prevDate={prevDate}
+          nextDate={nextDate}
+          label={label}
+          incompleteInfo={incompleteInfo}
+        />
+      </StickyNav>
 
       <GridTable
         mode={range}
