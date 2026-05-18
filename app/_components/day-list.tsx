@@ -31,6 +31,7 @@ import {
 } from "@/lib/validators/rhythm";
 
 import { ActivityModal } from "./activity-modal";
+import { IncompleteButton, type IncompleteInfo } from "./incomplete-button";
 import { InstanceRow } from "./instance-row";
 
 const DAY_VIEW_BACK = 90;
@@ -67,11 +68,13 @@ export function DayList({
   instances,
   completedByDate,
   todayStr,
+  incompleteInfo,
 }: {
   initialDate: string;
   completedByDate: Record<string, CompletedItem[]>;
   instances: DayInstance[];
   todayStr: string;
+  incompleteInfo: IncompleteInfo;
 }) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -231,6 +234,7 @@ export function DayList({
           >
             Today
           </button>
+          <IncompleteButton info={incompleteInfo} />
         </div>
       </div>
 

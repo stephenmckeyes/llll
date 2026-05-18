@@ -25,6 +25,7 @@ import Link from "next/link";
 import { signOut } from "@/app/actions/auth";
 import { ensureInstancesBackfilled } from "@/lib/domain/backfill";
 import { createClient } from "@/lib/supabase/server";
+import type { Rhythm } from "@/lib/validators/rhythm";
 
 import { DateNavigator } from "./_components/date-navigator";
 import {
@@ -33,17 +34,12 @@ import {
   type DayInstance,
 } from "./_components/day-list";
 import { GridNavigator } from "./_components/grid-navigator";
+import { GridTable } from "./_components/grid-table";
+import { type IncompleteInfo } from "./_components/incomplete-button";
 import { MonthInstanceBox } from "./_components/month-instance-box";
 
 type ViewKind = "day" | "week" | "month" | "year" | "grid";
-type GridRange = "week" | "month";
-
-type Rhythm =
-  | { type: "single" }
-  | { type: "daily" }
-  | { type: "weekdays"; days: string[] }
-  | { type: "interval"; days: number }
-  | { type: "frequency"; count: number; period: "day" | "week" | "month" };
+type GridRange = "week" | "month" | "total";
 
 // DayInstance (the shape passed to DayList) is imported from
 // _components/day-list. WeekView still uses its own internal type below.
@@ -104,6 +100,18 @@ export default async function HomePage({
   })();
   await ensureInstancesBackfilled(supabase, user.id, backfillThrough);
 
+  // ---- "Incomplete" surfacing -------------------------------------------
+  // Past-dated instances still in `pending` status (the user neither
+  // completed them nor marked them missed) feed the per-view "Incomplete"
+  // chip. We grab the OLDEST such date plus the total count in one round
+  // trip via an HEAD + ORDER ASC + LIMIT 1, since the same numbers feed
+  // every view.
+  //
+  // We exclude archived activities — they shouldn't keep nagging from a
+  // past life. RLS already scopes to the current user; the inner-join on
+  // `activities` filters by archived_at.
+  const incompleteInfo = await fetchIncompleteInfo(supabase);
+
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-8 p-6">
       <header className="flex flex-col gap-4">
@@ -139,15 +147,80 @@ export default async function HomePage({
         <ViewSwitcher current={view} date={date} />
       </header>
 
-      {view === "day" && <DayView startDate={date} userId={user.id} />}
-      {view === "week" && <WeekView weekDate={date} />}
-      {view === "month" && <MonthView monthDate={date} />}
-      {view === "year" && <YearView yearDate={date} />}
+      {view === "day" && (
+        <DayView
+          startDate={date}
+          userId={user.id}
+          incompleteInfo={incompleteInfo}
+        />
+      )}
+      {view === "week" && (
+        <WeekView weekDate={date} incompleteInfo={incompleteInfo} />
+      )}
+      {view === "month" && (
+        <MonthView monthDate={date} incompleteInfo={incompleteInfo} />
+      )}
+      {view === "year" && (
+        <YearView yearDate={date} incompleteInfo={incompleteInfo} />
+      )}
       {view === "grid" && (
-        <GridView gridDate={date} range={range} userId={user.id} />
+        <GridView
+          gridDate={date}
+          range={range}
+          userId={user.id}
+          incompleteInfo={incompleteInfo}
+        />
       )}
     </main>
   );
+}
+
+// ---------------------------------------------------------------------------
+// fetchIncompleteInfo — used by every view's navigator to power the
+// "Incomplete (N)" chip + jump-to-oldest behavior.
+// ---------------------------------------------------------------------------
+
+async function fetchIncompleteInfo(
+  supabase: Awaited<ReturnType<typeof createClient>>
+): Promise<IncompleteInfo> {
+  // Strictly-past pending instances on still-active activities. We use
+  // strictly less-than today so the chip doesn't pester the user about
+  // things they haven't yet had a chance to finish today.
+  //
+  // Two tiny queries: one for the oldest date (ASC limit 1) and one for
+  // the exact count via { count: 'exact', head: true }. PostgREST does
+  // not return count + ordered rows in one trip without fetching the
+  // rows, so this is the cleanest split.
+  const oldestPromise = supabase
+    .from("activity_instances")
+    .select("scheduled_for, activities!inner(archived_at)")
+    .eq("status", "pending")
+    .lt("scheduled_for", TODAY_STR)
+    .is("activities.archived_at", null)
+    .order("scheduled_for", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  const countPromise = supabase
+    .from("activity_instances")
+    .select("id, activities!inner(archived_at)", {
+      count: "exact",
+      head: true,
+    })
+    .eq("status", "pending")
+    .lt("scheduled_for", TODAY_STR)
+    .is("activities.archived_at", null);
+
+  const [{ data: oldest }, { count }] = await Promise.all([
+    oldestPromise,
+    countPromise,
+  ]);
+
+  return {
+    count: count ?? 0,
+    oldestDate:
+      (oldest as { scheduled_for?: string } | null)?.scheduled_for ?? null,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -165,7 +238,9 @@ function parseView(raw: string | undefined): ViewKind {
 }
 
 function parseGridRange(raw: string | undefined): GridRange {
-  return raw === "month" ? "month" : "week";
+  if (raw === "month") return "month";
+  if (raw === "total") return "total";
+  return "week";
 }
 
 function parseDateParam(raw: string | undefined): string {
@@ -260,9 +335,11 @@ function ViewSwitcher({
 async function DayView({
   startDate,
   userId,
+  incompleteInfo,
 }: {
   startDate: string;
   userId: string;
+  incompleteInfo: IncompleteInfo;
 }) {
   const supabase = await createClient();
 
@@ -395,6 +472,7 @@ async function DayView({
       instances={instances}
       completedByDate={completedByDate}
       todayStr={TODAY_STR}
+      incompleteInfo={incompleteInfo}
     />
   );
 }
@@ -404,7 +482,13 @@ async function DayView({
 // Banners inside each column show that day's activities.
 // ---------------------------------------------------------------------------
 
-async function WeekView({ weekDate }: { weekDate: string }) {
+async function WeekView({
+  weekDate,
+  incompleteInfo,
+}: {
+  weekDate: string;
+  incompleteInfo: IncompleteInfo;
+}) {
   const supabase = await createClient();
 
   const refDate = parseDate(weekDate);
@@ -483,6 +567,7 @@ async function WeekView({ weekDate }: { weekDate: string }) {
         prevDate={prevDate}
         nextDate={nextDate}
         label={`${format(weekStart, "MMM d")} – ${format(weekEnd, "MMM d, yyyy")}`}
+        incompleteInfo={incompleteInfo}
       />
 
       {/* Same 7-column grid on every viewport. Cells are intentionally
@@ -577,7 +662,13 @@ function WeekBanner({
 // day in its native month).
 // ---------------------------------------------------------------------------
 
-async function MonthView({ monthDate }: { monthDate: string }) {
+async function MonthView({
+  monthDate,
+  incompleteInfo,
+}: {
+  monthDate: string;
+  incompleteInfo: IncompleteInfo;
+}) {
   const supabase = await createClient();
 
   const refDate = parseDate(monthDate);
@@ -629,6 +720,7 @@ async function MonthView({ monthDate }: { monthDate: string }) {
         prevDate={prevDate}
         nextDate={nextDate}
         label={format(refDate, "MMMM yyyy")}
+        incompleteInfo={incompleteInfo}
       />
 
       <div className="grid grid-cols-7 gap-1">
@@ -654,7 +746,13 @@ async function MonthView({ monthDate }: { monthDate: string }) {
 // Days with activity are filled; today is ringed.
 // ---------------------------------------------------------------------------
 
-async function YearView({ yearDate }: { yearDate: string }) {
+async function YearView({
+  yearDate,
+  incompleteInfo,
+}: {
+  yearDate: string;
+  incompleteInfo: IncompleteInfo;
+}) {
   const supabase = await createClient();
   const refDate = parseDate(yearDate);
   const year = refDate.getFullYear();
@@ -698,6 +796,7 @@ async function YearView({ yearDate }: { yearDate: string }) {
         prevDate={prevDate}
         nextDate={nextDate}
         label={String(year)}
+        incompleteInfo={incompleteInfo}
       />
       <div className="grid grid-cols-3 gap-4">
         {months.map((m) => (
@@ -773,75 +872,89 @@ function MiniMonth({
 }
 
 // ---------------------------------------------------------------------------
-// Grid view — habit-tracker matrix. Rows = activities, columns = days in
-// the selected range, far-right column = success %.
+// Grid view — habit-tracker matrix.
 //
-// Cell coloring (per (activity, date) cell):
+// Two range modes:
+//   - week/month: classic grid (rows = activities, cols = days). Each
+//     cell is a clickable button that opens the ActivityModal in place.
+//   - total:     all-time summary (rows = activities, fixed columns
+//     for done/missed/overdue/success %, no per-day cells).
+//
+// Singles (one-time events) are excluded from the rhythm grid by
+// design — a single event would be a one-cell row with no recurrence
+// to track. Instead we surface them as a count banner below the grid
+// ("You have also completed X/Y one-time events this week/month/...").
+//
+// Cell coloring (calendar mode, per (activity, date) cell):
 //   completed       — solid green, ✓
 //   missed          — solid red, ✗
-//   overdue         — amber (past pending; the user neither completed nor
-//                     marked it missed yet)
-//   scheduled       — light grey box (today or future, still on the
-//                     menu)
-//   not-scheduled   — blank (the rhythm didn't apply to this day)
-//   outside-active  — diagonal-hatch (activity didn't exist yet, or was
-//                     archived / its end_date passed)
+//   overdue         — amber !  (past pending: neither done nor marked)
+//   scheduled       — light grey box ·  (today/future still on the menu)
+//   not-scheduled   — blank (rhythm doesn't apply)
+//   outside-active  — diagonal-hatch (activity wasn't active this day)
 //
-// Success % counts completed / (completed + missed + overdue) — i.e.
-// "of the days you were on the hook, what fraction did you do?"
-// Future-scheduled days don't drag the score down because the user
-// hasn't had a chance to do them yet.
+// Success % = completed / (completed + missed + overdue). Future-
+// scheduled days don't drag the score down because the user hasn't
+// had a chance to do them yet.
 // ---------------------------------------------------------------------------
-
-type GridCellState =
-  | "completed"
-  | "missed"
-  | "overdue"
-  | "scheduled"
-  | "not-scheduled"
-  | "outside";
 
 async function GridView({
   gridDate,
   range,
   userId,
+  incompleteInfo,
 }: {
   gridDate: string;
   range: GridRange;
   userId: string;
+  incompleteInfo: IncompleteInfo;
 }) {
   const supabase = await createClient();
   const refDate = parseDate(gridDate);
 
-  // Determine the visible range.
+  // ---- 1. Range bounds ---------------------------------------------------
+  // For total mode there are no "cells" — we still bound the instances
+  // query to [activity.earliest_start, today] later when needed, but
+  // for now use sentinels that mean "everything".
   const rangeStart =
     range === "week"
       ? startOfWeek(refDate, { weekStartsOn: 1 })
-      : startOfMonth(refDate);
+      : range === "month"
+        ? startOfMonth(refDate)
+        : null;
   const rangeEnd =
     range === "week"
       ? endOfWeek(refDate, { weekStartsOn: 1 })
-      : endOfMonth(refDate);
-  const rangeStartStr = format(rangeStart, "yyyy-MM-dd");
-  const rangeEndStr = format(rangeEnd, "yyyy-MM-dd");
+      : range === "month"
+        ? endOfMonth(refDate)
+        : null;
+  const rangeStartStr = rangeStart ? format(rangeStart, "yyyy-MM-dd") : null;
+  const rangeEndStr = rangeEnd ? format(rangeEnd, "yyyy-MM-dd") : null;
 
-  // List of date strings inside the range, in order.
-  const dayCount =
-    Math.round(
-      (rangeEnd.getTime() - rangeStart.getTime()) / (24 * 60 * 60 * 1000)
-    ) + 1;
-  const dateCols = Array.from({ length: dayCount }, (_, i) => {
-    const d = addDays(rangeStart, i);
-    return { date: d, dateStr: format(d, "yyyy-MM-dd") };
-  });
+  // Calendar-mode column list (one per day in range). Empty for total.
+  const dateCols: GridDateCol[] =
+    rangeStart && rangeEnd
+      ? (() => {
+          const n =
+            Math.round(
+              (rangeEnd.getTime() - rangeStart.getTime()) / (24 * 60 * 60 * 1000)
+            ) + 1;
+          return Array.from({ length: n }, (_, i) => {
+            const d = addDays(rangeStart, i);
+            return { date: d, dateStr: format(d, "yyyy-MM-dd") };
+          });
+        })()
+      : [];
 
-  // 1) Every non-archived activity for the user. (Rows; we want activities
-  //    that have NO instances in the range to still appear as a row — they
-  //    were active but the rhythm just didn't hit any day in this window.
-  //    A separate fetch is the cleanest way to get that.)
+  // ---- 2. Fetch ALL non-archived activities ------------------------------
+  // We need every field the ActivityModal expects so cells can open the
+  // modal without a follow-up fetch. We'll split rhythmic vs single in
+  // memory after the query.
   const { data: activitiesRaw } = await supabase
     .from("activities")
-    .select("id, name, start_date, end_date, priority, default_skill_tags")
+    .select(
+      "id, name, notes, rhythm, priority, scheduled_times, default_skill_tags, start_date, end_date, archived_at, reminders"
+    )
     .eq("user_id", userId)
     .is("archived_at", null)
     .order("name");
@@ -849,95 +962,220 @@ async function GridView({
   type ActivityRow = {
     id: string;
     name: string;
+    notes: string | null;
+    rhythm: Rhythm;
+    priority: number;
+    scheduled_times: string[];
+    default_skill_tags: string[];
     start_date: string;
     end_date: string | null;
-    priority: number;
-    default_skill_tags: string[] | null;
+    archived_at: string | null;
+    reminders: Array<{ amount: number; unit: string }>;
   };
   const activities = (activitiesRaw ?? []) as ActivityRow[];
 
-  // 2) Instances in [rangeStart, rangeEnd] for those activities. We need
-  //    status + the instance's activity_id; everything else we already
-  //    have from the activity row.
-  const activityIds = activities.map((a) => a.id);
-  const instances: Array<{
+  const rhythmicActivities = activities.filter(
+    (a) => a.rhythm.type !== "single"
+  );
+  const singleActivities = activities.filter(
+    (a) => a.rhythm.type === "single"
+  );
+
+  // ---- 3. Fetch instances ------------------------------------------------
+  // - calendar mode: instances for rhythmic activities in [rangeStart,
+  //   rangeEnd] + completion counts for the cell-click modal payload.
+  // - total mode: ALL instances for rhythmic activities (no date filter)
+  //   so we can roll up done/missed/overdue across history.
+  // Also fetch instances for SINGLE activities in the same window — we
+  // use these for the "You have also completed X/Y one-time events"
+  // banner.
+  const rhythmicIds = rhythmicActivities.map((a) => a.id);
+  const singleIds = singleActivities.map((a) => a.id);
+
+  type InstanceRow = {
+    id: string;
     activity_id: string;
     scheduled_for: string;
     status: string;
-  }> =
-    activityIds.length === 0
-      ? []
-      : (
-          (
-            await supabase
-              .from("activity_instances")
-              .select("activity_id, scheduled_for, status")
-              .in("activity_id", activityIds)
-              .gte("scheduled_for", rangeStartStr)
-              .lte("scheduled_for", rangeEndStr)
-          ).data ?? []
-        );
+    completion_instances: Array<{ completion_id: string }> | null;
+  };
 
-  // Index instances by activity → date → status for O(1) cell lookup.
-  const byActivity = new Map<string, Map<string, string>>();
-  for (const i of instances) {
-    let inner = byActivity.get(i.activity_id);
-    if (!inner) {
-      inner = new Map();
-      byActivity.set(i.activity_id, inner);
-    }
-    inner.set(i.scheduled_for, i.status);
+  let rhythmicInstancesQuery = supabase
+    .from("activity_instances")
+    .select("id, activity_id, scheduled_for, status, completion_instances ( completion_id )")
+    .in("activity_id", rhythmicIds.length === 0 ? ["__none__"] : rhythmicIds);
+  if (rangeStartStr) {
+    rhythmicInstancesQuery = rhythmicInstancesQuery.gte(
+      "scheduled_for",
+      rangeStartStr
+    );
+  }
+  if (rangeEndStr) {
+    rhythmicInstancesQuery = rhythmicInstancesQuery.lte(
+      "scheduled_for",
+      rangeEndStr
+    );
+  }
+  const rhythmicInstances =
+    rhythmicIds.length === 0
+      ? []
+      : (((await rhythmicInstancesQuery).data ?? []) as unknown as InstanceRow[]);
+
+  // Singles: bound to the same calendar window when there is one. In
+  // total mode we count everything since the user's history began.
+  let singlesQuery = supabase
+    .from("activity_instances")
+    .select("activity_id, scheduled_for, status")
+    .in("activity_id", singleIds.length === 0 ? ["__none__"] : singleIds);
+  if (rangeStartStr) {
+    singlesQuery = singlesQuery.gte("scheduled_for", rangeStartStr);
+  }
+  if (rangeEndStr) {
+    singlesQuery = singlesQuery.lte("scheduled_for", rangeEndStr);
+  }
+  const singlesInstances =
+    singleIds.length === 0
+      ? []
+      : ((await singlesQuery).data ?? []) as Array<{
+          activity_id: string;
+          scheduled_for: string;
+          status: string;
+        }>;
+
+  // Singles tally for the banner.
+  let singlesDone = 0;
+  const singlesTotal = singlesInstances.length;
+  for (const s of singlesInstances) {
+    if (s.status === "completed") singlesDone++;
   }
 
-  // Build row data.
-  const rows = activities.map((act) => {
-    const byDate = byActivity.get(act.id);
-    const cells = dateCols.map(({ dateStr }) => {
-      // "Outside" if the day predates the activity or lies past its end_date.
-      if (dateStr < act.start_date) return "outside" as GridCellState;
-      if (act.end_date && dateStr > act.end_date) {
-        return "outside" as GridCellState;
-      }
-      const status = byDate?.get(dateStr);
-      if (!status) return "not-scheduled" as GridCellState;
-      if (status === "completed") return "completed" as GridCellState;
-      if (status === "missed") return "missed" as GridCellState;
-      // status === 'pending'
-      return dateStr < TODAY_STR
-        ? ("overdue" as GridCellState)
-        : ("scheduled" as GridCellState);
-    });
-
-    // Success % = completed / (completed + missed + overdue).
-    let onTheHook = 0;
-    let done = 0;
-    for (const c of cells) {
-      if (c === "completed") {
-        done++;
-        onTheHook++;
-      } else if (c === "missed" || c === "overdue") {
-        onTheHook++;
-      }
+  // ---- 4. Index instances per (activity, date) for fast lookup ----------
+  // For calendar mode we look up by (activityId, dateStr). For total
+  // mode we don't render per-day cells — we just tally per activity.
+  const instancesByActivityDate = new Map<string, Map<string, InstanceRow>>();
+  for (const i of rhythmicInstances) {
+    let inner = instancesByActivityDate.get(i.activity_id);
+    if (!inner) {
+      inner = new Map();
+      instancesByActivityDate.set(i.activity_id, inner);
     }
+    inner.set(i.scheduled_for, i);
+  }
+
+  // ---- 5. Build row data -------------------------------------------------
+  const rows: GridTableRow[] = rhythmicActivities.map((act) => {
+    const byDate = instancesByActivityDate.get(act.id);
+
+    // CALENDAR MODE: build a cell per dateCol and tally done/missed/overdue.
+    // TOTAL MODE: skip per-day cells; just tally across every instance
+    // we have for the activity.
+    let cells: GridTableCell[] = [];
+    let done = 0;
+    let missed = 0;
+    let overdue = 0;
+    let oldestPending: DayInstance | null = null;
+
+    if (range === "total") {
+      // Tally over the full instance set we just fetched.
+      const all: InstanceRow[] = byDate ? Array.from(byDate.values()) : [];
+      // Sort ascending so oldestPending is straightforward.
+      all.sort((a, b) =>
+        a.scheduled_for < b.scheduled_for
+          ? -1
+          : a.scheduled_for > b.scheduled_for
+            ? 1
+            : 0
+      );
+      for (const inst of all) {
+        if (inst.status === "completed") done++;
+        else if (inst.status === "missed") missed++;
+        else if (inst.scheduled_for < TODAY_STR) {
+          // pending + past
+          overdue++;
+          if (oldestPending === null) {
+            oldestPending = toDayInstance(inst, act);
+          }
+        }
+      }
+    } else {
+      // Calendar mode.
+      cells = dateCols.map(({ dateStr }) => {
+        // "Outside" if the day predates the activity or lies past its end.
+        if (dateStr < act.start_date) {
+          return makeNonInstanceCell("outside", dateStr);
+        }
+        if (act.end_date && dateStr > act.end_date) {
+          return makeNonInstanceCell("outside", dateStr);
+        }
+        const inst = byDate?.get(dateStr);
+        if (!inst) {
+          return makeNonInstanceCell("not-scheduled", dateStr);
+        }
+        let state: GridCellStateLocal;
+        if (inst.status === "completed") {
+          state = "completed";
+          done++;
+        } else if (inst.status === "missed") {
+          state = "missed";
+          missed++;
+        } else if (dateStr < TODAY_STR) {
+          state = "overdue";
+          overdue++;
+          if (oldestPending === null) {
+            oldestPending = toDayInstance(inst, act);
+          }
+        } else {
+          state = "scheduled";
+        }
+        return {
+          state,
+          dateStr,
+          instance: toDayInstance(inst, act),
+        };
+      });
+    }
+
+    const onTheHook = done + missed + overdue;
     const pct = onTheHook === 0 ? null : Math.round((done / onTheHook) * 100);
 
-    return { activity: act, cells, pct, onTheHook };
+    return {
+      activity: { id: act.id, name: act.name },
+      cells,
+      pct,
+      done,
+      missed,
+      overdue,
+      oldestPending,
+    };
   });
 
-  // Navigator prev/next dates: step by the range size.
+  // ---- 6. Navigator metadata --------------------------------------------
   const prevDate =
     range === "week"
-      ? format(addDays(rangeStart, -7), "yyyy-MM-dd")
-      : format(addMonths(rangeStart, -1), "yyyy-MM-dd");
+      ? format(addDays(rangeStart!, -7), "yyyy-MM-dd")
+      : range === "month"
+        ? format(addMonths(rangeStart!, -1), "yyyy-MM-dd")
+        : gridDate;
   const nextDate =
     range === "week"
-      ? format(addDays(rangeStart, 7), "yyyy-MM-dd")
-      : format(addMonths(rangeStart, 1), "yyyy-MM-dd");
+      ? format(addDays(rangeStart!, 7), "yyyy-MM-dd")
+      : range === "month"
+        ? format(addMonths(rangeStart!, 1), "yyyy-MM-dd")
+        : gridDate;
 
   const label =
     range === "week"
-      ? `${format(rangeStart, "MMM d")} – ${format(rangeEnd, "MMM d, yyyy")}`
-      : format(refDate, "MMMM yyyy");
+      ? `${format(rangeStart!, "MMM d")} – ${format(rangeEnd!, "MMM d, yyyy")}`
+      : range === "month"
+        ? format(refDate, "MMMM yyyy")
+        : "All time";
+
+  const bannerRangeLabel =
+    range === "week"
+      ? "this week"
+      : range === "month"
+        ? "this month"
+        : "all-time";
 
   return (
     <div className="flex flex-col gap-4">
@@ -947,231 +1185,101 @@ async function GridView({
         prevDate={prevDate}
         nextDate={nextDate}
         label={label}
+        incompleteInfo={incompleteInfo}
       />
 
-      {rows.length === 0 ? (
-        <p className="rounded-md border border-dashed border-zinc-200 p-6 text-center text-sm text-zinc-500 dark:border-zinc-800">
-          No active activities yet. Add one to see it show up here.
-        </p>
-      ) : (
-        // Horizontal scroll wrapper: on narrow viewports a month range can
-        // easily run wider than the main column, so we let the table scroll
-        // sideways while the activity-name column stays put via sticky-left.
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-max border-separate border-spacing-0 text-xs">
-            <thead>
-              <tr>
-                <th
-                  scope="col"
-                  className="sticky left-0 z-20 border-b border-zinc-200 bg-white px-2 py-2 text-left text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950"
-                >
-                  Activity
-                </th>
-                {dateCols.map((c) => (
-                  <th
-                    key={c.dateStr}
-                    scope="col"
-                    className={`border-b border-zinc-200 px-1 py-2 text-center text-[10px] font-medium dark:border-zinc-800 ${
-                      c.dateStr === TODAY_STR
-                        ? "text-zinc-900 dark:text-zinc-50"
-                        : "text-zinc-500"
-                    }`}
-                  >
-                    <div className="uppercase tracking-wide">
-                      {format(c.date, "EEE")}
-                    </div>
-                    <div
-                      className={`text-sm ${
-                        c.dateStr === TODAY_STR
-                          ? "font-semibold"
-                          : "font-normal"
-                      }`}
-                    >
-                      {c.date.getDate()}
-                    </div>
-                  </th>
-                ))}
-                <th
-                  scope="col"
-                  className="sticky right-0 z-20 border-b border-l border-zinc-200 bg-white px-2 py-2 text-center text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950"
-                >
-                  Success
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.activity.id}>
-                  <th
-                    scope="row"
-                    className="sticky left-0 z-10 border-b border-zinc-100 bg-white px-2 py-1.5 text-left text-xs font-medium text-zinc-800 dark:border-zinc-900 dark:bg-zinc-950 dark:text-zinc-200"
-                  >
-                    <span
-                      className="block max-w-[10rem] truncate"
-                      title={row.activity.name}
-                    >
-                      {row.activity.name}
-                    </span>
-                  </th>
-                  {row.cells.map((state, i) => (
-                    <td
-                      key={dateCols[i].dateStr}
-                      className="border-b border-zinc-100 p-0.5 dark:border-zinc-900"
-                    >
-                      <GridCell
-                        state={state}
-                        dateStr={dateCols[i].dateStr}
-                        activityName={row.activity.name}
-                      />
-                    </td>
-                  ))}
-                  <td
-                    className={`sticky right-0 z-10 border-b border-l border-zinc-100 bg-white px-2 py-1.5 text-center text-xs dark:border-zinc-900 dark:bg-zinc-950 ${
-                      row.pct === null
-                        ? "text-zinc-400"
-                        : row.pct >= 80
-                          ? "font-semibold text-emerald-700 dark:text-emerald-300"
-                          : row.pct >= 50
-                            ? "text-amber-700 dark:text-amber-300"
-                            : "text-red-700 dark:text-red-300"
-                    }`}
-                  >
-                    {row.pct === null ? "—" : `${row.pct}%`}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      <GridLegend />
+      <GridTable
+        mode={range === "total" ? "total" : "calendar"}
+        rows={rows}
+        dateCols={dateCols}
+        todayStr={TODAY_STR}
+        rangeLabel={bannerRangeLabel}
+        singlesDone={singlesDone}
+        singlesTotal={singlesTotal}
+      />
     </div>
   );
 }
 
-function GridCell({
-  state,
-  dateStr,
-  activityName,
-}: {
-  state: GridCellState;
+// ---------------------------------------------------------------------------
+// Helpers used by GridView only.
+// ---------------------------------------------------------------------------
+
+type GridCellStateLocal =
+  | "completed"
+  | "missed"
+  | "overdue"
+  | "scheduled"
+  | "not-scheduled"
+  | "outside";
+
+type GridDateCol = { date: Date; dateStr: string };
+
+type GridTableCell = {
+  state: GridCellStateLocal;
   dateStr: string;
-  activityName: string;
-}) {
-  // Each cell is a tiny clickable Link that jumps to the day view for that
-  // date — clicking through to the day's instance is the natural "I want
-  // to fix that" affordance once the user spots a missing day in the grid.
-  const isToday = dateStr === TODAY_STR;
-  const base =
-    "flex aspect-square w-7 items-center justify-center rounded text-[10px] font-medium transition-colors";
-  let cls = base;
-  let label: string;
-  let inner: React.ReactNode = "";
+  instance: DayInstance | null;
+};
 
-  switch (state) {
-    case "completed":
-      cls += " bg-emerald-500 text-white hover:bg-emerald-600";
-      inner = "✓";
-      label = `Completed — ${activityName} on ${dateStr}`;
-      break;
-    case "missed":
-      cls += " bg-red-500 text-white hover:bg-red-600";
-      inner = "✗";
-      label = `Missed — ${activityName} on ${dateStr}`;
-      break;
-    case "overdue":
-      cls += " bg-amber-300 text-amber-900 hover:bg-amber-400 dark:bg-amber-700 dark:text-amber-100";
-      inner = "!";
-      label = `Overdue — ${activityName} on ${dateStr}`;
-      break;
-    case "scheduled":
-      cls += " border border-zinc-300 bg-zinc-50 text-zinc-400 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900";
-      inner = "·";
-      label = `Scheduled — ${activityName} on ${dateStr}`;
-      break;
-    case "not-scheduled":
-      cls += " text-zinc-300 dark:text-zinc-700";
-      label = `${activityName} — not scheduled on ${dateStr}`;
-      break;
-    case "outside":
-      // Diagonal-hatched look via repeating linear gradient (inline so we
-      // don't need a custom Tailwind utility).
-      cls += " text-zinc-300 dark:text-zinc-700";
-      label = `${activityName} — not active on ${dateStr}`;
-      break;
-  }
+type GridTableRow = {
+  activity: { id: string; name: string };
+  cells: GridTableCell[];
+  pct: number | null;
+  done: number;
+  missed: number;
+  overdue: number;
+  oldestPending: DayInstance | null;
+};
 
-  if (isToday) {
-    cls += " ring-1 ring-zinc-900 dark:ring-zinc-50";
-  }
-
-  const style: React.CSSProperties | undefined =
-    state === "outside"
-      ? {
-          backgroundImage:
-            "repeating-linear-gradient(45deg, rgb(228 228 231 / 0.6) 0 2px, transparent 2px 6px)",
-        }
-      : undefined;
-
-  return (
-    <Link
-      href={`/?view=day&date=${dateStr}`}
-      title={label}
-      aria-label={label}
-      className={cls}
-      style={style}
-    >
-      {inner}
-    </Link>
-  );
+function makeNonInstanceCell(
+  state: "not-scheduled" | "outside",
+  dateStr: string
+): GridTableCell {
+  return { state, dateStr, instance: null };
 }
 
-function GridLegend() {
-  // Plain non-interactive color swatches sized to match a small inline
-  // glyph (NOT the full grid cells — those are clickable Links sized to
-  // be tappable, which is wrong for legend use).
-  const items: Array<{ state: GridCellState; label: string; swatch: string }> = [
-    { state: "completed", label: "Done", swatch: "bg-emerald-500" },
-    { state: "missed", label: "Missed", swatch: "bg-red-500" },
-    {
-      state: "overdue",
-      label: "Overdue",
-      swatch: "bg-amber-300 dark:bg-amber-700",
+// Assemble the full DayInstance the ActivityModal expects from an
+// instance row + its parent activity row. Keeping this conversion in
+// one place means cells, oldest-pending row clicks, and any future
+// surface that wants to open the modal stay in sync.
+function toDayInstance(
+  inst: {
+    id: string;
+    scheduled_for: string;
+    completion_instances: Array<{ completion_id: string }> | null;
+  },
+  act: {
+    id: string;
+    name: string;
+    notes: string | null;
+    rhythm: Rhythm;
+    priority: number;
+    scheduled_times: string[];
+    default_skill_tags: string[];
+    start_date: string;
+    end_date: string | null;
+    archived_at: string | null;
+    reminders: Array<{ amount: number; unit: string }>;
+  }
+): DayInstance {
+  return {
+    id: inst.id,
+    scheduled_for: inst.scheduled_for,
+    completionCount: inst.completion_instances?.length ?? 0,
+    activity: {
+      id: act.id,
+      name: act.name,
+      notes: act.notes,
+      rhythm: act.rhythm,
+      priority: act.priority,
+      scheduled_times: act.scheduled_times ?? [],
+      default_skill_tags: act.default_skill_tags ?? [],
+      start_date: act.start_date,
+      end_date: act.end_date,
+      archived_at: act.archived_at,
+      reminders: act.reminders ?? [],
     },
-    {
-      state: "scheduled",
-      label: "Scheduled",
-      swatch:
-        "border border-zinc-300 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900",
-    },
-    {
-      state: "outside",
-      label: "Not active",
-      swatch: "",
-    },
-  ];
-  return (
-    <p className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-zinc-500">
-      {items.map((it) => (
-        <span key={it.state} className="inline-flex items-center gap-1">
-          <span
-            aria-hidden
-            className={`inline-block h-3 w-3 rounded ${it.swatch}`}
-            style={
-              it.state === "outside"
-                ? {
-                    backgroundImage:
-                      "repeating-linear-gradient(45deg, rgb(228 228 231 / 0.6) 0 2px, transparent 2px 6px)",
-                  }
-                : undefined
-            }
-          />
-          {it.label}
-        </span>
-      ))}
-    </p>
-  );
+  };
 }
 
 // ---------------------------------------------------------------------------

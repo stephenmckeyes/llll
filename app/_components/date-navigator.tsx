@@ -14,6 +14,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { IncompleteButton, type IncompleteInfo } from "./incomplete-button";
+
 type ViewKind = "day" | "week" | "month" | "year";
 
 export function DateNavigator({
@@ -22,12 +24,14 @@ export function DateNavigator({
   prevDate,
   nextDate,
   label,
+  incompleteInfo,
 }: {
   view: ViewKind;
   currentDate: string;
   prevDate: string;
   nextDate: string;
   label: string;
+  incompleteInfo: IncompleteInfo;
 }) {
   const router = useRouter();
   // Mirror the `currentDate` prop into local state during render rather
@@ -81,6 +85,7 @@ export function DateNavigator({
         >
           Today
         </Link>
+        <IncompleteButton info={incompleteInfo} />
       </div>
     </div>
   );

@@ -50,20 +50,36 @@ Future direction (per user spec):
 
 ## Grid view follow-ups
 
-Grid view shipped with week + month ranges. Still to do:
+Grid view shipped with week / month / total ranges, with cells now
+opening the ActivityModal in place, singles filtered out and surfaced
+as a count banner, and a per-view "Incomplete (N)" jump chip. Still
+to do:
 
-- **Year range** — 365-day grid is unreadable at normal cell sizes.
-  Either compress cells (heatmap-style, no glyphs) or jump to a
-  separate "summary" layout (1 column per week, cell = "X of Y done"
-  that week).
-- **Custom range picker** — start/end date inputs for arbitrary windows.
-- **Row sort** — currently alphabetical; add toggles for "lowest success
-  %" (where am I slipping) and "most active this period."
-- **Color cells by activity tag** when tags become first-class.
-- **Click an empty/overdue cell → quick-complete it inline** instead of
-  jumping to the day view. Could be a small popover on click.
+- **Group rows by activity tag** — currently flat alphabetical. Once
+  tags become first-class (skills layer), the grid should group rows
+  by primary tag with a small tag header per group, so the user
+  doesn't stare at a wall of unrelated activities side by side. Likely
+  also: collapse/expand per group, and a "no-tag" bucket at the
+  bottom.
+- **Custom range picker** — start/end date inputs for arbitrary
+  windows.
+- **Row sort** — currently alphabetical inside each group; add
+  toggles for "lowest success %" (where am I slipping) and "most
+  active this period."
+- **Color cells by activity tag** (once tag colors exist).
+- **Quick-complete from grid cell** — clicking an overdue/scheduled
+  cell currently opens the full modal. A small popover with just
+  Complete / Missed / Open buttons would be even faster for the
+  "fix that one cell" workflow.
 - **Frequency rhythms ("3× per week")** currently get one cell per
-  anchor day. Consider showing "2/3 done" per period instead.
+  anchor day. Consider showing "2/3 done" per period instead — would
+  pair well with the tag-grouping above (you'd see weekly tag totals
+  alongside the daily-rhythm rows).
+- **Year / multi-year range** — 365+-day grid is unreadable at normal
+  cell sizes. Either compress cells (heatmap-style, no glyphs) or a
+  separate "summary by week" layout (1 column per week, cell = "X of
+  Y done" that week). The Total tab covers the "give me one number
+  per activity" use case today.
 
 ## Calendar export — subscribe to Mission from iPhone/Android/Google/Outlook
 

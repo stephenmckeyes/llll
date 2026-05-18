@@ -21,7 +21,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-type GridRange = "week" | "month";
+import { IncompleteButton, type IncompleteInfo } from "./incomplete-button";
+
+type GridRange = "week" | "month" | "total";
 
 export function GridNavigator({
   range,
@@ -29,12 +31,14 @@ export function GridNavigator({
   prevDate,
   nextDate,
   label,
+  incompleteInfo,
 }: {
   range: GridRange;
   currentDate: string;
   prevDate: string;
   nextDate: string;
   label: string;
+  incompleteInfo: IncompleteInfo;
 }) {
   const router = useRouter();
   // Derived state from `currentDate` (a prop coming from the URL).
@@ -49,15 +53,21 @@ export function GridNavigator({
     setVal(currentDate);
   }
 
+  // Total mode has no notion of a "current period" or "previous/next"
+  // window — it summarizes across all time. Hide the date-stepping
+  // controls in that mode; just show the range tabs + label + the
+  // Today/Incomplete jump buttons.
+  const isTotal = range === "total";
+
   return (
     <div className="flex flex-col gap-2">
       {/* Range tabs — preserve the in-view date, just change the window
-          width around it. */}
+          width around it. Total summarizes all activity (no per-day cells). */}
       <nav
         className="mx-auto flex w-fit gap-1 rounded-md border border-zinc-200 p-1 dark:border-zinc-800"
         aria-label="Grid range"
       >
-        {(["week", "month"] as const).map((r) => {
+        {(["week", "month", "total"] as const).map((r) => {
           const active = r === range;
           return (
             <Link
@@ -69,7 +79,7 @@ export function GridNavigator({
                   : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
               }`}
             >
-              {r === "week" ? "Week" : "Month"}
+              {r === "week" ? "Week" : r === "month" ? "Month" : "Total"}
             </Link>
           );
         })}
@@ -82,37 +92,42 @@ export function GridNavigator({
       </p>
 
       <div className="flex items-center justify-center gap-2">
-        <Link
-          href={hrefFor(range, prevDate)}
-          aria-label="Previous"
-          className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-        >
-          ←
-        </Link>
-        <input
-          type="date"
-          value={val}
-          onChange={(e) => {
-            setVal(e.target.value);
-            if (/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) {
-              router.push(hrefFor(range, e.target.value));
-            }
-          }}
-          className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-        />
-        <Link
-          href={hrefFor(range, nextDate)}
-          aria-label="Next"
-          className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-        >
-          →
-        </Link>
-        <Link
-          href={`/?view=grid&range=${range}`}
-          className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
-        >
-          Today
-        </Link>
+        {!isTotal && (
+          <>
+            <Link
+              href={hrefFor(range, prevDate)}
+              aria-label="Previous"
+              className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            >
+              ←
+            </Link>
+            <input
+              type="date"
+              value={val}
+              onChange={(e) => {
+                setVal(e.target.value);
+                if (/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) {
+                  router.push(hrefFor(range, e.target.value));
+                }
+              }}
+              className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            />
+            <Link
+              href={hrefFor(range, nextDate)}
+              aria-label="Next"
+              className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            >
+              →
+            </Link>
+            <Link
+              href={`/?view=grid&range=${range}`}
+              className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
+            >
+              Today
+            </Link>
+          </>
+        )}
+        <IncompleteButton info={incompleteInfo} />
       </div>
     </div>
   );
