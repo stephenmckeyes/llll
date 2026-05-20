@@ -6,7 +6,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { buildTagMap } from "@/lib/domain/tags";
+import { buildTagMap, computeTagUsage } from "@/lib/domain/tags";
 import { createClient } from "@/lib/supabase/server";
 
 import { ActivityForm } from "./activity-form";
@@ -18,13 +18,23 @@ export default async function NewActivityPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // Fetch the user's tag palette so the TagPicker can render existing
-  // tags inline (no client-side fetch on first paint).
-  const { data: tagRows } = await supabase
-    .from("tags")
-    .select("id, name, color");
+  // Fetch the user's tag palette + per-tag usage counts so the picker
+  // can render existing tags inline AND sort the "Most frequent" list
+  // by popularity. Usage counts cover active (non-archived) activities
+  // only.
+  const [{ data: tagRows }, { data: activityTagRows }] = await Promise.all([
+    supabase.from("tags").select("id, name, color"),
+    supabase
+      .from("activities")
+      .select("default_skill_tags")
+      .is("archived_at", null),
+  ]);
+  const usageByName = computeTagUsage(
+    (activityTagRows ?? []) as Array<{ default_skill_tags: string[] | null }>
+  );
   const tagMap = buildTagMap(
-    (tagRows ?? []) as Array<{ id: string; name: string; color: string }>
+    (tagRows ?? []) as Array<{ id: string; name: string; color: string }>,
+    usageByName
   );
 
   return (

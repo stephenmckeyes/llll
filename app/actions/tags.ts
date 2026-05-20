@@ -80,6 +80,11 @@ export async function createTag(
         id: inserted.id as string,
         name: inserted.name as string,
         color: inserted.color as TagInfo["color"],
+        // Brand-new tag, not attached to anything yet — server-side
+        // usage starts at 0. The picker bumps the value as the user
+        // selects the tag this session, but the durable count comes
+        // from the next page render.
+        usage: 0,
       },
     };
   }
@@ -106,6 +111,10 @@ export async function createTag(
       id: existing.id as string,
       name: existing.name as string,
       color: existing.color as TagInfo["color"],
+      // We don't have the current usage count here without an extra
+      // query — start at 0 and let the next page render pick up the
+      // real value from computeTagUsage.
+      usage: 0,
     },
   };
 }

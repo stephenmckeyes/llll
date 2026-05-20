@@ -27,7 +27,7 @@ import { signOut } from "@/app/actions/auth";
 import { ensureInstancesBackfilled } from "@/lib/domain/backfill";
 import { rhythmCategoryLabel } from "@/lib/domain/rhythm-summary";
 import { computeStreak } from "@/lib/domain/streak";
-import { buildTagMap, type TagMap } from "@/lib/domain/tags";
+import { buildTagMap, computeTagUsage, type TagMap } from "@/lib/domain/tags";
 import { createClient } from "@/lib/supabase/server";
 import type { Rhythm } from "@/lib/validators/rhythm";
 
@@ -121,11 +121,24 @@ export default async function HomePage({
   // calendar week/month cells). Activities reference tags by name
   // verbatim in `default_skill_tags[]`; this map is just the optional
   // color metadata. Unknown names render gray via the fallback.
-  const { data: tagRows } = await supabase
-    .from("tags")
-    .select("id, name, color");
+  //
+  // We also tally per-tag usage (count of active activities using
+  // each tag) so the picker's "Most frequent" list can sort by
+  // popularity rather than creation order. One small extra query
+  // — usage is per-user and the working set is typically tiny.
+  const [{ data: tagRows }, { data: activityTagRows }] = await Promise.all([
+    supabase.from("tags").select("id, name, color"),
+    supabase
+      .from("activities")
+      .select("default_skill_tags")
+      .is("archived_at", null),
+  ]);
+  const usageByName = computeTagUsage(
+    (activityTagRows ?? []) as Array<{ default_skill_tags: string[] | null }>
+  );
   const tagMap: TagMap = buildTagMap(
-    (tagRows ?? []) as Array<{ id: string; name: string; color: string }>
+    (tagRows ?? []) as Array<{ id: string; name: string; color: string }>,
+    usageByName
   );
 
   // ---- "Incomplete" surfacing -------------------------------------------

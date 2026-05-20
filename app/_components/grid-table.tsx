@@ -28,10 +28,16 @@
 // the row to just [name + toggle], on shows everything.
 // ---------------------------------------------------------------------------
 
-import { useCallback, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 import { summarizeRhythm } from "@/lib/domain/rhythm-summary";
-import type { TagMap } from "@/lib/domain/tags";
+import { tagDotClasses, type TagMap } from "@/lib/domain/tags";
 
 import { ActivityModal } from "./activity-modal";
 import type { DayInstance } from "./day-list";
@@ -69,6 +75,14 @@ export type GridRow = {
 export type DateCol = { date: Date; dateStr: string };
 
 export type GridMode = "week" | "month" | "total";
+
+/** Sort keys for the toolbar dropdown. "alpha" is the default. */
+export type GridSortKey =
+  | "alpha"
+  | "done-desc"
+  | "streak-desc"
+  | "pct-desc"
+  | "pct-asc";
 
 // Cell-size caps per mode (pixels). MAX cell width; actual size is
 // min(cap, container_width / cols). Total uses a hard cap so the
@@ -126,16 +140,112 @@ export function GridTable({
   const [openInstance, setOpenInstance] = useState<DayInstance | null>(null);
   const { off, toggle } = useRowOffSet(userId);
 
+  // ---- Sort + filter (client state) -------------------------------------
+  const [sortKey, setSortKey] = useState<GridSortKey>("alpha");
+  // Tag filter is stored as a HIDDEN set rather than a "selected" set
+  // so the default (everything visible) is the empty set — which means
+  // new tags added later automatically show without needing an opt-in.
+  // The pseudo-name "__none__" controls whether activities with no
+  // tags at all appear.
+  const [hiddenTags, setHiddenTags] = useState<ReadonlySet<string>>(
+    new Set()
+  );
+
+  // All distinct tag names across the row set, sorted A→Z. We also
+  // surface "__none__" as a synthetic entry so the user can hide
+  // tagless activities if they want.
+  const allTagNames = useMemo(() => {
+    const s = new Set<string>();
+    for (const r of rows) for (const t of r.activity.tags) s.add(t);
+    return Array.from(s).sort();
+  }, [rows]);
+
+  const visibleRows = useMemo(() => {
+    // Apply filter first, then sort.
+    const filtered = rows.filter((r) => {
+      if (r.activity.tags.length === 0) {
+        return !hiddenTags.has("__none__");
+      }
+      // "Show if ANY of its tags is still visible" — per the spec,
+      // unchecking a tag hides activities whose ONLY tags are unchecked.
+      return r.activity.tags.some((t) => !hiddenTags.has(t));
+    });
+    const sorted = [...filtered];
+    switch (sortKey) {
+      case "alpha":
+        sorted.sort((a, b) =>
+          a.activity.name.localeCompare(b.activity.name)
+        );
+        break;
+      case "done-desc":
+        sorted.sort((a, b) => b.done - a.done);
+        break;
+      case "streak-desc":
+        sorted.sort((a, b) => b.streak - a.streak);
+        break;
+      case "pct-desc":
+        // Null pct (no on-the-hook in range) sinks to the bottom.
+        sorted.sort((a, b) => {
+          const pa = a.pct ?? -1;
+          const pb = b.pct ?? -1;
+          return pb - pa;
+        });
+        break;
+      case "pct-asc":
+        sorted.sort((a, b) => {
+          const pa = a.pct ?? Number.POSITIVE_INFINITY;
+          const pb = b.pct ?? Number.POSITIVE_INFINITY;
+          return pa - pb;
+        });
+        break;
+    }
+    return sorted;
+  }, [rows, hiddenTags, sortKey]);
+
+  function toggleHiddenTag(name: string) {
+    setHiddenTags((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }
+  function selectAllTags() {
+    setHiddenTags(new Set());
+  }
+
   return (
     <>
+      <GridToolbar
+        sortKey={sortKey}
+        onSortChange={setSortKey}
+        tagNames={allTagNames}
+        hiddenTags={hiddenTags}
+        onToggleTag={toggleHiddenTag}
+        onSelectAll={selectAllTags}
+        tagMap={tagMap}
+      />
+
       {rows.length === 0 ? (
         <p className="rounded-md border border-dashed border-zinc-200 p-6 text-center text-sm text-zinc-500 dark:border-zinc-800">
           No rhythmic activities active in this period. Add one, or pick a
           different time window.
         </p>
+      ) : visibleRows.length === 0 ? (
+        <p className="rounded-md border border-dashed border-zinc-200 p-6 text-center text-sm text-zinc-500 dark:border-zinc-800">
+          No activities match the current tag filter.{" "}
+          <button
+            type="button"
+            onClick={selectAllTags}
+            className="font-medium text-blue-600 underline-offset-2 hover:underline dark:text-blue-400"
+          >
+            Show all
+          </button>
+          .
+        </p>
       ) : mode === "week" ? (
         <WeekTable
-          rows={rows}
+          rows={visibleRows}
           dateCols={dateCols}
           todayStr={todayStr}
           off={off}
@@ -145,7 +255,7 @@ export function GridTable({
         />
       ) : mode === "month" ? (
         <MonthTable
-          rows={rows}
+          rows={visibleRows}
           dateCols={dateCols}
           todayStr={todayStr}
           off={off}
@@ -155,7 +265,7 @@ export function GridTable({
         />
       ) : (
         <TotalTable
-          rows={rows}
+          rows={visibleRows}
           dateCols={dateCols}
           todayStr={todayStr}
           off={off}
@@ -623,9 +733,10 @@ function CellButton({
   onOpen: (i: DayInstance) => void;
 }) {
   // Outside-days (activity hadn't started yet / had already ended)
-  // render as empty grid slots EVERYWHERE — no diagonal hatch, no
-  // hover, nothing. The grid reads as pure history.
-  if (cell.state === "outside") {
+  // AND not-scheduled days (rhythm doesn't apply this day) both render
+  // as empty grid slots. The grid is now a pure "things you were
+  // actually on the hook for" surface — no visual noise for off-days.
+  if (cell.state === "outside" || cell.state === "not-scheduled") {
     return <div className={aspectClass} />;
   }
 
@@ -657,10 +768,9 @@ function CellButton({
       glyph = "·";
       statusLine = "Scheduled";
       break;
-    case "not-scheduled":
-      bg = "bg-zinc-100 dark:bg-zinc-900";
-      statusLine = "Not scheduled";
-      break;
+    // "outside" and "not-scheduled" are handled by the early-return
+    // guard above CellButton's switch, so they're filtered out of
+    // cell.state by the time we get here.
   }
 
   const baseCls = `group/cell relative ${aspectClass} rounded-[1px] ${bg}${
@@ -1063,4 +1173,130 @@ function formatDateDmy(yyyyMmDd: string): string {
   const month = date.toLocaleDateString(undefined, { month: "short" });
   const dd = String(d).padStart(2, "0");
   return `${dd} ${month} ${y}`;
+}
+
+// ---------------------------------------------------------------------------
+// GridToolbar — small client-side toolbar above the grid table with:
+//   1. A Sort dropdown (alphabetical, most done, streak, success %).
+//   2. A Tag-filter popover (checkbox per tag + "Select all", default
+//      everything visible). Filters use OR semantics — an activity
+//      shows if ANY of its tags is still checked.
+//
+// Toolbar state lives in GridTable (parent); this component is purely
+// presentational so the toolbar's choices can flow through to the
+// row filter / sort logic that runs in the parent's useMemo.
+// ---------------------------------------------------------------------------
+
+const SORT_OPTIONS: ReadonlyArray<{ value: GridSortKey; label: string }> = [
+  { value: "alpha", label: "Alphabetical (A→Z)" },
+  { value: "done-desc", label: "Most done (in period)" },
+  { value: "streak-desc", label: "Streak (high → low)" },
+  { value: "pct-desc", label: "Success % (high → low)" },
+  { value: "pct-asc", label: "Success % (low → high)" },
+];
+
+function GridToolbar({
+  sortKey,
+  onSortChange,
+  tagNames,
+  hiddenTags,
+  onToggleTag,
+  onSelectAll,
+  tagMap,
+}: {
+  sortKey: GridSortKey;
+  onSortChange: (k: GridSortKey) => void;
+  /** Distinct tag names across the visible row set, sorted A→Z. */
+  tagNames: string[];
+  /** The set of tag names the user has unchecked (= hidden). */
+  hiddenTags: ReadonlySet<string>;
+  onToggleTag: (name: string) => void;
+  onSelectAll: () => void;
+  tagMap: TagMap;
+}) {
+  // Number of tags the user has actively excluded — surfaces in the
+  // filter button so they can see at a glance that a filter is on.
+  // The "__none__" pseudo-tag (for tagless activities) counts too.
+  const hiddenCount = hiddenTags.size;
+  const allOn = hiddenCount === 0;
+  const noTagsHidden = hiddenTags.has("__none__");
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <label className="flex items-center gap-1 text-xs text-zinc-500">
+        Sort:
+        <select
+          value={sortKey}
+          onChange={(e) => onSortChange(e.target.value as GridSortKey)}
+          className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs font-medium text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+        >
+          {SORT_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {/* Tag filter as a <details> popover so it stays open when the
+          user clicks a checkbox inside (vs a hover-popover which would
+          dismiss). Closes on outside-click thanks to the natural
+          <summary> toggle behavior. */}
+      <details className="relative">
+        <summary
+          className={`cursor-pointer list-none rounded border px-2 py-1 text-xs font-medium ${
+            allOn
+              ? "border-zinc-300 bg-white text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+              : "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200"
+          }`}
+        >
+          Tags: {allOn ? "All" : `${tagNames.length + 1 - hiddenCount} of ${tagNames.length + 1}`}
+        </summary>
+        <div className="absolute left-0 top-full z-20 mt-1 max-h-72 w-56 overflow-y-auto rounded-md border border-zinc-200 bg-white p-2 shadow-md dark:border-zinc-700 dark:bg-zinc-900">
+          <button
+            type="button"
+            onClick={onSelectAll}
+            className="mb-1 w-full rounded border border-zinc-300 bg-zinc-50 px-2 py-1 text-left text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+          >
+            ↺ Select all
+          </button>
+          <ul className="flex flex-col gap-0.5">
+            {tagNames.map((name) => {
+              const hidden = hiddenTags.has(name);
+              const color = tagMap[name]?.color ?? "gray";
+              return (
+                <li key={name}>
+                  <label className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                    <input
+                      type="checkbox"
+                      checked={!hidden}
+                      onChange={() => onToggleTag(name)}
+                    />
+                    <span
+                      aria-hidden
+                      className={`inline-block h-2 w-2 rounded-full ${tagDotClasses(
+                        color
+                      )}`}
+                    />
+                    <span className="flex-1 truncate">{name}</span>
+                  </label>
+                </li>
+              );
+            })}
+            {/* Pseudo-entry for activities with no tags at all. */}
+            <li>
+              <label className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-xs italic text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                <input
+                  type="checkbox"
+                  checked={!noTagsHidden}
+                  onChange={() => onToggleTag("__none__")}
+                />
+                <span className="flex-1">(no tags)</span>
+              </label>
+            </li>
+          </ul>
+        </div>
+      </details>
+    </div>
+  );
 }

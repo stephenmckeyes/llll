@@ -36,9 +36,9 @@ import {
   type TagMap,
 } from "@/lib/domain/tags";
 
-/** Recent-tag chips shown above the search input. Capped so the
+/** Quick-add chips shown above the search input. Capped so the
  *  surface stays compact even for power users with 50+ tags. */
-const RECENT_LIMIT = 5;
+const QUICK_LIMIT = 5;
 
 export function TagPicker({
   initialSelected = [],
@@ -69,15 +69,19 @@ export function TagPicker({
     () => Object.values(tagMap).sort((a, b) => a.name.localeCompare(b.name)),
     [tagMap]
   );
-  const recentTags = useMemo(() => {
-    // Object insertion order in modern JS preserves key order. The
-    // server-rendered map is in DB order; for the picker we want
-    // "most recently created first" so newly-added tags surface
-    // immediately. Reverse + take 5 + exclude already-selected.
-    const all = Object.values(tagMap).reverse();
-    return all
+  // Quick-add chips ordered by USAGE — count of active activities
+  // already using this tag. Most-used first so common tags are one
+  // click away. Ties resolved alphabetically. Newly-created tags
+  // start at usage=0 and sink to the bottom; they remain selectable
+  // via the search input + dropdown below.
+  const frequentTags = useMemo(() => {
+    return Object.values(tagMap)
       .filter((t) => !selected.includes(t.name))
-      .slice(0, RECENT_LIMIT);
+      .sort((a, b) => {
+        if (a.usage !== b.usage) return b.usage - a.usage;
+        return a.name.localeCompare(b.name);
+      })
+      .slice(0, QUICK_LIMIT);
   }, [tagMap, selected]);
   const searchMatches = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -170,17 +174,18 @@ export function TagPicker({
 
         {/* Quick-add: most recently created tags. Empty state
             (no tags yet) hides the row. */}
-        {recentTags.length > 0 && (
+        {frequentTags.length > 0 && (
           <div>
             <p className="mb-1 text-[10px] text-zinc-500">
-              Recent
+              Most frequent
             </p>
             <div className="flex flex-wrap gap-1.5">
-              {recentTags.map((t) => (
+              {frequentTags.map((t) => (
                 <button
                   key={t.id}
                   type="button"
                   onClick={() => toggleTag(t.name)}
+                  title={`Used by ${t.usage} activit${t.usage === 1 ? "y" : "ies"}`}
                   className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${tagChipClasses(
                     t.color
                   )}`}

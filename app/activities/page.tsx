@@ -22,7 +22,7 @@ import {
   summarizeRhythm,
   summarizeScheduledTimes,
 } from "@/lib/domain/rhythm-summary";
-import { buildTagMap, type TagMap } from "@/lib/domain/tags";
+import { buildTagMap, computeTagUsage, type TagMap } from "@/lib/domain/tags";
 import { createClient } from "@/lib/supabase/server";
 import type { Rhythm } from "@/lib/validators/rhythm";
 
@@ -84,8 +84,14 @@ export default async function ActivitiesPage({
 
   const all = (data ?? []) as unknown as ActivityRow[];
   const archived = all.filter((a) => a.archived_at !== null);
+  // Usage counts cover ACTIVE activities only — archived rows
+  // shouldn't keep an old tag pinned to the top of the picker.
+  const usageByName = computeTagUsage(
+    all.filter((a) => a.archived_at === null)
+  );
   const tagMap: TagMap = buildTagMap(
-    (tagRows ?? []) as Array<{ id: string; name: string; color: string }>
+    (tagRows ?? []) as Array<{ id: string; name: string; color: string }>,
+    usageByName
   );
 
   // ---- last-use map for the "Last completion" sort ----------------------

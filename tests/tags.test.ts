@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildTagMap,
+  computeTagUsage,
   isValidTagColor,
   TAG_COLOR_FALLBACK,
   tagChipClasses,
@@ -45,6 +46,40 @@ describe("buildTagMap", () => {
 
   it("empty input yields empty map", () => {
     expect(Object.keys(buildTagMap([])).length).toBe(0);
+  });
+
+  it("attaches usage counts when provided", () => {
+    const usage = new Map([
+      ["fitness", 4],
+      ["work", 1],
+    ]);
+    const map = buildTagMap(
+      [
+        { id: "1", name: "fitness", color: "emerald" },
+        { id: "2", name: "work", color: "blue" },
+        { id: "3", name: "unused", color: "amber" },
+      ],
+      usage
+    );
+    expect(map.fitness.usage).toBe(4);
+    expect(map.work.usage).toBe(1);
+    expect(map.unused.usage).toBe(0); // never assigned
+  });
+});
+
+describe("computeTagUsage", () => {
+  it("counts tag occurrences across activities", () => {
+    const usage = computeTagUsage([
+      { default_skill_tags: ["fitness", "work"] },
+      { default_skill_tags: ["fitness"] },
+      { default_skill_tags: ["fitness", "family"] },
+      { default_skill_tags: null },
+      { default_skill_tags: [] },
+    ]);
+    expect(usage.get("fitness")).toBe(3);
+    expect(usage.get("work")).toBe(1);
+    expect(usage.get("family")).toBe(1);
+    expect(usage.get("nope")).toBeUndefined();
   });
 });
 

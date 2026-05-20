@@ -43,6 +43,10 @@ export type TagInfo = {
   id: string;
   name: string;
   color: TagColor;
+  /** How many active activities currently have this tag in their
+   *  default_skill_tags[]. Used to sort the picker's "Most frequent"
+   *  list. Zero for never-used tags. */
+  usage: number;
 };
 
 /** Lookup map keyed by tag NAME. The shape passed through React props
@@ -70,18 +74,47 @@ export function isValidTagColor(s: string): s is TagColor {
  * Turn raw DB rows into a TagMap. Unknown / typo colors gracefully
  * degrade to the fallback gray so a corrupt color value can never
  * crash the render.
+ *
+ * Optional `usageByName` map (name → count) feeds the "Most frequent"
+ * sort in the picker. Pages that don't care about usage can omit it
+ * and every tag's `usage` defaults to 0.
  */
 export function buildTagMap(
-  rows: ReadonlyArray<{ id: string; name: string; color: string }>
+  rows: ReadonlyArray<{ id: string; name: string; color: string }>,
+  usageByName: ReadonlyMap<string, number> = new Map()
 ): TagMap {
   const map: TagMap = {};
   for (const r of rows) {
     const color: TagColor = isValidTagColor(r.color)
       ? r.color
       : TAG_COLOR_FALLBACK;
-    map[r.name] = { id: r.id, name: r.name, color };
+    map[r.name] = {
+      id: r.id,
+      name: r.name,
+      color,
+      usage: usageByName.get(r.name) ?? 0,
+    };
   }
   return map;
+}
+
+/**
+ * Aggregate per-tag usage from a list of activities. Each tag in an
+ * activity's `default_skill_tags[]` contributes one count. Tags that
+ * appear in `default_skill_tags` but have no matching `tags` row are
+ * still counted — the picker's recent list shows them as gray-fallback
+ * chips, which is the right behavior for legacy free-text tags.
+ */
+export function computeTagUsage(
+  activities: ReadonlyArray<{ default_skill_tags: string[] | null | undefined }>
+): Map<string, number> {
+  const usage = new Map<string, number>();
+  for (const a of activities) {
+    for (const name of a.default_skill_tags ?? []) {
+      usage.set(name, (usage.get(name) ?? 0) + 1);
+    }
+  }
+  return usage;
 }
 
 // ---------------------------------------------------------------------------
