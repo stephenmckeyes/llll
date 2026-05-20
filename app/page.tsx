@@ -153,13 +153,21 @@ export default async function HomePage({
   const incompleteInfo = await fetchIncompleteInfo(supabase);
 
   return (
-    <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-8 bg-white p-6 dark:bg-zinc-950">
+    <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col bg-white p-6 dark:bg-zinc-950">
       {/* bg-white on <main> is what prevents the sticky header from
           showing a transparent strip during scroll: previously the
-          `gap-8` between <header> and view body was a see-through
-          band, and scrolled-up rows were visible passing through it.
-          Solid bg on the container hides them. */}
-      <header className="flex flex-col gap-4">
+          gap between sections was a see-through band, and scrolled-up
+          rows were visible passing through it. Solid bg on the
+          container hides them.
+
+          Note: no `gap` on <main>. The header gets its own `mb-6`
+          for breathing room, but ViewSwitcher → view-body abut with
+          zero gap — matching the natural "stuck" appearance when the
+          user scrolls and these two stickies (top-0 and top-[5rem])
+          end up touching. Before this, the unscrolled state showed a
+          32px gap that the scrolled state didn't, which looked like
+          the layout "compressed" on scroll. Now both states match. */}
+      <header className="mb-6 flex flex-col gap-4">
         <div className="flex items-start justify-between gap-3">
           <div>
             <h1 className="text-3xl font-semibold tracking-tight">Mission</h1>

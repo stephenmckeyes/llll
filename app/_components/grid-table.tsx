@@ -1277,22 +1277,30 @@ function SortableTH({
     : controls.sort!.stage === 1
       ? "↑"
       : "↓";
+  // IMPORTANT: do NOT wrap `children` in an `inline-flex` container.
+  // The Week / Month thead day-labels are a `grid grid-cols-7` that
+  // MUST fill the full TH width so each label aligns with the
+  // corresponding day-cell column below. Wrapping it in inline-flex
+  // collapses the grid to its content width and breaks alignment.
+  // Indicator floats absolutely in the top-right corner so it
+  // doesn't take part in the children's layout.
   return (
     <th
       scope="col"
       onClick={() => controls.cycleSort(column)}
       onContextMenu={(e) => controls.onContextMenu(column, e)}
       title="Click to sort · right-click for options"
-      className={`sticky ${STICKY_THEAD_TOP} z-10 cursor-pointer select-none border-b border-zinc-200 bg-white px-2 py-2 text-left text-[10px] font-medium uppercase tracking-wide text-zinc-500 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900 ${className}`}
+      className={`sticky ${STICKY_THEAD_TOP} relative z-10 cursor-pointer select-none border-b border-zinc-200 bg-white px-2 py-2 text-left text-[10px] font-medium uppercase tracking-wide text-zinc-500 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900 ${className}`}
     >
-      <span className="inline-flex items-center gap-1">
-        {children}
-        {indicator && (
-          <span aria-hidden className="text-zinc-700 dark:text-zinc-200">
-            {indicator}
-          </span>
-        )}
-      </span>
+      {children}
+      {indicator && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute right-1 top-1 text-zinc-700 dark:text-zinc-200"
+        >
+          {indicator}
+        </span>
+      )}
     </th>
   );
 }
