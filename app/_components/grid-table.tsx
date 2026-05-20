@@ -30,6 +30,7 @@
 
 import {
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -76,13 +77,25 @@ export type DateCol = { date: Date; dateStr: string };
 
 export type GridMode = "week" | "month" | "total";
 
-/** Sort keys for the toolbar dropdown. "alpha" is the default. */
-export type GridSortKey =
-  | "alpha"
-  | "done-desc"
-  | "streak-desc"
-  | "pct-desc"
-  | "pct-asc";
+/**
+ * Sort state — driven by clicking the table's column headers (no
+ * dropdown). Each column cycles through its own set of "stages" and
+ * resets to default after the last stage.
+ *
+ *   activity: 1 = A→Z,     2 = Z→A
+ *   days:     1 = most,    2 = least  (sums per row over the period)
+ *   type:     1..N = each distinct rhythm category goes to the top,
+ *             in alphabetical order. N = number of distinct categories
+ *             in the current row set.
+ *   success:  1 = success high, 2 = success low,
+ *             3 = streak high,  4 = streak low.
+ *
+ * Right-clicking a header opens a menu listing every stage explicitly
+ * for users who'd rather pick than cycle. The menu's "Default" entry
+ * clears the sort.
+ */
+export type GridSortColumn = "activity" | "days" | "type" | "success";
+export type SortState = { column: GridSortColumn; stage: number } | null;
 
 // Cell-size caps per mode (pixels). MAX cell width; actual size is
 // min(cap, container_width / cols). Total uses a hard cap so the
@@ -102,12 +115,12 @@ const WEEK_CELL_ASPECT = "aspect-square";
 const MONTH_CELL_ASPECT = "aspect-[2/1]"; // 2:1, wider than tall
 const TOTAL_CELL_ASPECT = "aspect-square";
 
-// Sticky-thead offset. ViewSwitcher (top-0, ~100px tall incl. py-2)
-// + Navigator (top-[6.25rem], ~72px tall) stack at the top of the
-// viewport. The grid's thead pins just below them at ~172px. If
+// Sticky-thead offset. ViewSwitcher (top-0, ~80px tall incl. py-2)
+// + Navigator (top-[5rem], ~72px tall) stack at the top of the
+// viewport. The grid's thead pins just below them at ~152px. If
 // either of those layouts changes height, adjust this offset to
 // match.
-const STICKY_THEAD_TOP = "top-[10.75rem]";
+const STICKY_THEAD_TOP = "top-[9.5rem]";
 
 // ---------------------------------------------------------------------------
 
@@ -140,108 +153,116 @@ export function GridTable({
   const [openInstance, setOpenInstance] = useState<DayInstance | null>(null);
   const { off, toggle } = useRowOffSet(userId);
 
-  // ---- Sort + filter (client state) -------------------------------------
-  const [sortKey, setSortKey] = useState<GridSortKey>("alpha");
-  // Tag filter is stored as a HIDDEN set rather than a "selected" set
-  // so the default (everything visible) is the empty set — which means
-  // new tags added later automatically show without needing an opt-in.
-  // The pseudo-name "__none__" controls whether activities with no
-  // tags at all appear.
-  const [hiddenTags, setHiddenTags] = useState<ReadonlySet<string>>(
-    new Set()
+  // ---- Click-to-sort state ----------------------------------------------
+  const [sort, setSort] = useState<SortState>(null);
+  // Right-click context menu — coordinates + which column requested it.
+  // Closed by clicking outside (window-level listener inside the menu
+  // component itself).
+  const [contextMenu, setContextMenu] = useState<{
+    column: GridSortColumn;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  // Distinct rhythm categories in the visible row set, alphabetically
+  // sorted. Drives both the cycle length for the Type column and the
+  // labels shown in its right-click menu.
+  const typeStages = useMemo(
+    () => Array.from(new Set(rows.map((r) => r.rhythmCategory))).sort(),
+    [rows]
   );
 
-  // All distinct tag names across the row set, sorted A→Z. We also
-  // surface "__none__" as a synthetic entry so the user can hide
-  // tagless activities if they want.
-  const allTagNames = useMemo(() => {
-    const s = new Set<string>();
-    for (const r of rows) for (const t of r.activity.tags) s.add(t);
-    return Array.from(s).sort();
-  }, [rows]);
-
-  const visibleRows = useMemo(() => {
-    // Apply filter first, then sort.
-    const filtered = rows.filter((r) => {
-      if (r.activity.tags.length === 0) {
-        return !hiddenTags.has("__none__");
-      }
-      // "Show if ANY of its tags is still visible" — per the spec,
-      // unchecking a tag hides activities whose ONLY tags are unchecked.
-      return r.activity.tags.some((t) => !hiddenTags.has(t));
-    });
-    const sorted = [...filtered];
-    switch (sortKey) {
-      case "alpha":
-        sorted.sort((a, b) =>
-          a.activity.name.localeCompare(b.activity.name)
-        );
-        break;
-      case "done-desc":
-        sorted.sort((a, b) => b.done - a.done);
-        break;
-      case "streak-desc":
-        sorted.sort((a, b) => b.streak - a.streak);
-        break;
-      case "pct-desc":
-        // Null pct (no on-the-hook in range) sinks to the bottom.
-        sorted.sort((a, b) => {
-          const pa = a.pct ?? -1;
-          const pb = b.pct ?? -1;
-          return pb - pa;
-        });
-        break;
-      case "pct-asc":
-        sorted.sort((a, b) => {
-          const pa = a.pct ?? Number.POSITIVE_INFINITY;
-          const pb = b.pct ?? Number.POSITIVE_INFINITY;
-          return pa - pb;
-        });
-        break;
+  function sortMax(col: GridSortColumn): number {
+    switch (col) {
+      case "activity":
+        return 2;
+      case "days":
+        return 2;
+      case "type":
+        return Math.max(1, typeStages.length); // at least 1 so cycling doesn't no-op
+      case "success":
+        return 4;
     }
-    return sorted;
-  }, [rows, hiddenTags, sortKey]);
+  }
 
-  function toggleHiddenTag(name: string) {
-    setHiddenTags((prev) => {
-      const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
-      return next;
+  function cycleSort(column: GridSortColumn) {
+    setSort((prev) => {
+      const max = sortMax(column);
+      if (!prev || prev.column !== column) {
+        return { column, stage: 1 };
+      }
+      const next = prev.stage + 1;
+      if (next > max) return null; // back to default
+      return { column, stage: next };
     });
   }
-  function selectAllTags() {
-    setHiddenTags(new Set());
+
+  function setSortDirect(column: GridSortColumn, stage: number | null) {
+    if (stage === null || stage === 0) setSort(null);
+    else setSort({ column, stage });
+    setContextMenu(null);
   }
+
+  function openContextMenu(column: GridSortColumn, e: React.MouseEvent) {
+    e.preventDefault();
+    setContextMenu({ column, x: e.clientX, y: e.clientY });
+  }
+
+  // ---- Apply filter (filtering happens upstream in GridSection now;
+  // GridTable just receives the already-filtered rows via `rows`) AND
+  // sort. -----------------------------------------------------------------
+  const visibleRows = useMemo(() => {
+    if (!sort) return rows;
+    const arr = [...rows];
+    if (sort.column === "activity") {
+      arr.sort((a, b) => a.activity.name.localeCompare(b.activity.name));
+      if (sort.stage === 2) arr.reverse();
+    } else if (sort.column === "days") {
+      arr.sort((a, b) => b.done - a.done);
+      if (sort.stage === 2) arr.reverse();
+    } else if (sort.column === "type") {
+      const target = typeStages[sort.stage - 1];
+      arr.sort((a, b) => {
+        const aMatch = a.rhythmCategory === target;
+        const bMatch = b.rhythmCategory === target;
+        if (aMatch !== bMatch) return aMatch ? -1 : 1;
+        return a.activity.name.localeCompare(b.activity.name);
+      });
+    } else if (sort.column === "success") {
+      switch (sort.stage) {
+        case 1:
+          arr.sort((a, b) => (b.pct ?? -1) - (a.pct ?? -1));
+          break;
+        case 2:
+          arr.sort(
+            (a, b) =>
+              (a.pct ?? Number.POSITIVE_INFINITY) -
+              (b.pct ?? Number.POSITIVE_INFINITY)
+          );
+          break;
+        case 3:
+          arr.sort((a, b) => b.streak - a.streak);
+          break;
+        case 4:
+          arr.sort((a, b) => a.streak - b.streak);
+          break;
+      }
+    }
+    return arr;
+  }, [rows, sort, typeStages]);
+
+  const headerControls = {
+    sort,
+    cycleSort,
+    onContextMenu: openContextMenu,
+  };
 
   return (
     <>
-      <GridToolbar
-        sortKey={sortKey}
-        onSortChange={setSortKey}
-        tagNames={allTagNames}
-        hiddenTags={hiddenTags}
-        onToggleTag={toggleHiddenTag}
-        onSelectAll={selectAllTags}
-        tagMap={tagMap}
-      />
-
       {rows.length === 0 ? (
         <p className="rounded-md border border-dashed border-zinc-200 p-6 text-center text-sm text-zinc-500 dark:border-zinc-800">
-          No rhythmic activities active in this period. Add one, or pick a
-          different time window.
-        </p>
-      ) : visibleRows.length === 0 ? (
-        <p className="rounded-md border border-dashed border-zinc-200 p-6 text-center text-sm text-zinc-500 dark:border-zinc-800">
-          No activities match the current tag filter.{" "}
-          <button
-            type="button"
-            onClick={selectAllTags}
-            className="font-medium text-blue-600 underline-offset-2 hover:underline dark:text-blue-400"
-          >
-            Show all
-          </button>
-          .
+          No rhythmic activities match the current view. Adjust the tag
+          filter above, or add a new activity.
         </p>
       ) : mode === "week" ? (
         <WeekTable
@@ -252,6 +273,7 @@ export function GridTable({
           onToggle={toggle}
           onOpenInstance={setOpenInstance}
           tagMap={tagMap}
+          headerControls={headerControls}
         />
       ) : mode === "month" ? (
         <MonthTable
@@ -262,6 +284,7 @@ export function GridTable({
           onToggle={toggle}
           onOpenInstance={setOpenInstance}
           tagMap={tagMap}
+          headerControls={headerControls}
         />
       ) : (
         <TotalTable
@@ -272,6 +295,7 @@ export function GridTable({
           onToggle={toggle}
           onOpenInstance={setOpenInstance}
           tagMap={tagMap}
+          headerControls={headerControls}
         />
       )}
 
@@ -291,6 +315,15 @@ export function GridTable({
           todayStr={todayStr}
           onClose={() => setOpenInstance(null)}
           tagMap={tagMap}
+        />
+      )}
+
+      {contextMenu && (
+        <SortContextMenu
+          state={contextMenu}
+          typeStages={typeStages}
+          onPick={setSortDirect}
+          onClose={() => setContextMenu(null)}
         />
       )}
     </>
@@ -370,6 +403,7 @@ function WeekTable({
   onToggle,
   onOpenInstance,
   tagMap,
+  headerControls,
 }: {
   rows: GridRow[];
   dateCols: DateCol[];
@@ -378,6 +412,13 @@ function WeekTable({
   onToggle: (id: string) => void;
   onOpenInstance: (i: DayInstance) => void;
   tagMap: TagMap;
+  /** Sort state + handlers wired into the column headers. Same object
+   *  passed to every table renderer; the table's headers consume it. */
+  headerControls: {
+    sort: SortState;
+    cycleSort: (column: GridSortColumn) => void;
+    onContextMenu: (column: GridSortColumn, e: React.MouseEvent) => void;
+  };
 }) {
   // Cells fill the entire Activity-cells column horizontally via 1fr.
   // No hard cap — the column's auto width drives cell size. With
@@ -397,9 +438,13 @@ function WeekTable({
       </colgroup>
       <thead>
         <tr>
-          <TH>Activity</TH>
-          <TH>Type</TH>
-          <TH>
+          <SortableTH column="activity" controls={headerControls}>
+            Activity
+          </SortableTH>
+          <SortableTH column="type" controls={headerControls}>
+            Type
+          </SortableTH>
+          <SortableTH column="days" controls={headerControls}>
             <div className="grid grid-cols-7" style={gridStyle}>
               {dateCols.map((c) => (
                 <div
@@ -417,8 +462,14 @@ function WeekTable({
                 </div>
               ))}
             </div>
-          </TH>
-          <TH className="text-center">Success</TH>
+          </SortableTH>
+          <SortableTH
+            column="success"
+            controls={headerControls}
+            className="text-center"
+          >
+            Success
+          </SortableTH>
         </tr>
       </thead>
       <tbody>
@@ -476,6 +527,7 @@ function MonthTable({
   onToggle,
   onOpenInstance,
   tagMap,
+  headerControls,
 }: {
   rows: GridRow[];
   dateCols: DateCol[];
@@ -484,6 +536,13 @@ function MonthTable({
   onToggle: (id: string) => void;
   onOpenInstance: (i: DayInstance) => void;
   tagMap: TagMap;
+  /** Sort state + handlers wired into the column headers. Same object
+   *  passed to every table renderer; the table's headers consume it. */
+  headerControls: {
+    sort: SortState;
+    cycleSort: (column: GridSortColumn) => void;
+    onContextMenu: (column: GridSortColumn, e: React.MouseEvent) => void;
+  };
 }) {
   const padBefore = dateCols.length > 0 ? mondayPad(dateCols[0].date) : 0;
 
@@ -504,9 +563,13 @@ function MonthTable({
       </colgroup>
       <thead>
         <tr>
-          <TH>Activity</TH>
-          <TH>Type</TH>
-          <TH>
+          <SortableTH column="activity" controls={headerControls}>
+            Activity
+          </SortableTH>
+          <SortableTH column="type" controls={headerControls}>
+            Type
+          </SortableTH>
+          <SortableTH column="days" controls={headerControls}>
             <div className="grid grid-cols-7" style={gridStyle}>
               {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
                 <div
@@ -517,8 +580,14 @@ function MonthTable({
                 </div>
               ))}
             </div>
-          </TH>
-          <TH className="text-center">Success</TH>
+          </SortableTH>
+          <SortableTH
+            column="success"
+            controls={headerControls}
+            className="text-center"
+          >
+            Success
+          </SortableTH>
         </tr>
       </thead>
       <tbody>
@@ -595,6 +664,7 @@ function TotalTable({
   onToggle,
   onOpenInstance,
   tagMap,
+  headerControls,
 }: {
   rows: GridRow[];
   dateCols: DateCol[];
@@ -603,6 +673,13 @@ function TotalTable({
   onToggle: (id: string) => void;
   onOpenInstance: (i: DayInstance) => void;
   tagMap: TagMap;
+  /** Sort state + handlers wired into the column headers. Same object
+   *  passed to every table renderer; the table's headers consume it. */
+  headerControls: {
+    sort: SortState;
+    cycleSort: (column: GridSortColumn) => void;
+    onContextMenu: (column: GridSortColumn, e: React.MouseEvent) => void;
+  };
 }) {
   const padBefore = dateCols.length > 0 ? mondayPad(dateCols[0].date) : 0;
   const totalWithStart = padBefore + dateCols.length;
@@ -627,10 +704,26 @@ function TotalTable({
       </colgroup>
       <thead>
         <tr>
-          <TH>Activity</TH>
-          <TH>Type</TH>
-          <TH className="text-left text-[10px] text-zinc-400">{headerLabel}</TH>
-          <TH className="text-center">Success</TH>
+          <SortableTH column="activity" controls={headerControls}>
+            Activity
+          </SortableTH>
+          <SortableTH column="type" controls={headerControls}>
+            Type
+          </SortableTH>
+          <SortableTH
+            column="days"
+            controls={headerControls}
+            className="text-left text-[10px] text-zinc-400"
+          >
+            {headerLabel}
+          </SortableTH>
+          <SortableTH
+            column="success"
+            controls={headerControls}
+            className="text-center"
+          >
+            Success
+          </SortableTH>
         </tr>
       </thead>
       <tbody>
@@ -832,29 +925,6 @@ function Tooltip({
         {formatDateDmy(dateStr)}
       </span>
     </span>
-  );
-}
-
-// ---------------------------------------------------------------------------
-
-function TH({
-  children,
-  className = "",
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  // `<th>` cells in the head row are sticky individually (not the
-  // <thead> element itself) — sticky on <thead> is hit-or-miss across
-  // browsers, but sticky on <th> is reliable. Each th gets a solid bg
-  // so scrolled rows don't show through behind the labels.
-  return (
-    <th
-      scope="col"
-      className={`sticky ${STICKY_THEAD_TOP} z-10 border-b border-zinc-200 bg-white px-2 py-2 text-left text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950 ${className}`}
-    >
-      {children}
-    </th>
   );
 }
 
@@ -1176,89 +1246,240 @@ function formatDateDmy(yyyyMmDd: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// GridToolbar — small client-side toolbar above the grid table with:
-//   1. A Sort dropdown (alphabetical, most done, streak, success %).
-//   2. A Tag-filter popover (checkbox per tag + "Select all", default
-//      everything visible). Filters use OR semantics — an activity
-//      shows if ANY of its tags is still checked.
-//
-// Toolbar state lives in GridTable (parent); this component is purely
-// presentational so the toolbar's choices can flow through to the
-// row filter / sort logic that runs in the parent's useMemo.
+// SortableTH — column header that wires a left-click → cycleSort and a
+// right-click → context menu to the parent's sort state. Shows a small
+// arrow indicator next to the label when this column is the active
+// sort.
 // ---------------------------------------------------------------------------
 
-const SORT_OPTIONS: ReadonlyArray<{ value: GridSortKey; label: string }> = [
-  { value: "alpha", label: "Alphabetical (A→Z)" },
-  { value: "done-desc", label: "Most done (in period)" },
-  { value: "streak-desc", label: "Streak (high → low)" },
-  { value: "pct-desc", label: "Success % (high → low)" },
-  { value: "pct-asc", label: "Success % (low → high)" },
-];
-
-function GridToolbar({
-  sortKey,
-  onSortChange,
-  tagNames,
-  hiddenTags,
-  onToggleTag,
-  onSelectAll,
-  tagMap,
+function SortableTH({
+  column,
+  controls,
+  className = "",
+  children,
 }: {
-  sortKey: GridSortKey;
-  onSortChange: (k: GridSortKey) => void;
-  /** Distinct tag names across the visible row set, sorted A→Z. */
-  tagNames: string[];
-  /** The set of tag names the user has unchecked (= hidden). */
-  hiddenTags: ReadonlySet<string>;
-  onToggleTag: (name: string) => void;
-  onSelectAll: () => void;
-  tagMap: TagMap;
+  column: GridSortColumn;
+  controls: {
+    sort: SortState;
+    cycleSort: (column: GridSortColumn) => void;
+    onContextMenu: (column: GridSortColumn, e: React.MouseEvent) => void;
+  };
+  className?: string;
+  children: React.ReactNode;
 }) {
-  // Number of tags the user has actively excluded — surfaces in the
-  // filter button so they can see at a glance that a filter is on.
-  // The "__none__" pseudo-tag (for tagless activities) counts too.
-  const hiddenCount = hiddenTags.size;
-  const allOn = hiddenCount === 0;
-  const noTagsHidden = hiddenTags.has("__none__");
+  const isActive = controls.sort?.column === column;
+  // Tiny indicator suffix. Direction depends on the stage — we display
+  // ↑ for stage 1 (first-direction) and ↓ for any later stage. The
+  // exact semantics differ per column (alpha vs counts vs success
+  // metric) but visually "↑/↓ = something is sorted" is enough.
+  const indicator = !isActive
+    ? null
+    : controls.sort!.stage === 1
+      ? "↑"
+      : "↓";
+  return (
+    <th
+      scope="col"
+      onClick={() => controls.cycleSort(column)}
+      onContextMenu={(e) => controls.onContextMenu(column, e)}
+      title="Click to sort · right-click for options"
+      className={`sticky ${STICKY_THEAD_TOP} z-10 cursor-pointer select-none border-b border-zinc-200 bg-white px-2 py-2 text-left text-[10px] font-medium uppercase tracking-wide text-zinc-500 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900 ${className}`}
+    >
+      <span className="inline-flex items-center gap-1">
+        {children}
+        {indicator && (
+          <span aria-hidden className="text-zinc-700 dark:text-zinc-200">
+            {indicator}
+          </span>
+        )}
+      </span>
+    </th>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SortContextMenu — small popover shown on right-click of a SortableTH.
+// Lists every named stage for the column so the user can pick directly
+// rather than cycle. "Default" clears the sort.
+// ---------------------------------------------------------------------------
+
+function SortContextMenu({
+  state,
+  typeStages,
+  onPick,
+  onClose,
+}: {
+  state: { column: GridSortColumn; x: number; y: number };
+  typeStages: string[];
+  onPick: (column: GridSortColumn, stage: number | null) => void;
+  onClose: () => void;
+}) {
+  // Close on outside click — install a window listener while open.
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest("[data-sort-context-menu]")) onClose();
+    };
+    // Defer one tick so the same right-click that opened the menu
+    // doesn't immediately close it.
+    const t = setTimeout(() => {
+      window.addEventListener("mousedown", handler);
+    }, 0);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener("mousedown", handler);
+    };
+  }, [onClose]);
+
+  // Build label list per column.
+  let options: Array<{ stage: number | null; label: string }>;
+  switch (state.column) {
+    case "activity":
+      options = [
+        { stage: null, label: "Default order" },
+        { stage: 1, label: "Activity A → Z" },
+        { stage: 2, label: "Activity Z → A" },
+      ];
+      break;
+    case "days":
+      options = [
+        { stage: null, label: "Default order" },
+        { stage: 1, label: "Most done (in period)" },
+        { stage: 2, label: "Least done (in period)" },
+      ];
+      break;
+    case "type":
+      options = [
+        { stage: null, label: "Default order" },
+        ...typeStages.map((t, i) => ({
+          stage: i + 1,
+          label: `${t} first`,
+        })),
+      ];
+      break;
+    case "success":
+      options = [
+        { stage: null, label: "Default order" },
+        { stage: 1, label: "Success % (high → low)" },
+        { stage: 2, label: "Success % (low → high)" },
+        { stage: 3, label: "Streak (high → low)" },
+        { stage: 4, label: "Streak (low → high)" },
+      ];
+      break;
+  }
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <label className="flex items-center gap-1 text-xs text-zinc-500">
-        Sort:
-        <select
-          value={sortKey}
-          onChange={(e) => onSortChange(e.target.value as GridSortKey)}
-          className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs font-medium text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+    <div
+      data-sort-context-menu
+      role="menu"
+      style={{
+        position: "fixed",
+        // Clamp inside the viewport so the menu never falls off-screen
+        // on edge clicks.
+        left: Math.min(state.x, window.innerWidth - 220),
+        top: Math.min(state.y, window.innerHeight - 280),
+      }}
+      className="z-50 min-w-[200px] rounded-md border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
+    >
+      {options.map((o) => (
+        <button
+          key={o.label}
+          type="button"
+          onClick={() => onPick(state.column, o.stage)}
+          className="block w-full px-3 py-1.5 text-left text-xs text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
         >
-          {SORT_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-      </label>
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
-      {/* Tag filter as a <details> popover so it stays open when the
-          user clicks a checkbox inside (vs a hover-popover which would
-          dismiss). Closes on outside-click thanks to the natural
-          <summary> toggle behavior. */}
-      <details className="relative">
-        <summary
-          className={`cursor-pointer list-none rounded border px-2 py-1 text-xs font-medium ${
-            allOn
-              ? "border-zinc-300 bg-white text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
-              : "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200"
-          }`}
+// ---------------------------------------------------------------------------
+// TagFilterPopover — controlled popover for the grid view's tag filter.
+// Lifts cleanly into GridSection (above GridTable) so it can sit
+// visually inside the GridNavigator row alongside the date controls.
+// Closes on outside-click via a window listener; clicking inside the
+// panel stays open. Two action buttons: Select all (clears the
+// hidden set) and Deselect all (hides all tags including __none__).
+// ---------------------------------------------------------------------------
+
+export function TagFilterPopover({
+  tagNames,
+  hiddenTags,
+  tagMap,
+  onToggle,
+  onSelectAll,
+  onDeselectAll,
+}: {
+  tagNames: string[];
+  hiddenTags: ReadonlySet<string>;
+  tagMap: TagMap;
+  onToggle: (name: string) => void;
+  onSelectAll: () => void;
+  onDeselectAll: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  // Outside-click + Escape closer. Subscribes only while open so we
+  // aren't running a global listener for nothing the rest of the time.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      ) {
+        setOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const hiddenCount = hiddenTags.size;
+  const allOn = hiddenCount === 0;
+  const allOff = hiddenCount === tagNames.length + 1;
+  const noTagsHidden = hiddenTags.has("__none__");
+  const visibleCount = tagNames.length + 1 - hiddenCount;
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`shrink-0 cursor-pointer rounded-md border px-2 py-1 text-xs font-medium ${
+          allOn
+            ? "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            : "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200"
+        }`}
+      >
+        Tags: {allOn ? "All" : `${visibleCount} of ${tagNames.length + 1}`}
+      </button>
+
+      {open && (
+        <div
+          role="dialog"
+          className="absolute right-0 top-full z-40 mt-1 max-h-72 w-56 overflow-y-auto rounded-md border border-zinc-200 bg-white p-2 shadow-md dark:border-zinc-700 dark:bg-zinc-900"
         >
-          Tags: {allOn ? "All" : `${tagNames.length + 1 - hiddenCount} of ${tagNames.length + 1}`}
-        </summary>
-        <div className="absolute left-0 top-full z-20 mt-1 max-h-72 w-56 overflow-y-auto rounded-md border border-zinc-200 bg-white p-2 shadow-md dark:border-zinc-700 dark:bg-zinc-900">
+          {/* One toggle button that flips between "Select all" and
+              "Deselect all" depending on current state. When everything
+              is already visible, the helpful action is to hide everything
+              so the user can re-check just the few they want. */}
           <button
             type="button"
-            onClick={onSelectAll}
+            onClick={allOff ? onSelectAll : onDeselectAll}
             className="mb-1 w-full rounded border border-zinc-300 bg-zinc-50 px-2 py-1 text-left text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
           >
-            ↺ Select all
+            {allOff ? "↺ Select all" : "✕ Deselect all"}
           </button>
           <ul className="flex flex-col gap-0.5">
             {tagNames.map((name) => {
@@ -1270,7 +1491,7 @@ function GridToolbar({
                     <input
                       type="checkbox"
                       checked={!hidden}
-                      onChange={() => onToggleTag(name)}
+                      onChange={() => onToggle(name)}
                     />
                     <span
                       aria-hidden
@@ -1283,20 +1504,19 @@ function GridToolbar({
                 </li>
               );
             })}
-            {/* Pseudo-entry for activities with no tags at all. */}
             <li>
               <label className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-xs italic text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800">
                 <input
                   type="checkbox"
                   checked={!noTagsHidden}
-                  onChange={() => onToggleTag("__none__")}
+                  onChange={() => onToggle("__none__")}
                 />
                 <span className="flex-1">(no tags)</span>
               </label>
             </li>
           </ul>
         </div>
-      </details>
+      )}
     </div>
   );
 }

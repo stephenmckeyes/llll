@@ -44,6 +44,11 @@ export type DayInstance = {
   id: string;
   scheduled_for: string;
   completionCount: number;
+  /** Tag NAMES snapshotted at instance generation. Per-instance —
+   *  doesn't change when the activity's `default_skill_tags` is
+   *  edited via Edit Activity. Edit Rhythm regenerates pending future
+   *  instances and they pick up the fresh snapshot. */
+  tags: string[];
   activity: {
     id: string;
     name: string;
@@ -51,6 +56,10 @@ export type DayInstance = {
     rhythm: Rhythm;
     priority: number;
     scheduled_times: string[];
+    /** Activity's CURRENT tag set. Use this for activity-level
+     *  surfaces (modal details, edit form, archive cards). For
+     *  per-occurrence surfaces (Day banner, Week dots, Month dots),
+     *  read from the instance's `tags` snapshot instead. */
     default_skill_tags: string[];
     start_date: string;
     end_date: string | null;

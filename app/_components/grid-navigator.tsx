@@ -32,6 +32,7 @@ export function GridNavigator({
   nextDate,
   label,
   incompleteInfo,
+  children,
 }: {
   range: GridRange;
   currentDate: string;
@@ -39,6 +40,11 @@ export function GridNavigator({
   nextDate: string;
   label: string;
   incompleteInfo: IncompleteInfo;
+  /** Optional extra controls rendered in the same row as
+   *  ← date-input → Today + Unlabeled. Used by GridSection to
+   *  inline the TagFilterPopover so the filter doesn't grow the
+   *  sticky navigator's vertical footprint. */
+  children?: React.ReactNode;
 }) {
   const router = useRouter();
   // Derived state from `currentDate` (a prop coming from the URL).
@@ -99,6 +105,7 @@ export function GridNavigator({
           </>
         )}
         <IncompleteButton info={incompleteInfo} />
+        {children}
       </div>
     </div>
   );

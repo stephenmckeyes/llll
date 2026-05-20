@@ -37,8 +37,7 @@ import {
   type DayInstance,
   type DayMarkedItem,
 } from "./_components/day-list";
-import { GridNavigator } from "./_components/grid-navigator";
-import { GridTable } from "./_components/grid-table";
+import { GridSection } from "./_components/grid-section";
 import { type IncompleteInfo } from "./_components/incomplete-button";
 import { MonthInstanceBox } from "./_components/month-instance-box";
 import { TagDotRow } from "./_components/tag-chip";
@@ -399,10 +398,15 @@ function ViewSwitcher({
   const gridHref = `/?view=grid&range=week&date=${date}`;
 
   return (
-    <div className="flex flex-col gap-2">
+    // Tighter vertical rhythm: gap-2 → gap-1 between the section row
+    // and the sub-tab row, and the wrapping nav uses p-0.5 instead of
+    // p-1. Saves ~16px of header height — enough to keep the grid view
+    // visible on shorter laptop windows even with the filter button
+    // now living inside the navigator.
+    <div className="flex flex-col gap-1">
       {/* Row 1: section tabs */}
       <nav
-        className="flex gap-1 rounded-md border border-zinc-200 p-1 dark:border-zinc-800"
+        className="flex gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800"
         aria-label="Section"
       >
         <SectionTab
@@ -421,7 +425,7 @@ function ViewSwitcher({
           week/month/total ranges). */}
       {section === "calendar" ? (
         <nav
-          className="flex gap-1 rounded-md border border-zinc-200 p-1 dark:border-zinc-800"
+          className="flex gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800"
           aria-label="Calendar view"
         >
           {CALENDAR_SUB_OPTIONS.map((opt) => (
@@ -435,7 +439,7 @@ function ViewSwitcher({
         </nav>
       ) : (
         <nav
-          className="flex gap-1 rounded-md border border-zinc-200 p-1 dark:border-zinc-800"
+          className="flex gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800"
           aria-label="Grid range"
         >
           {GRID_SUB_OPTIONS.map((opt) => (
@@ -455,18 +459,17 @@ function ViewSwitcher({
 // StickyNav — wrapper that pins each view's date navigator just below
 // the page-level ViewSwitcher (which sticks at top-0).
 //
-// Measured ViewSwitcher height: ~100px (section-tab row ~42 + gap-2
-// 8 + sub-tab row ~34 + wrapper py-2 16). Setting Navigator at
-// `top-[6.25rem]` (100px) makes the two abut exactly — no transparent
-// strip between them. The previous `top-[6.5rem]` was 4px below the
-// VS bottom, which in dark mode showed as a thin visible gap.
+// Measured ViewSwitcher height after the tightened spacing: ~80px
+// (section row ~34 + gap-1 4 + sub row ~26 + py-2 16). Setting the
+// Navigator at `top-[5rem]` (80px) makes the two abut exactly. If
+// either nav row's vertical padding changes, retune these together.
 //
 // The negative horizontal margin + matching padding lets the bg
 // extend across the page's p-6 so scrolled content doesn't leak
 // through behind the navigator.
 function StickyNav({ children }: { children: React.ReactNode }) {
   return (
-    <div className="sticky top-[6.25rem] z-20 -mx-6 bg-white px-6 py-2 dark:bg-zinc-950">
+    <div className="sticky top-[5rem] z-20 -mx-6 bg-white px-6 py-2 dark:bg-zinc-950">
       {children}
     </div>
   );
@@ -484,7 +487,8 @@ function SectionTab({
   return (
     <Link
       href={href}
-      className={`flex-1 rounded px-3 py-1.5 text-center text-sm font-semibold transition-colors ${
+      // py tightened from py-1.5 → py-1 to keep the header compact.
+      className={`flex-1 rounded px-3 py-1 text-center text-sm font-semibold transition-colors ${
         active
           ? "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
           : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
@@ -507,7 +511,8 @@ function SubTab({
   return (
     <Link
       href={href}
-      className={`flex-1 rounded px-3 py-1 text-center text-xs font-medium transition-colors ${
+      // py tightened from py-1 → py-0.5.
+      className={`flex-1 rounded px-3 py-0.5 text-center text-xs font-medium transition-colors ${
         active
           ? "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
           : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
@@ -557,6 +562,7 @@ async function DayView({
       id,
       scheduled_for,
       status,
+      tags,
       activities (
         id,
         name,
@@ -583,6 +589,7 @@ async function DayView({
     id: string;
     scheduled_for: string;
     status: string;
+    tags: string[] | null;
     activities: DayInstance["activity"] | null;
     completion_instances: Array<{ completion_id: string }> | null;
   };
@@ -598,6 +605,7 @@ async function DayView({
   const toInstance = (r: RawInstance & { activities: DayInstance["activity"] }): DayInstance => ({
     id: r.id,
     scheduled_for: r.scheduled_for,
+    tags: r.tags ?? [],
     activity: r.activities,
     completionCount: r.completion_instances?.length ?? 0,
   });
@@ -665,6 +673,7 @@ async function WeekView({
       id,
       scheduled_for,
       status,
+      tags,
       activities (
         id, name, rhythm, priority, scheduled_times, default_skill_tags, archived_at
       )
@@ -677,6 +686,10 @@ async function WeekView({
     id: string;
     scheduled_for: string;
     status: string;
+    /** Per-instance tag snapshot. We pass these (not the activity's
+     *  current tags) into WeekBanner so a tag change via Edit Activity
+     *  doesn't retroactively reshuffle the dots on past banners. */
+    tags: string[] | null;
     activities: {
       id: string;
       name: string;
@@ -781,11 +794,14 @@ function WeekBanner({
 }: {
   item: {
     status: string;
+    /** Snapshotted per-instance tags. The week-view dots read this
+     *  rather than the activity's current set so editing the
+     *  activity's tags doesn't change past banners. */
+    tags?: string[] | null;
     activities: {
       name: string;
       priority: number;
       scheduled_times: string[];
-      default_skill_tags?: string[];
     } | null;
   };
   tagMap: TagMap;
@@ -799,7 +815,7 @@ function WeekBanner({
         ? "bg-amber-500"
         : "bg-zinc-400";
   const firstTime = item.activities.scheduled_times?.[0];
-  const tagNames = item.activities.default_skill_tags ?? [];
+  const tagNames = item.tags ?? [];
 
   return (
     <li
@@ -858,13 +874,14 @@ async function MonthView({
   const gridStart = startOfWeek(monthStart, { weekStartsOn: 1 });
 
   // Fetch over the visible grid (might include neighbor-month days).
-  // We also pull default_skill_tags per instance so the cell can show
-  // tiny tag dots at the bottom — same per-cell payload as Week.
+  // Tag dots at the bottom of each cell pull from instance.tags (the
+  // per-occurrence snapshot), so editing the activity's tags doesn't
+  // reshuffle past displays.
   const gridEnd = addDays(gridStart, 41);
   const { data } = await supabase
     .from("activity_instances")
     .select(
-      "id, scheduled_for, status, activities!inner(archived_at, default_skill_tags)"
+      "id, scheduled_for, status, tags, activities!inner(archived_at)"
     )
     .gte("scheduled_for", format(gridStart, "yyyy-MM-dd"))
     .lte("scheduled_for", format(gridEnd, "yyyy-MM-dd"))
@@ -880,20 +897,13 @@ async function MonthView({
     id: string;
     scheduled_for: string;
     status: string;
-    activities?:
-      | { default_skill_tags?: string[] | null }
-      | Array<{ default_skill_tags?: string[] | null }>
-      | null;
+    tags: string[] | null;
   };
   for (const i of (data ?? []) as MonthRow[]) {
-    const activitiesField = Array.isArray(i.activities)
-      ? i.activities[0]
-      : i.activities;
-    const tags = activitiesField?.default_skill_tags ?? [];
     (byDate[i.scheduled_for] ??= []).push({
       id: i.id,
       status: i.status,
-      tags,
+      tags: i.tags ?? [],
     });
   }
 
@@ -1208,6 +1218,7 @@ async function GridView({
     activity_id: string;
     scheduled_for: string;
     status: string;
+    tags: string[] | null;
     completion_instances: Array<{ completion_id: string }> | null;
   };
 
@@ -1218,7 +1229,7 @@ async function GridView({
           await supabase
             .from("activity_instances")
             .select(
-              "id, activity_id, scheduled_for, status, completion_instances ( completion_id )"
+              "id, activity_id, scheduled_for, status, tags, completion_instances ( completion_id )"
             )
             .in("activity_id", rhythmicIds)
             .gte("scheduled_for", rangeStartStr)
@@ -1243,7 +1254,7 @@ async function GridView({
           await supabase
             .from("activity_instances")
             .select(
-              "id, activity_id, scheduled_for, status, completion_instances ( completion_id )"
+              "id, activity_id, scheduled_for, status, tags, completion_instances ( completion_id )"
             )
             .in("activity_id", singleIds)
             .gte("scheduled_for", rangeStartStr)
@@ -1413,19 +1424,18 @@ async function GridView({
         : "in the visible range";
 
   return (
+    // GridSection owns the sticky navigator + tag-filter popover and
+    // the table itself, so the filter button can live INSIDE the
+    // navigator row (sharing its sticky offset) without ballooning the
+    // vertical footprint of the page header.
     <div className="flex flex-col gap-4">
-      <StickyNav>
-        <GridNavigator
-          range={range}
-          currentDate={gridDate}
-          prevDate={prevDate}
-          nextDate={nextDate}
-          label={label}
-          incompleteInfo={incompleteInfo}
-        />
-      </StickyNav>
-
-      <GridTable
+      <GridSection
+        range={range}
+        currentDate={gridDate}
+        prevDate={prevDate}
+        nextDate={nextDate}
+        label={label}
+        incompleteInfo={incompleteInfo}
         mode={range}
         rows={rows}
         dateCols={dateCols}
@@ -1503,6 +1513,7 @@ function toDayInstance(
   inst: {
     id: string;
     scheduled_for: string;
+    tags?: string[] | null;
     completion_instances: Array<{ completion_id: string }> | null;
   },
   act: {
@@ -1522,6 +1533,11 @@ function toDayInstance(
   return {
     id: inst.id,
     scheduled_for: inst.scheduled_for,
+    // Snapshot per-instance tags. If the row didn't include this
+    // column (legacy data, or query that didn't select it), fall back
+    // to the activity's CURRENT tags — still reasonable since we
+    // can't know what they were historically.
+    tags: inst.tags ?? act.default_skill_tags ?? [],
     completionCount: inst.completion_instances?.length ?? 0,
     activity: {
       id: act.id,

@@ -164,10 +164,13 @@ export function InstanceRow({
               {activity.scheduled_times.map(formatTime).join(" · ")}
             </p>
           )}
-          {activity.default_skill_tags.length > 0 && (
+          {instance.tags.length > 0 && (
+            // Per-instance tag snapshot — frozen at generation time.
+            // Editing the activity's tags via Edit Activity won't
+            // change what's drawn here.
             <div className="mt-1 flex flex-wrap gap-1">
               <TagChipList
-                names={activity.default_skill_tags}
+                names={instance.tags}
                 tags={tagMap}
                 size="xs"
               />

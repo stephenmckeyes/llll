@@ -47,7 +47,7 @@ export async function ensureInstancesBackfilled(
 
   const { data: activities } = await supabase
     .from("activities")
-    .select("id, rhythm, start_date, end_date")
+    .select("id, rhythm, start_date, end_date, default_skill_tags")
     .eq("user_id", userId)
     .is("archived_at", null);
 
@@ -80,6 +80,7 @@ export async function ensureInstancesBackfilled(
     rhythm: Rhythm;
     start_date: string;
     end_date: string | null;
+    default_skill_tags: string[] | null;
   }>) {
     const effectiveEnd =
       activity.end_date && activity.end_date < throughDateStr
@@ -113,10 +114,17 @@ export async function ensureInstancesBackfilled(
 
     if (toGenerate.length === 0) continue;
 
+    // Snapshot the activity's CURRENT tags into each generated
+    // instance. Background backfill is one of the paths that creates
+    // new instances; without this, those instances would land with
+    // empty tags. From here on Edit Activity changes don't propagate
+    // backward through these rows.
+    const tagsSnapshot = activity.default_skill_tags ?? [];
     const rows = toGenerate.map((i) => ({
       activity_id: activity.id,
       scheduled_for: i.scheduledFor,
       status: "pending" as const,
+      tags: tagsSnapshot,
     }));
 
     await supabase

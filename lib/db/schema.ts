@@ -142,6 +142,14 @@ export const activityInstances = pgTable(
       .references(() => activities.id, { onDelete: "cascade" }),
     scheduledFor: date("scheduled_for").notNull(),
     status: instanceStatus("status").notNull().default("pending"),
+    // Snapshot of the activity's tags at the moment this instance was
+    // generated. Frozen — Edit Activity (metadata-only) doesn't touch
+    // this. Edit Rhythm regenerates pending future instances, which
+    // pick up the activity's NEW default_skill_tags fresh.
+    tags: text("tags")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

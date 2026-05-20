@@ -240,10 +240,15 @@ export async function createActivity(
     });
 
     if (instances.length > 0) {
+      // Snapshot the activity's tags into each freshly-generated
+      // instance. From here on, Edit Activity changes to
+      // `default_skill_tags` will NOT affect this instance —
+      // it owns its own tag copy.
       const rows = instances.map((i) => ({
         activity_id: activity.id,
         scheduled_for: i.scheduledFor,
         status: "pending" as const,
+        tags,
       }));
       const { error: ierr } = await supabase
         .from("activity_instances")
@@ -454,10 +459,15 @@ export async function updateActivityRhythm(
     to: generationTo,
   });
   if (instances.length > 0) {
+    // Snapshot the activity's NEW tags into each regenerated instance.
+    // Per the immutable-history rule, past instances + their tag
+    // snapshots stay untouched — only these freshly-regenerated future
+    // instances see the new tag set.
     const rows = instances.map((i) => ({
       activity_id: activityId,
       scheduled_for: i.scheduledFor,
       status: "pending" as const,
+      tags,
     }));
     await supabase.from("activity_instances").insert(rows);
   }
