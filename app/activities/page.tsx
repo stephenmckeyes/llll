@@ -41,6 +41,7 @@ type ActivityRow = {
   priority: number;
   default_skill_tags: string[];
   scheduled_times: string[];
+  reminders: Array<{ amount: number; unit: string }>;
   archived_at: string | null;
   created_at: string;
 };
@@ -77,7 +78,7 @@ export default async function ActivitiesPage({
     supabase
       .from("activities")
       .select(
-        "id, name, notes, rhythm, start_date, end_date, priority, default_skill_tags, scheduled_times, archived_at, created_at"
+        "id, name, notes, rhythm, start_date, end_date, priority, default_skill_tags, scheduled_times, reminders, archived_at, created_at"
       ),
     supabase.from("tags").select("id, name, color"),
   ]);
@@ -344,7 +345,11 @@ function ActivityCard({
           </div>
         )}
       </div>
-      <ActivityRowActions activityId={activity.id} archived={archived} />
+      <ActivityRowActions
+        activity={activity}
+        tagMap={tagMap}
+        archived={archived}
+      />
     </li>
   );
 }

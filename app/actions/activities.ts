@@ -727,6 +727,47 @@ export async function unarchiveActivity(activityId: string) {
 }
 
 // ---------------------------------------------------------------------------
+// unarchiveActivityWithEdit — power the archive page's "Unarchive" flow.
+//
+// Per user spec: when the user clicks Unarchive, they see the activity in
+// the same Edit-rhythm form, but with `start_date` blank so they have to
+// pick a fresh one. Saving runs the full update-and-regenerate path AND
+// clears `archived_at` in one shot.
+//
+// Implementation reuses `updateActivityRhythm` for the field updates +
+// instance regeneration (so the two stay in lockstep — no risk of one
+// path quietly diverging from the other), then runs a small follow-up
+// update to clear archived_at. The double round-trip is fine: this is a
+// rare user-driven action, not a hot path.
+// ---------------------------------------------------------------------------
+
+export async function unarchiveActivityWithEdit(
+  activityId: string,
+  prev: UpdateActivityRhythmState,
+  formData: FormData
+): Promise<UpdateActivityRhythmState> {
+  const result = await updateActivityRhythm(activityId, prev, formData);
+  if (!result || "error" in result) return result;
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error: uerr } = await supabase
+    .from("activities")
+    .update({ archived_at: null })
+    .eq("id", activityId);
+  if (uerr) return { error: uerr.message };
+
+  invalidateBackfillCache(user.id);
+  revalidatePath("/");
+  revalidatePath("/activities");
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // missInstance — flip the instance status to 'missed'. No completion row
 // is created. The button is labeled "Missed" in the UI; semantically the
 // user is acknowledging they didn't do this occurrence. (Phase 2c+ could
