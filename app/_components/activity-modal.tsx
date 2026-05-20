@@ -54,9 +54,11 @@ const PRIORITY_LABEL: Record<number, string> = {
 
 type Mode = "details" | "edit-activity" | "edit-rhythm";
 
+// Note: no separate "multi_daily" kind — the unified Times-of-day list
+// on every rhythm covers it. The server collapses daily + multi-times
+// into a frequency rhythm under the hood.
 type RhythmKind =
   | "single"
-  | "multi_daily"
   | "daily"
   | "weekdays"
   | "interval"
@@ -202,6 +204,7 @@ export function ActivityModal({
         ) : (
           <EditRhythmBody
             activity={activity}
+            tagMap={tagMap}
             onDone={() => onClose()}
             onCancel={() => setMode("details")}
           />
@@ -544,13 +547,19 @@ function EditActivityBody({
 
 function EditRhythmBody({
   activity,
+  tagMap,
   onDone,
   onCancel,
 }: {
   activity: DayInstance["activity"];
+  tagMap: TagMap;
   onDone: () => void;
   onCancel: () => void;
 }) {
+  // Edit-rhythm is now the "full reset" path — it edits every
+  // future-facing field (name, notes, tags, priority, dates, reminders,
+  // rhythm, scheduled times) AND regenerates the pending instance set.
+  // Edit-activity remains the lighter touch (metadata only, no regen).
   const init = initRhythmKindFromActivity(activity);
   const [rhythmKind, setRhythmKind] = useState<RhythmKind>(init.kind);
   const [weekdays, setWeekdays] = useState<DayOfWeek[]>(init.weekdays);
@@ -566,11 +575,12 @@ function EditRhythmBody({
   const [frequencyPerUnit, setFrequencyPerUnit] = useState<PeriodUnit>(
     init.frequencyPerUnit
   );
-  const [multiDailyTimes, setMultiDailyTimes] = useState<string[]>(
-    init.multiDailyTimes
+  const [scheduledTimes, setScheduledTimes] = useState<string[]>(
+    init.scheduledTimes
   );
-  const [scheduledTime, setScheduledTime] = useState<string>(
-    init.scheduledTime
+  const [priority, setPriority] = useState<number>(activity.priority);
+  const [reminders, setReminders] = useState<Reminder[]>(
+    activity.reminders.map(normalizeReminder)
   );
 
   const boundAction = updateActivityRhythm.bind(null, activity.id);
@@ -588,22 +598,22 @@ function EditRhythmBody({
       prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
     );
   }
-  function updateMultiDailyTime(i: number, value: string) {
-    setMultiDailyTimes((prev) =>
+  function updateScheduledTime(i: number, value: string) {
+    setScheduledTimes((prev) =>
       prev.map((t, idx) => (idx === i ? value : t))
     );
   }
-  function addMultiDailyTime() {
-    setMultiDailyTimes((prev) => [...prev, "12:00"]);
+  function addScheduledTime() {
+    setScheduledTimes((prev) => [...prev, "12:00"]);
   }
-  function removeMultiDailyTime(i: number) {
-    setMultiDailyTimes((prev) =>
+  function removeScheduledTime(i: number) {
+    setScheduledTimes((prev) =>
       prev.length === 1 ? prev : prev.filter((_, idx) => idx !== i)
     );
   }
 
   const intervalDays = Math.max(1, parseInt(intervalDaysStr, 10) || 1);
-  const isMultiDaily = rhythmKind === "multi_daily";
+  const isSingle = rhythmKind === "single";
 
   return (
     <form
@@ -629,16 +639,51 @@ function EditRhythmBody({
     >
       <div className="flex-1 overflow-y-auto px-5 py-4">
         <input type="hidden" name="rhythmType" value={rhythmKind} />
+        <input type="hidden" name="priority" value={priority} />
 
-        {/* Rhythm kind selector */}
-        <fieldset className="flex flex-col gap-1">
+        {/* --- Activity name ----------------------------------------- */}
+        <label className="block">
+          <span className="text-sm font-medium">Activity</span>
+          <input
+            type="text"
+            name="name"
+            required
+            maxLength={120}
+            defaultValue={activity.name}
+            className={inputClasses}
+          />
+        </label>
+
+        {/* --- Notes ------------------------------------------------- */}
+        <label className="mt-4 block">
+          <span className="text-sm font-medium">Notes</span>
+          <textarea
+            name="notes"
+            rows={2}
+            maxLength={500}
+            defaultValue={activity.notes ?? ""}
+            placeholder="Notes, links, sub-steps…"
+            className={`${inputClasses} resize-none`}
+          />
+        </label>
+
+        {/* --- Tags -------------------------------------------------- */}
+        <div className="mt-4">
+          <p className="mb-1 text-sm font-medium">Tags</p>
+          <TagPicker
+            initialSelected={activity.default_skill_tags}
+            initialTagMap={tagMap}
+          />
+        </div>
+
+        {/* --- Rhythm kind selector ---------------------------------- */}
+        <fieldset className="mt-4 flex flex-col gap-1">
           <legend className="mb-1 text-sm font-medium">Rhythm</legend>
           {(
             [
               ["single", "Once"],
-              ["multi_daily", "Multi-Daily"],
               ["daily", "Daily"],
-              ["weekdays", "Specific Weekdays"],
+              ["weekdays", "Specific Days of the Week"],
               ["interval", "Every N Days"],
               ["frequency", "N times per period"],
             ] as const
@@ -672,44 +717,6 @@ function EditRhythmBody({
             );
           })}
         </fieldset>
-
-        {/* Conditional rhythm config */}
-        {isMultiDaily && (
-          <div className="mt-3 flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
-            <p className="text-xs text-zinc-500">
-              Specify each time of day. Add or remove rows as needed.
-            </p>
-            <ul className="flex flex-col gap-2">
-              {multiDailyTimes.map((t, i) => (
-                <li key={i} className="flex items-center gap-2">
-                  <input
-                    type="time"
-                    name="scheduledTime"
-                    value={t}
-                    onChange={(e) => updateMultiDailyTime(i, e.target.value)}
-                    required
-                    className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removeMultiDailyTime(i)}
-                    disabled={multiDailyTimes.length === 1}
-                    className="rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-30 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
-                  >
-                    Remove
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <button
-              type="button"
-              onClick={addMultiDailyTime}
-              className="self-start rounded-md border border-zinc-300 px-3 py-1 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-            >
-              + Add time
-            </button>
-          </div>
-        )}
 
         {rhythmKind === "weekdays" && (
           <div className="mt-3 flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
@@ -804,22 +811,118 @@ function EditRhythmBody({
           </div>
         )}
 
-        {/* Single time-of-day for non-Multi-Daily rhythms. */}
-        {!isMultiDaily && (
-          <label className="mt-4 block">
-            <span className="text-sm font-medium">
-              Time of day{" "}
-              <span className="font-normal text-zinc-500">(optional)</span>
+        {/* --- Times of day (unified multi-row list for every rhythm) - */}
+        <fieldset className="mt-4">
+          <legend className="text-sm font-medium">
+            Times of day{" "}
+            <span className="font-normal text-zinc-500">
+              ({scheduledTimes.length} per day)
             </span>
-            <input
-              type="time"
-              name="scheduledTime"
-              value={scheduledTime}
-              onChange={(e) => setScheduledTime(e.target.value)}
-              className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-zinc-50"
-            />
-          </label>
+          </legend>
+          <ul className="mt-1 flex flex-col gap-2">
+            {scheduledTimes.map((t, i) => (
+              <li key={i} className="flex items-center gap-2">
+                <input
+                  type="time"
+                  name="scheduledTime"
+                  value={t}
+                  onChange={(e) => updateScheduledTime(i, e.target.value)}
+                  required
+                  className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeScheduledTime(i)}
+                  disabled={scheduledTimes.length === 1}
+                  className="rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-30 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            onClick={addScheduledTime}
+            className="mt-2 self-start rounded-md border border-zinc-300 px-3 py-1 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+          >
+            + Add time
+          </button>
+        </fieldset>
+
+        {/* --- Schedule range (start/end dates) ------------------------ */}
+        <fieldset className="mt-4">
+          <legend className="text-sm font-medium">Schedule</legend>
+          <div className="mt-1 grid grid-cols-2 gap-3">
+            <label className="block">
+              <span className="text-xs font-medium text-zinc-500">
+                Start date
+              </span>
+              <input
+                type="date"
+                name="startDate"
+                required
+                defaultValue={activity.start_date}
+                className={`${inputClasses} mt-1`}
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs font-medium text-zinc-500">
+                End date{" "}
+                <span className="font-normal">
+                  {isSingle ? "(n/a for Once)" : "(optional)"}
+                </span>
+              </span>
+              <input
+                type="date"
+                name="endDate"
+                defaultValue={activity.end_date ?? ""}
+                disabled={isSingle}
+                className={`${inputClasses} mt-1`}
+              />
+            </label>
+          </div>
+        </fieldset>
+
+        {/* --- Priority (only meaningful for Once) -------------------- */}
+        {isSingle && (
+          <fieldset className="mt-4">
+            <legend className="text-sm font-medium">Priority</legend>
+            <div className="mt-1 flex gap-2">
+              {(
+                [
+                  [1, "High"],
+                  [2, "Medium"],
+                  [3, "Low"],
+                ] as const
+              ).map(([val, label]) => {
+                const sel = priority === val;
+                return (
+                  <button
+                    key={val}
+                    type="button"
+                    onClick={() => setPriority(val)}
+                    className={`flex-1 rounded-md border px-3 py-2 text-center text-sm font-medium ${
+                      sel
+                        ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                        : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </fieldset>
         )}
+
+        {/* --- Reminders ---------------------------------------------- */}
+        <div className="mt-4">
+          <RemindersField
+            reminders={reminders}
+            setReminders={setReminders}
+          />
+        </div>
 
         <p className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950 dark:text-amber-300">
           Saving regenerates this activity&rsquo;s future schedule. Past
@@ -869,10 +972,15 @@ function initRhythmKindFromActivity(activity: DayInstance["activity"]): {
   frequencyCountStr: string;
   frequencyPerCountStr: string;
   frequencyPerUnit: PeriodUnit;
-  multiDailyTimes: string[];
-  scheduledTime: string;
+  scheduledTimes: string[];
 } {
   const r = activity.rhythm;
+  // The unified "Times of day" list. Every rhythm uses it; default is
+  // a single 12:00 entry if the activity has no scheduled times.
+  const scheduledTimes =
+    activity.scheduled_times.length > 0
+      ? activity.scheduled_times
+      : ["12:00"];
   const defaults = {
     kind: "single" as RhythmKind,
     weekdays: [] as DayOfWeek[],
@@ -880,8 +988,7 @@ function initRhythmKindFromActivity(activity: DayInstance["activity"]): {
     frequencyCountStr: "3",
     frequencyPerCountStr: "1",
     frequencyPerUnit: "weeks" as PeriodUnit,
-    multiDailyTimes: ["08:00", "18:00"],
-    scheduledTime: activity.scheduled_times[0] ?? "",
+    scheduledTimes,
   };
 
   if (r.type === "single") return { ...defaults, kind: "single" };
@@ -896,16 +1003,14 @@ function initRhythmKindFromActivity(activity: DayInstance["activity"]): {
     };
   if (r.type === "frequency") {
     const { perCount, perUnit } = normalizeFrequencyPeriod(r);
-    // Multi-Daily heuristic: daily period + multiple scheduled_times set.
-    if (perUnit === "days" && activity.scheduled_times.length > 0) {
-      return {
-        ...defaults,
-        kind: "multi_daily",
-        multiDailyTimes:
-          activity.scheduled_times.length > 0
-            ? activity.scheduled_times
-            : defaults.multiDailyTimes,
-      };
+    // Legacy "Multi-Daily" was a frequency rhythm with perUnit=days,
+    // perCount=1, count > 1. The unified picker doesn't have a
+    // separate multi_daily option anymore — Daily + multiple
+    // scheduled_times produces the same shape on the server side.
+    // So treat the legacy shape as `kind: "daily"` with the
+    // current scheduled_times prefilled.
+    if (perUnit === "days" && perCount === 1) {
+      return { ...defaults, kind: "daily" };
     }
     return {
       ...defaults,

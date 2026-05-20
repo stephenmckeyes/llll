@@ -193,9 +193,13 @@ export function ActivityForm({
         />
       </FieldLabel>
 
-      {/* --- 2. Notes and Tags ----------------------------------------- */}
-      <fieldset className="flex flex-col gap-3">
-        <legend className="text-sm font-medium">Notes and Tags</legend>
+      {/* --- 2. Notes -------------------------------------------------- */}
+      {/* Free-form text — links, sub-steps, "remember to bring X". The
+          textarea is purely for prose; the old "Notes and Tags" header
+          was misleading because it bundled this with the tag picker.
+          They're separate concerns and each gets its own section. */}
+      <fieldset className="flex flex-col gap-2">
+        <legend className="text-sm font-medium">Notes</legend>
         <textarea
           name="notes"
           rows={2}
@@ -203,9 +207,13 @@ export function ActivityForm({
           placeholder="Notes, links, sub-steps…"
           className={`${inputClasses} resize-none`}
         />
-        {/* TagPicker emits one hidden `<input name="tag">` per selected
-            tag; the server reads them with formData.getAll("tag"). The
-            old comma-separated `name="tags"` text input is retired. */}
+      </fieldset>
+
+      {/* --- 3. Tags --------------------------------------------------- */}
+      {/* TagPicker emits one hidden `<input name="tag">` per selected
+          tag; the server reads them with formData.getAll("tag"). */}
+      <fieldset className="flex flex-col gap-2">
+        <legend className="text-sm font-medium">Tags</legend>
         <TagPicker initialTagMap={initialTagMap} />
       </fieldset>
 

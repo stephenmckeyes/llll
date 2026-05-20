@@ -296,7 +296,22 @@ export async function updateActivityRhythm(
   _prev: UpdateActivityRhythmState,
   formData: FormData
 ): Promise<UpdateActivityRhythmState> {
-  // ---- 1. Reconstruct + validate the rhythm (same parser as create) ------
+  // updateActivityRhythm is now the "full reset" path. It updates
+  // every future-facing field on the activity (name, notes, tags,
+  // priority, dates, reminders, rhythm, scheduled_times) AND
+  // regenerates the pending instance set. Past instances + their
+  // completions stay intact per the immutable-history rule.
+
+  // ---- 1. Parse scheduled times (used both for rhythm validation and
+  //         for the activity update). The Daily + multi-times shortcut
+  //         is collapsed into a frequency rhythm just like in create. -
+
+  const scheduledTimes = formData
+    .getAll("scheduledTime")
+    .map(String)
+    .filter((s) => /^\d{2}:\d{2}$/.test(s));
+
+  // ---- 2. Reconstruct + validate the rhythm ------------------------------
 
   const rhythmType = String(formData.get("rhythmType") ?? "single");
   let candidateRhythm: unknown;
@@ -304,22 +319,17 @@ export async function updateActivityRhythm(
     case "single":
       candidateRhythm = { type: "single" };
       break;
-    case "multi_daily":
-      candidateRhythm = {
-        type: "frequency",
-        count: Math.max(
-          1,
-          formData
-            .getAll("scheduledTime")
-            .map(String)
-            .filter((s) => /^\d{2}:\d{2}$/.test(s)).length
-        ),
-        perCount: 1,
-        perUnit: "days",
-      };
-      break;
     case "daily":
-      candidateRhythm = { type: "daily" };
+      if (scheduledTimes.length > 1) {
+        candidateRhythm = {
+          type: "frequency",
+          count: scheduledTimes.length,
+          perCount: 1,
+          perUnit: "days",
+        };
+      } else {
+        candidateRhythm = { type: "daily" };
+      }
       break;
     case "weekdays":
       candidateRhythm = {
@@ -351,14 +361,48 @@ export async function updateActivityRhythm(
   }
   const newRhythm: Rhythm = parsed.data;
 
-  // ---- 2. Scheduled times -------------------------------------------------
+  // ---- 3. Other activity-level fields ------------------------------------
 
-  const scheduledTimes = formData
-    .getAll("scheduledTime")
-    .map(String)
-    .filter((s) => /^\d{2}:\d{2}$/.test(s));
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) return { error: "Activity name is required." };
+  if (name.length > 120) return { error: "Name is too long (max 120)." };
 
-  // ---- 3. Auth + fetch the activity (need start_date, end_date) ----------
+  const notesRaw = String(formData.get("notes") ?? "").trim();
+  const notes = notesRaw.length === 0 ? null : notesRaw;
+
+  const tags = Array.from(
+    new Set(
+      formData
+        .getAll("tag")
+        .map(String)
+        .map((s) => s.trim())
+        .filter(Boolean)
+    )
+  );
+
+  const priority = clampInt(formData.get("priority"), 1, 3, 2);
+
+  const reminders = parseRemindersFromForm(formData);
+  const remindersValidated = remindersSchema.safeParse(reminders);
+  if (!remindersValidated.success) {
+    return { error: "One of the reminders is invalid." };
+  }
+
+  // ---- 4. Schedule range (start_date, end_date) --------------------------
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const newStartDate = parseDateField(formData.get("startDate")) ?? todayStr;
+  let newEndDate: string | null;
+  if (newRhythm.type === "single") {
+    newEndDate = newStartDate;
+  } else {
+    newEndDate = parseDateField(formData.get("endDate"));
+    if (newEndDate && newEndDate < newStartDate) {
+      return { error: "End date must be on or after the start date." };
+    }
+  }
+
+  // ---- 5. Auth + persist all fields --------------------------------------
 
   const supabase = await createClient();
   const {
@@ -366,29 +410,25 @@ export async function updateActivityRhythm(
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { data: existing, error: ferr } = await supabase
-    .from("activities")
-    .select("start_date, end_date")
-    .eq("id", activityId)
-    .single();
-  if (ferr || !existing) {
-    return { error: ferr?.message ?? "Activity not found." };
-  }
-
-  // ---- 4. Persist the new rhythm + times ---------------------------------
-
   const { error: uerr } = await supabase
     .from("activities")
     .update({
+      name,
+      notes,
       rhythm: newRhythm,
+      start_date: newStartDate,
+      end_date: newEndDate,
+      priority,
+      default_skill_tags: tags,
       scheduled_times: scheduledTimes,
+      reminders: remindersValidated.data,
     })
     .eq("id", activityId);
   if (uerr) return { error: uerr.message };
 
-  // ---- 5. Wipe pending future instances ----------------------------------
+  // ---- 6. Wipe pending future instances ----------------------------------
+  // Past instances (completed/missed/pending) stay — they're history.
 
-  const todayStr = new Date().toISOString().slice(0, 10);
   await supabase
     .from("activity_instances")
     .delete()
@@ -396,19 +436,18 @@ export async function updateActivityRhythm(
     .eq("status", "pending")
     .gte("scheduled_for", todayStr);
 
-  // ---- 6. Regenerate from max(today, start_date) up to horizon ------------
+  // ---- 7. Regenerate from max(today, new_start_date) up to horizon --------
 
   const startDate =
-    existing.start_date > todayStr ? existing.start_date : todayStr;
+    newStartDate > todayStr ? newStartDate : todayStr;
   const horizonStr = addDays(
     parseISODate(startDate),
     INSTANCE_HORIZON_DAYS
   )
     .toISOString()
     .slice(0, 10);
-  const endDate = existing.end_date;
   const generationTo =
-    endDate !== null && endDate < horizonStr ? endDate : horizonStr;
+    newEndDate !== null && newEndDate < horizonStr ? newEndDate : horizonStr;
 
   const instances = generateInstances(newRhythm, {
     from: startDate,
