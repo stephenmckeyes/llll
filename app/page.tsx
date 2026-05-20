@@ -298,11 +298,9 @@ async function fetchIncompleteInfo(
       .in("activity_id", ids)
       .eq("status", "pending")
       .lt("scheduled_for", TODAY_STR),
-    // Also pull the parent activity's rhythm so we can decide WHICH day
-    // section the row will visibly render in. See the comment below.
     supabase
       .from("activity_instances")
-      .select("scheduled_for, activities(rhythm)")
+      .select("scheduled_for")
       .in("activity_id", ids)
       .eq("status", "pending")
       .lt("scheduled_for", TODAY_STR)
@@ -311,30 +309,20 @@ async function fetchIncompleteInfo(
       .maybeSingle(),
   ]);
 
-  // The Day view's `visibleOnDay` rule (see day-list.tsx) shifts OVERDUE
-  // SINGLE-rhythm instances onto today's section — the idea being "things
-  // still demanding your attention live with today's other todos." That
-  // means if we tell the IncompleteButton to navigate to the row's
-  // `scheduled_for`, the user lands on an empty past day instead of
-  // seeing their unlabeled row. Detect singles here and route them to
-  // today instead. Non-single overdue rows render on their original
-  // scheduled_for and need no remapping.
-  const oldestRaw = oldestResult.data as
-    | {
-        scheduled_for: string;
-        activities: { rhythm?: { type?: string } } | null;
-      }
-    | null;
-
-  let oldestDate: string | null = null;
-  if (oldestRaw) {
-    const isSingle = oldestRaw.activities?.rhythm?.type === "single";
-    oldestDate = isSingle ? TODAY_STR : oldestRaw.scheduled_for;
-  }
-
+  // Always route the chip to the row's actual `scheduled_for` (not
+  // today). That's important even for overdue SINGLES — those used to
+  // get redirected to today to match `visibleOnDay`'s today-shift, but
+  // it broke for users already on today (no URL change → no re-fetch)
+  // and for instances older than the day-list's -90d window (never in
+  // the fetch). The fix lives on the rendering side now: `visibleOnDay`
+  // additionally renders overdue singles on their original scheduled_for
+  // so the chip's navigation always lands the user on a section that
+  // contains the row.
   return {
     count: countResult.count ?? 0,
-    oldestDate,
+    oldestDate:
+      (oldestResult.data as { scheduled_for?: string } | null)?.scheduled_for ??
+      null,
   };
 }
 
@@ -1360,6 +1348,14 @@ async function GridView({
     let done = 0;
     let missed = 0;
     let unlabeled = 0;
+    // `totalInPeriod` counts every cell where the activity was actually
+    // scheduled for this row — done + missed + unlabeled + still-future-
+    // scheduled. It deliberately excludes "outside" (before start /
+    // after end) and "not-scheduled" (rhythm doesn't apply that day).
+    // Drives the days-column "Most scheduled in period" sort, which the
+    // user wants to be a pure "demand of this activity in this period"
+    // metric regardless of completion state.
+    let totalInPeriod = 0;
 
     const cells: GridTableCell[] = dateCols.map(({ dateStr }) => {
       // "Outside" if the day predates the activity or lies past its end.
@@ -1387,6 +1383,8 @@ async function GridView({
       } else {
         state = "scheduled";
       }
+      // Any of the four scheduled states counts toward total demand.
+      totalInPeriod++;
       return {
         state,
         dateStr,
@@ -1418,6 +1416,7 @@ async function GridView({
       missed,
       unlabeled,
       onTheHook,
+      totalInPeriod,
       streak,
     };
   });
@@ -1509,6 +1508,7 @@ type GridTableRow = {
   missed: number;
   unlabeled: number;
   onTheHook: number;
+  totalInPeriod: number;
   streak: number;
 };
 

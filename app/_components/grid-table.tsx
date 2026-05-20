@@ -67,7 +67,19 @@ export type GridRow = {
   done: number;
   missed: number;
   unlabeled: number;
+  /** done + missed + unlabeled. Excludes still-future scheduled cells.
+   *  Used as the denominator of the success percentage and the "Most
+   *  done" / "Least done" sort stages would have used it, but the
+   *  days-column sort now uses `totalInPeriod` instead because the
+   *  user wants "demand in the period regardless of state." */
   onTheHook: number;
+  /** done + missed + unlabeled + still-future scheduled. The total
+   *  count of cells where this activity was actually scheduled in
+   *  the visible range — i.e., demand of this activity in the
+   *  period, irrespective of completion outcome. Drives the days-
+   *  column "Most scheduled in period" / "Least scheduled in period"
+   *  sort stages. */
+  totalInPeriod: number;
   /** Consecutive completed instances ending at the latest past-or-current
    *  scheduled occurrence. 0 means the current run is broken. */
   streak: number;
@@ -222,18 +234,22 @@ export function GridTable({
       arr.sort((a, b) => a.activity.name.localeCompare(b.activity.name));
       if (sort.stage === 2) arr.reverse();
     } else if (sort.column === "days") {
-      // 1 = most scheduled in period (onTheHook = done + missed + unlabeled
-      //     + remaining-scheduled-future). Regardless of completion status —
-      //     this answers "which activities are most demanding this period?"
+      // 1 = most scheduled in period (totalInPeriod = done + missed +
+      //     unlabeled + still-future-scheduled). "Regardless of completion
+      //     state" per the user's spec — this answers "which activities
+      //     are most demanding this period?" The earlier version used
+      //     `onTheHook` (excludes future-scheduled) which produced random-
+      //     looking outliers for any activity whose period stretched past
+      //     today.
       // 2 = least in period (same metric, reversed)
       // 3 = most completed (sort by `done` desc)
       // 4 = most missed (sort by `missed` desc)
       switch (sort.stage) {
         case 1:
-          arr.sort((a, b) => b.onTheHook - a.onTheHook);
+          arr.sort((a, b) => b.totalInPeriod - a.totalInPeriod);
           break;
         case 2:
-          arr.sort((a, b) => a.onTheHook - b.onTheHook);
+          arr.sort((a, b) => a.totalInPeriod - b.totalInPeriod);
           break;
         case 3:
           arr.sort((a, b) => b.done - a.done);

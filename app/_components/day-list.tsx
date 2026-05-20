@@ -566,8 +566,22 @@ function visibleOnDay(
 ): boolean {
   const r = inst.activity.rhythm;
   if (r.type === "single") {
-    // Overdue singles surface on today only; non-overdue on their own day.
-    if (inst.scheduled_for < todayStr) return dayStr === todayStr;
+    // Overdue singles render on BOTH today AND their original
+    // scheduled_for. Why both:
+    //   - on today: the "still demanding attention" surface so the
+    //     row keeps prodding the user from the current view.
+    //   - on scheduled_for: so the "Unlabeled (N)" chip — which
+    //     routes to the oldest pending's scheduled_for — actually
+    //     lands the user on a section that contains the row. Without
+    //     this, clicking the chip went to an empty past day for
+    //     singles.
+    // The day-list never has two distant days on screen at once, so
+    // the duplication isn't visually confusing; if the user marks the
+    // row complete/missed from either section, optimistic-hide +
+    // revalidation drop it everywhere.
+    if (inst.scheduled_for < todayStr) {
+      return dayStr === todayStr || dayStr === inst.scheduled_for;
+    }
     return inst.scheduled_for === dayStr;
   }
   if (r.type !== "frequency") return inst.scheduled_for === dayStr;
