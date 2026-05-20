@@ -21,7 +21,9 @@ import type {
 } from "@/lib/validators/rhythm";
 
 import { RemindersField } from "@/app/_components/reminders-field";
+import { TagPicker } from "@/app/_components/tag-picker";
 import type { Reminder } from "@/lib/validators/reminder";
+import type { TagMap } from "@/lib/domain/tags";
 
 import { CalendarPreview } from "./calendar-preview";
 
@@ -50,7 +52,11 @@ const TODAY_ISO = new Date().toISOString().slice(0, 10);
 // the user's actual schedule.
 const DEFAULT_TIME = "12:00";
 
-export function ActivityForm() {
+export function ActivityForm({
+  initialTagMap,
+}: {
+  initialTagMap: TagMap;
+}) {
   const [state, formAction, isPending] = useActionState<
     ActivityFormState,
     FormData
@@ -197,13 +203,10 @@ export function ActivityForm() {
           placeholder="Notes, links, sub-steps…"
           className={`${inputClasses} resize-none`}
         />
-        <input
-          type="text"
-          name="tags"
-          maxLength={300}
-          placeholder="Tags, comma-separated (e.g. fitness, strength, outdoor)"
-          className={inputClasses}
-        />
+        {/* TagPicker emits one hidden `<input name="tag">` per selected
+            tag; the server reads them with formData.getAll("tag"). The
+            old comma-separated `name="tags"` text input is retired. */}
+        <TagPicker initialTagMap={initialTagMap} />
       </fieldset>
 
       {/* --- 3. Rhythm ------------------------------------------------- */}

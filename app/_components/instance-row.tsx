@@ -16,9 +16,11 @@ import {
   completeInstance,
   missInstance,
 } from "@/app/actions/activities";
+import type { TagMap } from "@/lib/domain/tags";
 
 import type { DayInstance } from "./day-list";
 import { EditableProgressBadge } from "./editable-progress-badge";
+import { TagChipList } from "./tag-chip";
 
 const FREQUENCY_BADGE_CLASSES =
   "shrink-0 touch-manipulation rounded-md border border-zinc-300 bg-zinc-50 px-2 py-1 text-xs font-semibold text-zinc-700 hover:bg-zinc-100 active:bg-zinc-200 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800";
@@ -40,6 +42,7 @@ export function InstanceRow({
   todayStr,
   onOpen,
   onDispatchOptimistic,
+  tagMap,
 }: {
   instance: DayInstance;
   todayStr: string;
@@ -55,6 +58,8 @@ export function InstanceRow({
    * handleComplete below.
    */
   onDispatchOptimistic: (id: string) => void;
+  /** Name → color lookup for the tag chips below the activity name. */
+  tagMap: TagMap;
 }) {
   const [isPending, startTransition] = useTransition();
   const activity = instance.activity;
@@ -158,6 +163,15 @@ export function InstanceRow({
             <p className="mt-0.5 truncate text-xs text-zinc-600 dark:text-zinc-400">
               {activity.scheduled_times.map(formatTime).join(" · ")}
             </p>
+          )}
+          {activity.default_skill_tags.length > 0 && (
+            <div className="mt-1 flex flex-wrap gap-1">
+              <TagChipList
+                names={activity.default_skill_tags}
+                tags={tagMap}
+                size="xs"
+              />
+            </div>
           )}
           {hint && (
             <p

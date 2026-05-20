@@ -22,8 +22,11 @@ import {
   summarizeRhythm,
   summarizeScheduledTimes,
 } from "@/lib/domain/rhythm-summary";
+import { buildTagMap, type TagMap } from "@/lib/domain/tags";
 import { createClient } from "@/lib/supabase/server";
 import type { Rhythm } from "@/lib/validators/rhythm";
+
+import { TagChipList } from "@/app/_components/tag-chip";
 
 import { ActivityRowActions } from "./row-actions";
 import { SortSelect, type SortKey } from "./sort-select";
@@ -70,14 +73,20 @@ export default async function ActivitiesPage({
   const archivedSort = parseSort(params.archivedSort, "created");
   const allSort = parseSort(params.allSort, "created");
 
-  const { data } = await supabase
-    .from("activities")
-    .select(
-      "id, name, notes, rhythm, start_date, end_date, priority, default_skill_tags, scheduled_times, archived_at, created_at"
-    );
+  const [{ data }, { data: tagRows }] = await Promise.all([
+    supabase
+      .from("activities")
+      .select(
+        "id, name, notes, rhythm, start_date, end_date, priority, default_skill_tags, scheduled_times, archived_at, created_at"
+      ),
+    supabase.from("tags").select("id, name, color"),
+  ]);
 
   const all = (data ?? []) as unknown as ActivityRow[];
   const archived = all.filter((a) => a.archived_at !== null);
+  const tagMap: TagMap = buildTagMap(
+    (tagRows ?? []) as Array<{ id: string; name: string; color: string }>
+  );
 
   // ---- last-use map for the "Last completion" sort ----------------------
   // One small query: every completion the user owns, joined to the
@@ -122,7 +131,12 @@ export default async function ActivitiesPage({
           ) : (
             <ul className="flex flex-col gap-2">
               {archivedSorted.map((a) => (
-                <ActivityCard key={a.id} activity={a} archived />
+                <ActivityCard
+                  key={a.id}
+                  activity={a}
+                  tagMap={tagMap}
+                  archived
+                />
               ))}
             </ul>
           )}
@@ -145,6 +159,7 @@ export default async function ActivitiesPage({
                 <ActivityCard
                   key={a.id}
                   activity={a}
+                  tagMap={tagMap}
                   archived={a.archived_at !== null}
                 />
               ))}
@@ -261,9 +276,11 @@ function EmptyState({ text }: { text: string }) {
 
 function ActivityCard({
   activity,
+  tagMap,
   archived = false,
 }: {
   activity: ActivityRow;
+  tagMap: TagMap;
   archived?: boolean;
 }) {
   const isSingle = activity.rhythm.type === "single";
@@ -313,14 +330,11 @@ function ActivityCard({
         )}
         {activity.default_skill_tags.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1">
-            {activity.default_skill_tags.map((t) => (
-              <span
-                key={t}
-                className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400"
-              >
-                {t}
-              </span>
-            ))}
+            <TagChipList
+              names={activity.default_skill_tags}
+              tags={tagMap}
+              size="xs"
+            />
           </div>
         )}
       </div>

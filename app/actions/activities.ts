@@ -44,11 +44,19 @@ export async function createActivity(
   const notesRaw = String(formData.get("notes") ?? "").trim();
   const notes = notesRaw.length === 0 ? null : notesRaw;
 
-  const tagsRaw = String(formData.get("tags") ?? "").trim();
-  const tags = tagsRaw
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  // Tags now come from the TagPicker as one hidden <input name="tag">
+  // per selected tag (was: a single comma-separated `name="tags"`
+  // text input). Deduplicate to be safe in case the picker ever emits
+  // a duplicate name.
+  const tags = Array.from(
+    new Set(
+      formData
+        .getAll("tag")
+        .map(String)
+        .map((s) => s.trim())
+        .filter(Boolean)
+    )
+  );
 
   // priority is only meaningful (and shown) for "single"; default = medium.
   const priority = clampInt(formData.get("priority"), 1, 3, 2);
@@ -552,7 +560,6 @@ const editFieldsSchema = z
   .object({
     name: z.string().trim().min(1, "Name can't be empty.").max(120),
     notes: z.string().trim().max(500),
-    tags: z.string().trim().max(300),
     priority: z.number().int().min(1).max(3),
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -571,7 +578,6 @@ export async function updateActivityFields(
   const parsed = editFieldsSchema.safeParse({
     name: formData.get("name"),
     notes: formData.get("notes") ?? "",
-    tags: formData.get("tags") ?? "",
     priority: Number(formData.get("priority") ?? 2),
     startDate: formData.get("startDate"),
     endDate: endDateRaw.length > 0 ? endDateRaw : undefined,
@@ -581,10 +587,17 @@ export async function updateActivityFields(
     return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
   }
 
-  const tags = parsed.data.tags
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  // Tags come from the TagPicker (one hidden `<input name="tag">` per
+  // selected). Same change as createActivity — deduplicate just in case.
+  const tags = Array.from(
+    new Set(
+      formData
+        .getAll("tag")
+        .map(String)
+        .map((s) => s.trim())
+        .filter(Boolean)
+    )
+  );
 
   const reminders = parseRemindersFromForm(formData);
   const remindersValidated = remindersSchema.safeParse(reminders);

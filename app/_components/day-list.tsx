@@ -26,6 +26,7 @@ import {
 } from "react";
 
 import { summarizeRhythm } from "@/lib/domain/rhythm-summary";
+import type { TagMap } from "@/lib/domain/tags";
 import {
   normalizeFrequencyPeriod,
   type Rhythm,
@@ -73,6 +74,7 @@ export function DayList({
   missedByDate,
   todayStr,
   incompleteInfo,
+  tagMap,
 }: {
   initialDate: string;
   completedByDate: Record<string, DayMarkedItem[]>;
@@ -80,6 +82,7 @@ export function DayList({
   instances: DayInstance[];
   todayStr: string;
   incompleteInfo: IncompleteInfo;
+  tagMap: TagMap;
 }) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -292,6 +295,7 @@ export function DayList({
               todayStr={todayStr}
               onOpenInstance={setOpenInstance}
               onDispatchOptimistic={dispatchOptimistic}
+              tagMap={tagMap}
             />
           ))}
         </div>
@@ -302,6 +306,7 @@ export function DayList({
           instance={openInstance}
           todayStr={todayStr}
           onClose={() => setOpenInstance(null)}
+          tagMap={tagMap}
         />
       )}
     </div>
@@ -319,6 +324,7 @@ function DaySection({
   todayStr,
   onOpenInstance,
   onDispatchOptimistic,
+  tagMap,
 }: {
   date: Date;
   dateStr: string;
@@ -328,6 +334,7 @@ function DaySection({
   todayStr: string;
   onOpenInstance: (inst: DayInstance) => void;
   onDispatchOptimistic: (id: string) => void;
+  tagMap: TagMap;
 }) {
   const isToday = dateStr === todayStr;
   const totalMarked = completed.length + missed.length;
@@ -386,6 +393,7 @@ function DaySection({
               todayStr={todayStr}
               onOpen={() => onOpenInstance(inst)}
               onDispatchOptimistic={onDispatchOptimistic}
+              tagMap={tagMap}
             />
           ))}
         </div>

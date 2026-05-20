@@ -27,6 +27,7 @@ import { signOut } from "@/app/actions/auth";
 import { ensureInstancesBackfilled } from "@/lib/domain/backfill";
 import { rhythmCategoryLabel } from "@/lib/domain/rhythm-summary";
 import { computeStreak } from "@/lib/domain/streak";
+import { buildTagMap, type TagMap } from "@/lib/domain/tags";
 import { createClient } from "@/lib/supabase/server";
 import type { Rhythm } from "@/lib/validators/rhythm";
 
@@ -40,6 +41,7 @@ import { GridNavigator } from "./_components/grid-navigator";
 import { GridTable } from "./_components/grid-table";
 import { type IncompleteInfo } from "./_components/incomplete-button";
 import { MonthInstanceBox } from "./_components/month-instance-box";
+import { TagDotRow } from "./_components/tag-chip";
 import { TimeChip } from "./_components/time-chip";
 
 type ViewKind = "day" | "week" | "month" | "year" | "grid";
@@ -112,6 +114,19 @@ export default async function HomePage({
     return format(ref, "yyyy-MM-dd");
   })();
   await ensureInstancesBackfilled(supabase, user.id, backfillThrough);
+
+  // ---- Tag palette ------------------------------------------------------
+  // Per-user name → color lookup. Threaded into every component that
+  // renders tag chips or dots (DayList, ActivityModal, GridTable,
+  // calendar week/month cells). Activities reference tags by name
+  // verbatim in `default_skill_tags[]`; this map is just the optional
+  // color metadata. Unknown names render gray via the fallback.
+  const { data: tagRows } = await supabase
+    .from("tags")
+    .select("id, name, color");
+  const tagMap: TagMap = buildTagMap(
+    (tagRows ?? []) as Array<{ id: string; name: string; color: string }>
+  );
 
   // ---- "Incomplete" surfacing -------------------------------------------
   // Past-dated instances still in `pending` status (the user neither
@@ -187,13 +202,25 @@ export default async function HomePage({
       </div>
 
       {view === "day" && (
-        <DayView startDate={date} incompleteInfo={incompleteInfo} />
+        <DayView
+          startDate={date}
+          incompleteInfo={incompleteInfo}
+          tagMap={tagMap}
+        />
       )}
       {view === "week" && (
-        <WeekView weekDate={date} incompleteInfo={incompleteInfo} />
+        <WeekView
+          weekDate={date}
+          incompleteInfo={incompleteInfo}
+          tagMap={tagMap}
+        />
       )}
       {view === "month" && (
-        <MonthView monthDate={date} incompleteInfo={incompleteInfo} />
+        <MonthView
+          monthDate={date}
+          incompleteInfo={incompleteInfo}
+          tagMap={tagMap}
+        />
       )}
       {view === "year" && (
         <YearView yearDate={date} incompleteInfo={incompleteInfo} />
@@ -204,6 +231,7 @@ export default async function HomePage({
           range={range}
           userId={user.id}
           incompleteInfo={incompleteInfo}
+          tagMap={tagMap}
         />
       )}
     </main>
@@ -484,9 +512,11 @@ function SubTab({
 async function DayView({
   startDate,
   incompleteInfo,
+  tagMap,
 }: {
   startDate: string;
   incompleteInfo: IncompleteInfo;
+  tagMap: TagMap;
 }) {
   const supabase = await createClient();
 
@@ -588,6 +618,7 @@ async function DayView({
       missedByDate={missedByDate}
       todayStr={TODAY_STR}
       incompleteInfo={incompleteInfo}
+      tagMap={tagMap}
     />
   );
 }
@@ -600,9 +631,11 @@ async function DayView({
 async function WeekView({
   weekDate,
   incompleteInfo,
+  tagMap,
 }: {
   weekDate: string;
   incompleteInfo: IncompleteInfo;
+  tagMap: TagMap;
 }) {
   const supabase = await createClient();
 
@@ -620,7 +653,7 @@ async function WeekView({
       scheduled_for,
       status,
       activities (
-        id, name, rhythm, priority, scheduled_times, archived_at
+        id, name, rhythm, priority, scheduled_times, default_skill_tags, archived_at
       )
     `
     )
@@ -637,6 +670,7 @@ async function WeekView({
       rhythm: Rhythm;
       priority: number;
       scheduled_times: string[];
+      default_skill_tags: string[];
       archived_at: string | null;
     } | null;
   };
@@ -717,7 +751,7 @@ async function WeekView({
             ) : (
               <ul className="flex min-w-0 flex-col gap-0.5">
                 {d.items.map((i) => (
-                  <WeekBanner key={i.id} item={i} />
+                  <WeekBanner key={i.id} item={i} tagMap={tagMap} />
                 ))}
               </ul>
             )}
@@ -730,6 +764,7 @@ async function WeekView({
 
 function WeekBanner({
   item,
+  tagMap,
 }: {
   item: {
     status: string;
@@ -737,18 +772,21 @@ function WeekBanner({
       name: string;
       priority: number;
       scheduled_times: string[];
+      default_skill_tags?: string[];
     } | null;
   };
+  tagMap: TagMap;
 }) {
   if (!item.activities) return null;
   const isCompleted = item.status === "completed";
-  const dotColor =
+  const priorityDotColor =
     item.activities.priority === 1
       ? "bg-red-500"
       : item.activities.priority === 2
         ? "bg-amber-500"
         : "bg-zinc-400";
   const firstTime = item.activities.scheduled_times?.[0];
+  const tagNames = item.activities.default_skill_tags ?? [];
 
   return (
     <li
@@ -757,17 +795,28 @@ function WeekBanner({
           ? "bg-zinc-100 text-zinc-400 line-through dark:bg-zinc-900 dark:text-zinc-600"
           : "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
       }`}
-      title={`${item.activities.name}${firstTime ? ` @ ${firstTime}` : ""}`}
+      title={`${item.activities.name}${firstTime ? ` @ ${firstTime}` : ""}${
+        tagNames.length > 0 ? ` · ${tagNames.join(", ")}` : ""
+      }`}
     >
       <span
         aria-hidden
-        className={`mt-1 inline-block h-1 w-1 shrink-0 rounded-full ${dotColor}`}
+        title="priority"
+        className={`mt-1 inline-block h-1 w-1 shrink-0 rounded-full ${priorityDotColor}`}
       />
       <span className="min-w-0 flex-1">
         <span className="block line-clamp-2 break-words font-medium">
           {item.activities.name}
         </span>
         {firstTime && <span className="block opacity-75">{firstTime}</span>}
+        {tagNames.length > 0 && (
+          <TagDotRow
+            names={tagNames}
+            tags={tagMap}
+            dotClassName="h-1 w-1"
+            max={4}
+          />
+        )}
       </span>
     </li>
   );
@@ -782,9 +831,11 @@ function WeekBanner({
 async function MonthView({
   monthDate,
   incompleteInfo,
+  tagMap,
 }: {
   monthDate: string;
   incompleteInfo: IncompleteInfo;
+  tagMap: TagMap;
 }) {
   const supabase = await createClient();
 
@@ -793,25 +844,44 @@ async function MonthView({
   const monthEnd = endOfMonth(refDate);
   const gridStart = startOfWeek(monthStart, { weekStartsOn: 1 });
 
-  // Fetch over the visible grid (might include neighbor-month days)
+  // Fetch over the visible grid (might include neighbor-month days).
+  // We also pull default_skill_tags per instance so the cell can show
+  // tiny tag dots at the bottom — same per-cell payload as Week.
   const gridEnd = addDays(gridStart, 41);
   const { data } = await supabase
     .from("activity_instances")
     .select(
-      "id, scheduled_for, status, activities!inner(archived_at)"
+      "id, scheduled_for, status, activities!inner(archived_at, default_skill_tags)"
     )
     .gte("scheduled_for", format(gridStart, "yyyy-MM-dd"))
     .lte("scheduled_for", format(gridEnd, "yyyy-MM-dd"))
     .is("activities.archived_at", null);
 
-  type CellInstance = { id: string; status: string };
+  type CellInstance = {
+    id: string;
+    status: string;
+    tags: string[];
+  };
   const byDate: Record<string, CellInstance[]> = {};
-  for (const i of (data ?? []) as Array<{
+  type MonthRow = {
     id: string;
     scheduled_for: string;
     status: string;
-  }>) {
-    (byDate[i.scheduled_for] ??= []).push({ id: i.id, status: i.status });
+    activities?:
+      | { default_skill_tags?: string[] | null }
+      | Array<{ default_skill_tags?: string[] | null }>
+      | null;
+  };
+  for (const i of (data ?? []) as MonthRow[]) {
+    const activitiesField = Array.isArray(i.activities)
+      ? i.activities[0]
+      : i.activities;
+    const tags = activitiesField?.default_skill_tags ?? [];
+    (byDate[i.scheduled_for] ??= []).push({
+      id: i.id,
+      status: i.status,
+      tags,
+    });
   }
 
   const cells = Array.from({ length: 42 }, (_, i) => {
@@ -852,7 +922,7 @@ async function MonthView({
           </div>
         ))}
         {cells.map((c) => (
-          <MonthCell key={c.dateStr} {...c} />
+          <MonthCell key={c.dateStr} {...c} tagMap={tagMap} />
         ))}
       </div>
     </div>
@@ -1024,11 +1094,13 @@ async function GridView({
   range,
   userId,
   incompleteInfo,
+  tagMap,
 }: {
   gridDate: string;
   range: GridRange;
   userId: string;
   incompleteInfo: IncompleteInfo;
+  tagMap: TagMap;
 }) {
   const supabase = await createClient();
   const refDate = parseDate(gridDate);
@@ -1278,7 +1350,11 @@ async function GridView({
     );
 
     return {
-      activity: { id: act.id, name: act.name },
+      activity: {
+        id: act.id,
+        name: act.name,
+        tags: act.default_skill_tags ?? [],
+      },
       rhythmCategory: rhythmCategoryLabel(
         act.rhythm,
         act.scheduled_times ?? []
@@ -1346,6 +1422,7 @@ async function GridView({
         singlesTotal={singlesTotal}
         singles={singlesForBanner}
         userId={userId}
+        tagMap={tagMap}
       />
     </div>
   );
@@ -1372,7 +1449,7 @@ type GridTableCell = {
 };
 
 type GridTableRow = {
-  activity: { id: string; name: string };
+  activity: { id: string; name: string; tags: string[] };
   rhythmCategory: string;
   cells: GridTableCell[];
   pct: number | null;
@@ -1457,17 +1534,27 @@ function MonthCell({
   inMonth,
   isToday,
   instances,
+  tagMap,
 }: {
   date: Date;
   dateStr: string;
   inMonth: boolean;
   isToday: boolean;
-  instances: Array<{ id: string; status: string }>;
+  instances: Array<{ id: string; status: string; tags: string[] }>;
+  tagMap: TagMap;
 }) {
   const hasAny = instances.length > 0;
   const MAX_BOXES = 5;
   const shown = instances.slice(0, MAX_BOXES);
   const extra = Math.max(0, instances.length - MAX_BOXES);
+
+  // Union of all distinct tag names across the day's instances. The
+  // dot row at the bottom of the cell is dense by design — one dot
+  // per unique tag color, not per instance. Max 4 visible before
+  // an overflow "+N" indicator.
+  const tagNames = Array.from(
+    new Set(instances.flatMap((i) => i.tags))
+  );
 
   let cls =
     "relative flex aspect-square flex-col items-center gap-0.5 rounded p-1 text-xs transition-colors";
@@ -1503,6 +1590,18 @@ function MonthCell({
               +{extra}
             </span>
           )}
+        </div>
+      )}
+      {/* Tag dots at the bottom of the cell. Tiny (4px) so they fit
+          even when an instance box stack is above them. */}
+      {inMonth && tagNames.length > 0 && (
+        <div className="relative z-10 mt-auto flex w-full items-end justify-center pb-0.5">
+          <TagDotRow
+            names={tagNames}
+            tags={tagMap}
+            dotClassName="h-1 w-1"
+            max={4}
+          />
         </div>
       )}
     </div>

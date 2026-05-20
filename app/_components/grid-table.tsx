@@ -31,9 +31,11 @@
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 
 import { summarizeRhythm } from "@/lib/domain/rhythm-summary";
+import type { TagMap } from "@/lib/domain/tags";
 
 import { ActivityModal } from "./activity-modal";
 import type { DayInstance } from "./day-list";
+import { TagChipList } from "./tag-chip";
 
 export type GridCellState =
   | "completed"
@@ -50,7 +52,8 @@ export type GridCell = {
 };
 
 export type GridRow = {
-  activity: { id: string; name: string };
+  /** activity.tags = tag NAMES; color resolved against the page-level tagMap. */
+  activity: { id: string; name: string; tags: string[] };
   rhythmCategory: string;
   cells: GridCell[];
   pct: number | null;
@@ -104,6 +107,7 @@ export function GridTable({
   singlesTotal,
   singles,
   userId,
+  tagMap,
 }: {
   mode: GridMode;
   rows: GridRow[];
@@ -115,6 +119,9 @@ export function GridTable({
   /** Every one-time activity instance in range, expanded under the banner. */
   singles: DayInstance[];
   userId: string;
+  /** Name → color lookup; threaded into the per-row Tags popover and
+   *  the ActivityModal opened from a clicked cell. */
+  tagMap: TagMap;
 }) {
   const [openInstance, setOpenInstance] = useState<DayInstance | null>(null);
   const { off, toggle } = useRowOffSet(userId);
@@ -134,6 +141,7 @@ export function GridTable({
           off={off}
           onToggle={toggle}
           onOpenInstance={setOpenInstance}
+          tagMap={tagMap}
         />
       ) : mode === "month" ? (
         <MonthTable
@@ -143,6 +151,7 @@ export function GridTable({
           off={off}
           onToggle={toggle}
           onOpenInstance={setOpenInstance}
+          tagMap={tagMap}
         />
       ) : (
         <TotalTable
@@ -152,6 +161,7 @@ export function GridTable({
           off={off}
           onToggle={toggle}
           onOpenInstance={setOpenInstance}
+          tagMap={tagMap}
         />
       )}
 
@@ -170,6 +180,7 @@ export function GridTable({
           instance={openInstance}
           todayStr={todayStr}
           onClose={() => setOpenInstance(null)}
+          tagMap={tagMap}
         />
       )}
     </>
@@ -248,6 +259,7 @@ function WeekTable({
   off,
   onToggle,
   onOpenInstance,
+  tagMap,
 }: {
   rows: GridRow[];
   dateCols: DateCol[];
@@ -255,6 +267,7 @@ function WeekTable({
   off: ReadonlySet<string>;
   onToggle: (id: string) => void;
   onOpenInstance: (i: DayInstance) => void;
+  tagMap: TagMap;
 }) {
   // Cells fill the entire Activity-cells column horizontally via 1fr.
   // No hard cap — the column's auto width drives cell size. With
@@ -313,7 +326,7 @@ function WeekTable({
                 <CollapsedRow span={3} />
               ) : (
                 <>
-                  <TypeCell row={row} />
+                  <TypeCell row={row} tagMap={tagMap} />
                   <td className="border-b border-zinc-100 px-1 py-0.5 align-middle dark:border-zinc-900">
                     <div className="grid grid-cols-7" style={gridStyle}>
                       {row.cells.map((cell) => (
@@ -352,6 +365,7 @@ function MonthTable({
   off,
   onToggle,
   onOpenInstance,
+  tagMap,
 }: {
   rows: GridRow[];
   dateCols: DateCol[];
@@ -359,6 +373,7 @@ function MonthTable({
   off: ReadonlySet<string>;
   onToggle: (id: string) => void;
   onOpenInstance: (i: DayInstance) => void;
+  tagMap: TagMap;
 }) {
   const padBefore = dateCols.length > 0 ? mondayPad(dateCols[0].date) : 0;
 
@@ -411,7 +426,7 @@ function MonthTable({
                 <CollapsedRow span={3} />
               ) : (
                 <>
-                  <TypeCell row={row} />
+                  <TypeCell row={row} tagMap={tagMap} />
                   {/* Month cells use a wider-than-tall aspect ratio so the
                       mini-calendar block doesn't tower over the rest of
                       the row. 5 weeks at 2:1 cells (~44 × 22 px) = ~120px
@@ -469,6 +484,7 @@ function TotalTable({
   off,
   onToggle,
   onOpenInstance,
+  tagMap,
 }: {
   rows: GridRow[];
   dateCols: DateCol[];
@@ -476,6 +492,7 @@ function TotalTable({
   off: ReadonlySet<string>;
   onToggle: (id: string) => void;
   onOpenInstance: (i: DayInstance) => void;
+  tagMap: TagMap;
 }) {
   const padBefore = dateCols.length > 0 ? mondayPad(dateCols[0].date) : 0;
   const totalWithStart = padBefore + dateCols.length;
@@ -521,7 +538,7 @@ function TotalTable({
                 <CollapsedRow span={3} />
               ) : (
                 <>
-                  <TypeCell row={row} />
+                  <TypeCell row={row} tagMap={tagMap} />
                   <td className="border-b border-zinc-100 px-1 py-0.5 align-top dark:border-zinc-900">
                     <div
                       className="grid"
@@ -785,10 +802,33 @@ function NameCell({
   );
 }
 
-function TypeCell({ row }: { row: GridRow }) {
+function TypeCell({ row, tagMap }: { row: GridRow; tagMap: TagMap }) {
+  // Rhythm category on top; if the activity has tags, a "Tags" link
+  // appears underneath that opens a small popover with the chips. The
+  // popover sits next to the link via group-hover so users don't need
+  // an extra click. (Mobile users can long-press for the same effect
+  // via the native :hover fallback.)
   return (
     <td className="border-b border-zinc-100 px-2 py-0.5 align-top text-left text-xs text-zinc-500 dark:border-zinc-900">
-      {row.rhythmCategory}
+      <div>{row.rhythmCategory}</div>
+      {row.activity.tags.length > 0 && (
+        <div className="group/tags relative inline-block">
+          <span className="cursor-pointer text-[10px] text-blue-600 underline-offset-2 hover:underline dark:text-blue-400">
+            Tags
+          </span>
+          {/* Popover */}
+          <span
+            role="tooltip"
+            className="pointer-events-none absolute left-0 top-full z-30 mt-1 hidden min-w-max max-w-[14rem] rounded-md border border-zinc-200 bg-white p-2 shadow-md group-hover/tags:block dark:border-zinc-700 dark:bg-zinc-900"
+          >
+            <TagChipList
+              names={row.activity.tags}
+              tags={tagMap}
+              size="xs"
+            />
+          </span>
+        </div>
+      )}
     </td>
   );
 }

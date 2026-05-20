@@ -204,3 +204,32 @@ export const completionInstances = pgTable(
     index("completion_instances_instance_idx").on(t.instanceId),
   ]
 );
+
+// ===========================================================================
+// tags  (per-user name → color lookup)
+// ---------------------------------------------------------------------------
+// Activities still store tag NAMES verbatim in `default_skill_tags text[]`.
+// This table only adds optional color metadata: { (user_id, name) → color }.
+// Unknown tag names render with a gray fallback until the user colors them.
+// `color` is a palette KEY ("emerald" / "amber" / ...), not a hex — see
+// lib/domain/tags.ts for the palette → Tailwind-classes mapping.
+// ===========================================================================
+
+export const tags = pgTable(
+  "tags",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    color: text("color").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("tags_user_name_idx").on(t.userId, t.name),
+    index("tags_user_idx").on(t.userId),
+  ]
+);

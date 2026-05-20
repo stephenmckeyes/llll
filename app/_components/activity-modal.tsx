@@ -30,6 +30,7 @@ import {
   summarizeRhythm,
   summarizeScheduledTimes,
 } from "@/lib/domain/rhythm-summary";
+import type { TagMap } from "@/lib/domain/tags";
 import {
   normalizeReminder,
   type Reminder,
@@ -42,6 +43,8 @@ import {
 
 import type { DayInstance } from "./day-list";
 import { formatReminder, RemindersField } from "./reminders-field";
+import { TagChipList } from "./tag-chip";
+import { TagPicker } from "./tag-picker";
 
 const PRIORITY_LABEL: Record<number, string> = {
   1: "High",
@@ -76,10 +79,15 @@ export function ActivityModal({
   instance,
   todayStr,
   onClose,
+  tagMap,
 }: {
   instance: DayInstance;
   todayStr: string;
   onClose: () => void;
+  /** Per-user tag-name → color lookup. Drives both the details-mode
+   *  TagChipList and the edit-mode TagPicker. Pass `{}` if you have
+   *  none — chips fall back to gray. */
+  tagMap: TagMap;
 }) {
   const [mode, setMode] = useState<Mode>("details");
   const [isPending, startTransition] = useTransition();
@@ -182,10 +190,12 @@ export function ActivityModal({
             activity={activity}
             instance={instance}
             isSingle={isSingle}
+            tagMap={tagMap}
           />
         ) : mode === "edit-activity" ? (
           <EditActivityBody
             activity={activity}
+            tagMap={tagMap}
             onDone={() => onClose()}
             onCancel={() => setMode("details")}
           />
@@ -239,10 +249,12 @@ function DetailsBody({
   activity,
   instance,
   isSingle,
+  tagMap,
 }: {
   activity: DayInstance["activity"];
   instance: DayInstance;
   isSingle: boolean;
+  tagMap: TagMap;
 }) {
   return (
     <div className="flex-1 overflow-y-auto px-5 py-4">
@@ -291,16 +303,11 @@ function DetailsBody({
           <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
             Tags
           </h3>
-          <div className="flex flex-wrap gap-1.5">
-            {activity.default_skill_tags.map((t) => (
-              <span
-                key={t}
-                className="rounded bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400"
-              >
-                {t}
-              </span>
-            ))}
-          </div>
+          <TagChipList
+            names={activity.default_skill_tags}
+            tags={tagMap}
+            size="sm"
+          />
         </div>
       )}
 
@@ -329,10 +336,12 @@ function DetailsBody({
 
 function EditActivityBody({
   activity,
+  tagMap,
   onDone,
   onCancel,
 }: {
   activity: DayInstance["activity"];
+  tagMap: TagMap;
   onDone: () => void;
   onCancel: () => void;
 }) {
@@ -417,17 +426,16 @@ function EditActivityBody({
           />
         </label>
 
-        <label className="mt-4 block">
-          <span className="text-sm font-medium">Tags</span>
-          <input
-            type="text"
-            name="tags"
-            maxLength={300}
-            defaultValue={activity.default_skill_tags.join(", ")}
-            placeholder="comma, separated, tags"
-            className={inputClasses}
+        <div className="mt-4">
+          <p className="mb-1 text-sm font-medium">Tags</p>
+          {/* Same TagPicker as the create form. Hidden inputs emit
+              `name="tag"` per selected — the updateActivityFields
+              action reads them via formData.getAll("tag"). */}
+          <TagPicker
+            initialSelected={activity.default_skill_tags}
+            initialTagMap={tagMap}
           />
-        </label>
+        </div>
 
         {/* Dates. Editing these does NOT change the rhythm itself — for that
             use Edit rhythm. Pending future instances outside the new range
