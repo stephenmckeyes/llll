@@ -233,7 +233,7 @@ export function ActivityModal({
               onClick={() => setMode("edit-rhythm")}
             />
             <Danger
-              label="Drop and save"
+              label="Drop"
               disabled={isPending}
               onClick={handleDropAndSave}
             />
