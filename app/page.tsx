@@ -22,6 +22,7 @@ import {
   startOfWeek,
 } from "date-fns";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { ensureInstancesBackfilled } from "@/lib/domain/backfill";
 import { rhythmCategoryLabel } from "@/lib/domain/rhythm-summary";
@@ -84,6 +85,20 @@ export default async function HomePage({
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return <SignedOutLanding />;
+
+  // Onboarding gate: a signed-in user who hasn't completed onboarding
+  // (profiles.onboarded_at IS NULL) gets bounced to /onboarding before
+  // ever seeing the dashboard. We can't use requireOnboardedUser here
+  // because that helper redirects to /login on no-user, but this page
+  // wants to render <SignedOutLanding /> for that case.
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("onboarded_at")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (!profile || !profile.onboarded_at) {
+    redirect("/onboarding");
+  }
 
   const params = await searchParams;
   const view = parseView(params.view);

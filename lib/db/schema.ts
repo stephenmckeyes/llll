@@ -68,6 +68,11 @@ export const profiles = pgTable("profiles", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
+  // NULL = user hasn't completed the onboarding flow yet. Set by
+  // /onboarding's completeOnboarding server action. Existing profiles
+  // at the time of migration 0007 are grandfathered (onboarded_at =
+  // created_at) so we don't bounce returning users to a setup screen.
+  onboardedAt: timestamp("onboarded_at", { withTimezone: true }),
 });
 
 // ===========================================================================

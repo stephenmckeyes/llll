@@ -6,47 +6,6 @@ startup.
 
 ## Pending features (asked for, deferred on purpose)
 
-### Tags as first-class entities (color-coded, dropdown picker)
-
-Asked for. Today `activities.default_skill_tags` is a free-text
-`text[]` column. User wants:
-
-- **Tag dropdown** in the create / edit activity form (not a free
-  text input), with the user's existing tags listed + a "+ New tag"
-  option that opens an inline name + color editor.
-- **Color per tag**, picked from a predefined palette (probably
-  ~12 colors — emerald, sky, amber, red, violet, etc.) — keeps
-  rendering simple and the visual identity recognizable across
-  views.
-- **Display per view:**
-  - **Day**: full color chips on the row banner (name on the chip).
-  - **Week**: small color dots prepended to each banner — one dot
-    per tag.
-  - **Month**: tiny color dots at the bottom of each cell (max ~3
-    visible before "+N").
-  - **Year**: nothing (cells are too small to read color hints).
-- **Grid Type column**: per-row "Tags" link that opens a small popup
-  listing the activity's tags as chips. Editing still goes through
-  the existing Edit-Activity flow (which we'd update to use the new
-  dropdown).
-
-Implementation sketch:
-- New `tags` table: `id uuid pk, user_id uuid fk, name text not null,
-  color text not null, created_at timestamptz default now(),
-  unique (user_id, name)`.
-- Keep `activities.default_skill_tags` as `text[]` (names) for back-
-  compat — the new `tags` table is just a (per-user) name→color
-  lookup. Activities don't need to change shape.
-- Tag colors are stored as a palette key ("emerald" / "amber" / ...)
-  rather than a raw hex, so we can map to Tailwind classes for both
-  light + dark modes.
-- Server actions: `createTag(name, color)`, `deleteTag(id)`. List
-  query for the dropdown is cheap (per-user, usually <50).
-- Migration of existing free-text tag values: on first form open
-  after this lands, treat any `default_skill_tags[]` value not in
-  the user's tags table as needing creation (auto-create with a
-  random palette color, user can re-color later).
-
 ### Multi-time reminders verification
 
 Asked for. After the multi-time refactor (every rhythm can now have
@@ -57,22 +16,20 @@ the per-time fan-out has to be in the reminder-schedule generator,
 not the activity model. Easy to forget — leaving this here as a
 specific check item.
 
-### Settings page / timezone change
+### Settings page — timezone change + 12/24h toggle
 
-Asked for. Today we display the user's browser-detected timezone in
-the page header (`TimeChip` component) but there's no way to change
-it. Plan:
+The /settings page now ships with Account / Appearance (theme +
+sleep mode) / Data (JSON export + AI prompt) / Session (sign-out at
+bottom). Future additions for it:
 
-- **Settings page** at `/settings` collects:
-  - Timezone override (defaults to browser-detected, falls back to
-    profile column on server).
-  - 12h vs 24h time format toggle (paired entry from the existing
-    backlog item).
-  - Default activity visibility / notification preferences (later).
-- **`profiles.timezone`** already exists from migration 0001 (defaults
-  to `'UTC'`); the onboarding-flow item plans to populate it.
-- Change should NOT be in the main UI — it's a "set once" decision
-  that shouldn't be hit by accident.
+- **Timezone override** — `profiles.timezone` already exists, and
+  the onboarding flow seeds it from the browser. The Settings page
+  should let the user edit it later (an `<input>` mirroring the
+  onboarding form, plus a save action).
+- **12h vs 24h time format toggle** — paired with the existing
+  backlog item below. Will need a `profiles.time_format` column.
+- **Default activity visibility / notification preferences** — for
+  later, after reminders ship.
 
 ### Alternate Grid-view visualizations
 
@@ -99,48 +56,6 @@ All variants would read from the same underlying
 `activity_instances` data — purely rendering changes. Probably
 keep the current Heatmap as the default and add `?viz=chain` /
 `?viz=river` URL params (the sub-tab pattern already in place).
-
-### AI-friendly data export for trend analysis
-
-(Asked for: "incorporate ways to mass-pull information that someone
-could put into AI to analyze trends of when/why they might mess up
-on their goals.") Plan:
-
-- A **Settings → Export** button that bundles the user's recent
-  history (e.g., last 6 / 12 months) into a single JSON/CSV file:
-  - Activities with name, rhythm, notes, tags, start/end dates.
-  - Every `activity_instance` with status, scheduled_for, and any
-    linked completions (occurred_at, effort_rating, note).
-  - Daily / weekly / monthly rollups (completion rate per activity,
-    per tag) — useful summary statistics so the AI doesn't have to
-    rederive them from raw rows.
-- Output **redacts emails / private IDs** but keeps activity names
-  (which the user already wrote). A toggle could optionally
-  hash names for sharing.
-- Suggested companion: a **markdown prompt template** the user can
-  paste alongside the export — e.g., "Look at this productivity
-  history. On what weekdays / time-of-day do I most often skip my
-  activities? Which two activities seem to interfere with each
-  other (correlated misses)? Which notes hint at common blockers?
-  Surface trends I might not see myself."
-- Out of scope for v1: API-style scheduled pushes, direct LLM
-  integration. Manual export → paste into the user's AI of choice
-  is the explicit shape.
-
-
-
-### Onboarding flow on first sign-in
-First-time users should land in a short questionnaire before the
-dashboard, not directly on an empty today view.
-
-- **Timezone** (required) — `profiles.timezone` currently defaults to
-  `'UTC'` via the `handle_new_auth_user` trigger (migration 0001).
-  Onboarding writes the user's actual TZ + flips a new
-  `onboarded_at timestamptz` column we'd add.
-- Could also collect: display name, default notification channels,
-  default visibility for new activities, weekly check-in cadence.
-- Routing rule: if `auth.uid()`'s profile has `onboarded_at IS NULL`,
-  every page should redirect to `/onboarding` (middleware-friendly).
 
 ### Time format toggle (12h vs 24h)
 Today the app formats times via the browser's locale

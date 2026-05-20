@@ -4,19 +4,16 @@
 // ---------------------------------------------------------------------------
 
 import Link from "next/link";
-import { redirect } from "next/navigation";
 
+import { requireOnboardedUser } from "@/lib/auth/require-onboarded-user";
 import { buildTagMap, computeTagUsage } from "@/lib/domain/tags";
-import { createClient } from "@/lib/supabase/server";
 
 import { ActivityForm } from "./activity-form";
 
 export default async function NewActivityPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  // requireOnboardedUser handles both the unauthed → /login bounce and
+  // the not-yet-onboarded → /onboarding bounce in one call.
+  const { supabase } = await requireOnboardedUser();
 
   // Fetch the user's tag palette + per-tag usage counts so the picker
   // can render existing tags inline AND sort the "Most frequent" list

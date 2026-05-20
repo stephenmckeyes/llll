@@ -14,8 +14,8 @@
 // ---------------------------------------------------------------------------
 
 import Link from "next/link";
-import { redirect } from "next/navigation";
 
+import { requireOnboardedUser } from "@/lib/auth/require-onboarded-user";
 import {
   rhythmCategoryLabel,
   summarizeDateRange,
@@ -23,7 +23,7 @@ import {
   summarizeScheduledTimes,
 } from "@/lib/domain/rhythm-summary";
 import { buildTagMap, computeTagUsage, type TagMap } from "@/lib/domain/tags";
-import { createClient } from "@/lib/supabase/server";
+import type { createClient } from "@/lib/supabase/server";
 import type { Rhythm } from "@/lib/validators/rhythm";
 
 import { TagChipList } from "@/app/_components/tag-chip";
@@ -64,11 +64,9 @@ export default async function ActivitiesPage({
 }: {
   searchParams: Promise<{ archivedSort?: string; allSort?: string }>;
 }) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  // requireOnboardedUser handles both the unauthed → /login bounce and
+  // the not-yet-onboarded → /onboarding bounce in one call.
+  const { supabase, user } = await requireOnboardedUser();
 
   const params = await searchParams;
   const archivedSort = parseSort(params.archivedSort, "created");

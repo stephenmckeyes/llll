@@ -16,10 +16,9 @@
 // ---------------------------------------------------------------------------
 
 import Link from "next/link";
-import { redirect } from "next/navigation";
 
 import { signOut } from "@/app/actions/auth";
-import { createClient } from "@/lib/supabase/server";
+import { requireOnboardedUser } from "@/lib/auth/require-onboarded-user";
 
 import { ExportButton } from "./export-button";
 import { ThemeToggle } from "./theme-toggle";
@@ -36,11 +35,9 @@ const AI_PROMPT_TEMPLATE = `Below is my Mission productivity export. Please:
 Export follows.`;
 
 export default async function SettingsPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  // requireOnboardedUser handles both the unauthed → /login bounce and
+  // the not-yet-onboarded → /onboarding bounce.
+  const { user } = await requireOnboardedUser();
 
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-8 bg-white p-6 dark:bg-zinc-950">
