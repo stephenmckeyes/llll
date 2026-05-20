@@ -298,9 +298,11 @@ async function fetchIncompleteInfo(
       .in("activity_id", ids)
       .eq("status", "pending")
       .lt("scheduled_for", TODAY_STR),
+    // Also pull the parent activity's rhythm so we can decide WHICH day
+    // section the row will visibly render in. See the comment below.
     supabase
       .from("activity_instances")
-      .select("scheduled_for")
+      .select("scheduled_for, activities(rhythm)")
       .in("activity_id", ids)
       .eq("status", "pending")
       .lt("scheduled_for", TODAY_STR)
@@ -309,11 +311,30 @@ async function fetchIncompleteInfo(
       .maybeSingle(),
   ]);
 
+  // The Day view's `visibleOnDay` rule (see day-list.tsx) shifts OVERDUE
+  // SINGLE-rhythm instances onto today's section — the idea being "things
+  // still demanding your attention live with today's other todos." That
+  // means if we tell the IncompleteButton to navigate to the row's
+  // `scheduled_for`, the user lands on an empty past day instead of
+  // seeing their unlabeled row. Detect singles here and route them to
+  // today instead. Non-single overdue rows render on their original
+  // scheduled_for and need no remapping.
+  const oldestRaw = oldestResult.data as
+    | {
+        scheduled_for: string;
+        activities: { rhythm?: { type?: string } } | null;
+      }
+    | null;
+
+  let oldestDate: string | null = null;
+  if (oldestRaw) {
+    const isSingle = oldestRaw.activities?.rhythm?.type === "single";
+    oldestDate = isSingle ? TODAY_STR : oldestRaw.scheduled_for;
+  }
+
   return {
     count: countResult.count ?? 0,
-    oldestDate:
-      (oldestResult.data as { scheduled_for?: string } | null)?.scheduled_for ??
-      null,
+    oldestDate,
   };
 }
 

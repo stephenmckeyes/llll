@@ -83,7 +83,10 @@ export type GridMode = "week" | "month" | "total";
  * resets to default after the last stage.
  *
  *   activity: 1 = A→Z,     2 = Z→A
- *   days:     1 = most,    2 = least  (sums per row over the period)
+ *   days:     1 = most in period (onTheHook, regardless of state),
+ *             2 = least in period,
+ *             3 = most completed,
+ *             4 = most missed
  *   type:     1..N = each distinct rhythm category goes to the top,
  *             in alphabetical order. N = number of distinct categories
  *             in the current row set.
@@ -177,7 +180,8 @@ export function GridTable({
       case "activity":
         return 2;
       case "days":
-        return 2;
+        // 1 most in period, 2 least in period, 3 most completed, 4 most missed
+        return 4;
       case "type":
         return Math.max(1, typeStages.length); // at least 1 so cycling doesn't no-op
       case "success":
@@ -218,8 +222,26 @@ export function GridTable({
       arr.sort((a, b) => a.activity.name.localeCompare(b.activity.name));
       if (sort.stage === 2) arr.reverse();
     } else if (sort.column === "days") {
-      arr.sort((a, b) => b.done - a.done);
-      if (sort.stage === 2) arr.reverse();
+      // 1 = most scheduled in period (onTheHook = done + missed + unlabeled
+      //     + remaining-scheduled-future). Regardless of completion status —
+      //     this answers "which activities are most demanding this period?"
+      // 2 = least in period (same metric, reversed)
+      // 3 = most completed (sort by `done` desc)
+      // 4 = most missed (sort by `missed` desc)
+      switch (sort.stage) {
+        case 1:
+          arr.sort((a, b) => b.onTheHook - a.onTheHook);
+          break;
+        case 2:
+          arr.sort((a, b) => a.onTheHook - b.onTheHook);
+          break;
+        case 3:
+          arr.sort((a, b) => b.done - a.done);
+          break;
+        case 4:
+          arr.sort((a, b) => b.missed - a.missed);
+          break;
+      }
     } else if (sort.column === "type") {
       const target = typeStages[sort.stage - 1];
       arr.sort((a, b) => {
@@ -1352,8 +1374,10 @@ function SortContextMenu({
     case "days":
       options = [
         { stage: null, label: "Default order" },
-        { stage: 1, label: "Most done (in period)" },
-        { stage: 2, label: "Least done (in period)" },
+        { stage: 1, label: "Most scheduled (in period)" },
+        { stage: 2, label: "Least scheduled (in period)" },
+        { stage: 3, label: "Most completed" },
+        { stage: 4, label: "Most missed" },
       ];
       break;
     case "type":
