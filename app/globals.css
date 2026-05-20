@@ -1,5 +1,18 @@
 @import "tailwindcss";
 
+/* ---------------------------------------------------------------------------
+   THEME SETUP
+   ---------------------------------------------------------------------------
+   Tailwind v4 defaults to media-query dark mode (`@media prefers-color-scheme:
+   dark`). Redefine the `dark:` variant to be class-based so the Settings page
+   can force light / dark / sleep regardless of OS preference.
+
+   The `dark:` variant now activates whenever an ancestor has the `.dark`
+   class. The `theme-script` in layout.tsx applies that class before
+   hydration based on localStorage to avoid a flash of the wrong theme.
+   --------------------------------------------------------------------------- */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* Reserve space for the vertical scrollbar even when nothing's scrolling.
    Prevents the page (and the form inside it) from jumping a few pixels
    wider/narrower when content grows past the viewport height.
@@ -28,11 +41,33 @@ body {
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Dark-mode tokens scoped to the `.dark` class on <html>. The
+   theme-script in layout.tsx sets this from localStorage (or from
+   `prefers-color-scheme` when the user picked "system"). */
+html.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+}
+
+/* Sleep mode = dark-mode base + a warm, low-brightness filter that
+   knocks down blue wavelengths. Stacks ON TOP of `.dark` so the markup
+   stays consistent: `<html class="dark sleep">` for sleep, plain
+   `<html class="dark">` for regular dark.
+
+   Why a filter rather than re-mapping every palette token: the existing
+   ~12-color tag palette + every `bg-emerald-500` / `text-red-700`
+   utility would need a parallel "sleep" definition to fully retheme.
+   A single body-level filter shifts all colors at once toward warm
+   reds and dims the screen, which is exactly what a sleep-friendly
+   pre-bed mode should do. Tradeoff: it slightly desaturates photos /
+   images, but we have none of those in the UI today.
+
+   `filter: sepia(0.6)` adds warm yellow/amber, `hue-rotate(-20deg)`
+   nudges further toward red, `saturate(1.4)` keeps differentiation
+   between palette colors readable, and `brightness(0.78)` dims the
+   panel for night use. */
+html.sleep body {
+  filter: sepia(0.6) hue-rotate(-20deg) saturate(1.4) brightness(0.78);
 }
 
 body {

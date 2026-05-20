@@ -23,7 +23,6 @@ import {
 } from "date-fns";
 import Link from "next/link";
 
-import { signOut } from "@/app/actions/auth";
 import { ensureInstancesBackfilled } from "@/lib/domain/backfill";
 import { rhythmCategoryLabel } from "@/lib/domain/rhythm-summary";
 import { computeStreak } from "@/lib/domain/streak";
@@ -190,14 +189,16 @@ export default async function HomePage({
             >
               Archive
             </Link>
-            <form action={signOut}>
-              <button
-                type="submit"
-                className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-              >
-                Sign out
-              </button>
-            </form>
+            {/* Per user spec: Settings replaces Sign out at the top.
+                The sign-out button now lives at the bottom of /settings,
+                so it's not the first thing the user sees but is still
+                one click away. */}
+            <Link
+              href="/settings"
+              className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            >
+              Settings
+            </Link>
           </div>
         </div>
 
