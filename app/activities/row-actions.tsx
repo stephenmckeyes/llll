@@ -23,6 +23,7 @@ import {
   archiveActivity,
   deleteActivity,
 } from "@/app/actions/activities";
+import { ActivityHistoryModal } from "@/app/_components/activity-history-modal";
 import type { ActivityFormInitial } from "@/app/_components/activity-form-fields";
 
 import { UnarchiveModal } from "./unarchive-modal";
@@ -40,10 +41,18 @@ export function ActivityRowActions({
 }) {
   const [isPending, startTransition] = useTransition();
   const [unarchiveOpen, setUnarchiveOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   return (
     <>
       <div className="flex shrink-0 gap-2">
+        <button
+          type="button"
+          onClick={() => setHistoryOpen(true)}
+          className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+        >
+          History
+        </button>
         <button
           type="button"
           disabled={isPending}
@@ -85,6 +94,13 @@ export function ActivityRowActions({
           activity={activity}
           tagMap={tagMap}
           onClose={() => setUnarchiveOpen(false)}
+        />
+      )}
+      {historyOpen && (
+        <ActivityHistoryModal
+          activityId={activity.id}
+          activityName={activity.name}
+          onClose={() => setHistoryOpen(false)}
         />
       )}
     </>

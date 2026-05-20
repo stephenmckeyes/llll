@@ -38,6 +38,7 @@ import {
 } from "@/lib/validators/reminder";
 
 import { ActivityFormFields } from "./activity-form-fields";
+import { ActivityHistoryModal } from "./activity-history-modal";
 import type { DayInstance } from "./day-list";
 import { formatReminder, RemindersField } from "./reminders-field";
 import { TagChipList } from "./tag-chip";
@@ -69,6 +70,7 @@ export function ActivityModal({
   tagMap: TagMap;
 }) {
   const [mode, setMode] = useState<Mode>("details");
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const activity = instance.activity;
   const isSingle = activity.rhythm.type === "single";
@@ -209,6 +211,11 @@ export function ActivityModal({
               disabled={isPending}
               onClick={() => setMode("edit-rhythm")}
             />
+            <Secondary
+              label="History"
+              disabled={isPending}
+              onClick={() => setHistoryOpen(true)}
+            />
             <Danger
               label="Drop"
               disabled={isPending}
@@ -217,6 +224,18 @@ export function ActivityModal({
           </div>
         )}
       </div>
+
+      {/* Nested history modal — lazy-mounts only when the user clicks
+          History. fetchActivityHistory runs once when this mounts and
+          renders straight away. Closing it returns the user to the
+          parent ActivityModal in whatever mode it was in. */}
+      {historyOpen && (
+        <ActivityHistoryModal
+          activityId={activity.id}
+          activityName={activity.name}
+          onClose={() => setHistoryOpen(false)}
+        />
+      )}
     </div>
   );
 }
