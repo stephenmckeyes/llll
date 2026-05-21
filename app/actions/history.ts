@@ -35,10 +35,9 @@ export type HistoryStats = {
   completed: number;
   missed: number;
   unlabeled: number;
-  pending_future: number;
   /** Completed / (completed + missed + unlabeled). null when there's
-   *  nothing to score against (e.g. brand-new activity with only future
-   *  scheduled rows). */
+   *  nothing to score against (e.g. brand-new activity with no past
+   *  instances yet). */
   completion_rate: number | null;
   /** Consecutive completed instances ending at the most recent past-or-
    *  current scheduled occurrence. 0 means the current run is broken. */
@@ -82,7 +81,12 @@ export async function fetchActivityHistory(
     return { error: aerr?.message ?? "Activity not found." };
   }
 
-  // 2) Every instance for this activity, with linked-completion count.
+  // 2) PAST instances only — per user spec, the history modal is a
+  //    record of what HAPPENED, not what's planned. Future-scheduled
+  //    rows are filtered out at the query (scheduled_for < today).
+  //    "Past" includes both decided (completed/missed) AND past-due-
+  //    pending (unlabeled) rows.
+  const todayStr = new Date().toISOString().slice(0, 10);
   type RawInstance = {
     id: string;
     scheduled_for: string;
@@ -95,9 +99,8 @@ export async function fetchActivityHistory(
       "id, scheduled_for, status, completion_instances ( completion_id )"
     )
     .eq("activity_id", activityId)
+    .lt("scheduled_for", todayStr)
     .order("scheduled_for", { ascending: false });
-
-  const todayStr = new Date().toISOString().slice(0, 10);
 
   const instances: HistoryInstance[] = (
     (rawInstances ?? []) as RawInstance[]
@@ -107,17 +110,19 @@ export async function fetchActivityHistory(
     status: (r.status === "completed" || r.status === "missed"
       ? r.status
       : "pending") as HistoryInstance["status"],
-    unlabeled: r.status === "pending" && r.scheduled_for < todayStr,
+    // Every pending row here is past-due by construction (the query
+    // filtered scheduled_for < today), so all pending rows are
+    // unlabeled.
+    unlabeled: r.status === "pending",
     completion_count: r.completion_instances?.length ?? 0,
   }));
 
-  // 3) Stats.
+  // 3) Stats — all past-only. We dropped the old `pending_future`
+  //    stat because the timeline below it no longer surfaces future
+  //    rows; keeping the stat would be misleading.
   const completed = instances.filter((i) => i.status === "completed").length;
   const missed = instances.filter((i) => i.status === "missed").length;
   const unlabeled = instances.filter((i) => i.unlabeled).length;
-  const pendingFuture = instances.filter(
-    (i) => i.status === "pending" && !i.unlabeled
-  ).length;
   const decided = completed + missed + unlabeled;
   const completionRate =
     decided === 0 ? null : Math.round((completed / decided) * 100);
@@ -152,7 +157,6 @@ export async function fetchActivityHistory(
       completed,
       missed,
       unlabeled,
-      pending_future: pendingFuture,
       completion_rate: completionRate,
       current_streak: current,
       best_streak: best,

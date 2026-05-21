@@ -49,25 +49,34 @@ html.dark {
   --foreground: #ededed;
 }
 
-/* Sleep mode = dark-mode base + a warm, low-brightness filter that
-   knocks down blue wavelengths. Stacks ON TOP of `.dark` so the markup
-   stays consistent: `<html class="dark sleep">` for sleep, plain
-   `<html class="dark">` for regular dark.
+/* Sleep mode = dark-mode base + a warm, low-brightness OVERLAY.
+   Stacks ON TOP of `.dark` so the markup stays consistent:
+   `<html class="dark sleep">` for sleep, plain `<html class="dark">`
+   for regular dark.
 
-   Why a filter rather than re-mapping every palette token: the existing
-   ~12-color tag palette + every `bg-emerald-500` / `text-red-700`
-   utility would need a parallel "sleep" definition to fully retheme.
-   A single body-level filter shifts all colors at once toward warm
-   reds and dims the screen, which is exactly what a sleep-friendly
-   pre-bed mode should do. Tradeoff: it slightly desaturates photos /
-   images, but we have none of those in the UI today.
+   IMPORTANT — this used to be a `filter:` on <body> instead of an
+   overlay. That broke `position: fixed` modals: any element with
+   `filter` becomes a containing block for fixed descendants, which
+   meant `fixed inset-0` modals anchored to body's bounds (the entire
+   document) instead of the viewport. On long pages (Archive with
+   activities expanded) the modal positioned itself thousands of
+   pixels down. Users could only see it by zooming way out. The
+   overlay approach below has the same visual goal (warm tint + slight
+   dim) without that side effect.
 
-   `filter: sepia(0.6)` adds warm yellow/amber, `hue-rotate(-20deg)`
-   nudges further toward red, `saturate(1.4)` keeps differentiation
-   between palette colors readable, and `brightness(0.78)` dims the
-   panel for night use. */
-html.sleep body {
-  filter: sepia(0.6) hue-rotate(-20deg) saturate(1.4) brightness(0.78);
+   The overlay is a `body::after` pseudo-element pinned `position:
+   fixed` to the viewport, with `pointer-events: none` so clicks pass
+   through to the real UI underneath. `mix-blend-mode: multiply` makes
+   the tint multiply with whatever's underneath — looks right both in
+   light and dark base modes. */
+html.sleep body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: rgba(180, 90, 30, 0.32);
+  mix-blend-mode: multiply;
+  z-index: 9999;
 }
 
 body {

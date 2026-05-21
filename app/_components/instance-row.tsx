@@ -17,6 +17,7 @@ import {
   missInstance,
 } from "@/app/actions/activities";
 import type { TagMap } from "@/lib/domain/tags";
+import { dispatchInstanceResolved } from "@/lib/ui/instance-resolved-event";
 
 import type { DayInstance } from "./day-list";
 import { EditableProgressBadge } from "./editable-progress-badge";
@@ -102,6 +103,14 @@ export function InstanceRow({
     hint = { text: `Overdue by ${overdueDays}d`, tone: "danger" };
   }
 
+  // True when THIS instance counts as "Unlabeled" right now — past-due
+  // pending. Drives the optimistic Unlabeled-chip decrement: only
+  // resolving an actually-unlabeled instance should drop the chip.
+  // For multi-time / frequency rows we only count the FINAL +1 as a
+  // resolution (the count flipping to completed); intermediate +1s
+  // don't change the chip.
+  const isCurrentlyUnlabeled = instance.scheduled_for < todayStr;
+
   function handleComplete() {
     if (instance.scheduled_for > todayStr) {
       const ok = window.confirm(
@@ -113,11 +122,18 @@ export function InstanceRow({
     //   - Non-accumulating: one click = done → hide immediately
     //   - Accumulating: only the last +1 (reaching target) hides
     // Hiding mid-accumulation would be confusing.
-    if (
+    const willFinish =
       !isAccumulating ||
-      accumulatingProgress + 1 >= accumulatingTarget
-    ) {
+      accumulatingProgress + 1 >= accumulatingTarget;
+    if (willFinish) {
       onDispatchOptimistic(instance.id);
+      // Tell the Unlabeled chip to drop its count immediately when an
+      // actually-unlabeled instance gets resolved. Skipping for
+      // mid-accumulation +1s and for future-scheduled rows (those
+      // weren't unlabeled to begin with).
+      if (isCurrentlyUnlabeled) {
+        dispatchInstanceResolved({ wasUnlabeled: true });
+      }
     }
     startTransition(async () => {
       await completeInstance(instance.id);
@@ -132,6 +148,9 @@ export function InstanceRow({
       if (!ok) return;
     }
     onDispatchOptimistic(instance.id);
+    if (isCurrentlyUnlabeled) {
+      dispatchInstanceResolved({ wasUnlabeled: true });
+    }
     startTransition(async () => {
       await missInstance(instance.id);
     });

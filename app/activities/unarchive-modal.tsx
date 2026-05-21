@@ -22,7 +22,6 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { createPortal } from "react-dom";
 
 import {
   ActivityFormFields,
@@ -115,13 +114,7 @@ export function UnarchiveModal({
     });
   }
 
-  // Portal to <body> so `position: fixed` doesn't fight any deeply-
-  // nested ancestor (the archive page mounts this inside a
-  // <details><ul><li>, where some browsers misplace fixed children).
-  // Returning null during SSR mirrors createPortal's contract.
-  if (typeof document === "undefined") return null;
-
-  return createPortal(
+  return (
     <div
       role="dialog"
       aria-modal="true"
@@ -220,7 +213,6 @@ export function UnarchiveModal({
           </div>
         </form>
       </div>
-    </div>,
-    document.body
+    </div>
   );
 }

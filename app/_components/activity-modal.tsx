@@ -36,6 +36,7 @@ import {
   normalizeReminder,
   type Reminder,
 } from "@/lib/validators/reminder";
+import { dispatchInstanceResolved } from "@/lib/ui/instance-resolved-event";
 
 import { ActivityFormFields } from "./activity-form-fields";
 import { ActivityHistoryModal } from "./activity-history-modal";
@@ -95,6 +96,11 @@ export function ActivityModal({
     };
   }, []);
 
+  // Past-due-pending = "Unlabeled" for the chip's optimistic
+  // decrement. Future-scheduled rows are never unlabeled, so resolving
+  // one shouldn't tick the chip down.
+  const isCurrentlyUnlabeled = instance.scheduled_for < todayStr;
+
   function handleComplete() {
     if (instance.scheduled_for > todayStr) {
       const ok = window.confirm(
@@ -103,6 +109,9 @@ export function ActivityModal({
       if (!ok) return;
     }
     onClose();
+    if (isCurrentlyUnlabeled) {
+      dispatchInstanceResolved({ wasUnlabeled: true });
+    }
     startTransition(async () => {
       await completeInstance(instance.id);
     });
@@ -116,6 +125,9 @@ export function ActivityModal({
       if (!ok) return;
     }
     onClose();
+    if (isCurrentlyUnlabeled) {
+      dispatchInstanceResolved({ wasUnlabeled: true });
+    }
     startTransition(async () => {
       await missInstance(instance.id);
     });
