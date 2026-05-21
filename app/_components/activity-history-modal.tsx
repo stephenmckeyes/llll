@@ -28,6 +28,7 @@ import {
   fetchActivityHistory,
   type HistoryPayload,
 } from "@/app/actions/history";
+import { useBodyScrollLock } from "@/lib/ui/body-scroll-lock";
 
 type Status = "pending" | "completed" | "missed";
 
@@ -55,14 +56,8 @@ export function ActivityHistoryModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  // Body scroll-lock.
-  useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, []);
+  // Ref-counted body scroll-lock — see lib/ui/body-scroll-lock.
+  useBodyScrollLock();
 
   // Fetch on mount. This is the canonical "fetch external data into
   // local state" pattern — the React 19 set-state-in-effect lint

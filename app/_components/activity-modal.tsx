@@ -36,6 +36,7 @@ import {
   normalizeReminder,
   type Reminder,
 } from "@/lib/validators/reminder";
+import { useBodyScrollLock } from "@/lib/ui/body-scroll-lock";
 import { dispatchInstanceResolved } from "@/lib/ui/instance-resolved-event";
 
 import { ActivityFormFields } from "./activity-form-fields";
@@ -87,14 +88,10 @@ export function ActivityModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  // Body scroll-lock while open.
-  useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, []);
+  // Body scroll-lock while open. Uses the ref-counted helper so
+  // nested modals (e.g. Activity → History) don't leave the body
+  // stuck at overflow:hidden when they unmount out of order.
+  useBodyScrollLock();
 
   // Past-due-pending = "Unlabeled" for the chip's optimistic
   // decrement. Future-scheduled rows are never unlabeled, so resolving

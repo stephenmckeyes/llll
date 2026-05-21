@@ -49,34 +49,34 @@ html.dark {
   --foreground: #ededed;
 }
 
-/* Sleep mode = dark-mode base + a warm, low-brightness OVERLAY.
-   Stacks ON TOP of `.dark` so the markup stays consistent:
+/* Sleep mode — dark base + slightly warmer tokens.
+   Stacks on top of `.dark` so the markup stays consistent:
    `<html class="dark sleep">` for sleep, plain `<html class="dark">`
    for regular dark.
 
-   IMPORTANT — this used to be a `filter:` on <body> instead of an
-   overlay. That broke `position: fixed` modals: any element with
-   `filter` becomes a containing block for fixed descendants, which
-   meant `fixed inset-0` modals anchored to body's bounds (the entire
-   document) instead of the viewport. On long pages (Archive with
-   activities expanded) the modal positioned itself thousands of
-   pixels down. Users could only see it by zooming way out. The
-   overlay approach below has the same visual goal (warm tint + slight
-   dim) without that side effect.
+   History of this rule:
+     v1: filter: sepia(...) on <body>. Worked visually but `filter`
+         on body makes body a containing block for `position: fixed`
+         descendants — broke modal positioning.
+     v2: `body::after` overlay with `mix-blend-mode: multiply`. Same
+         visual goal without the containing-block side effect, BUT a
+         high-z-index fixed pseudo-element with mix-blend-mode
+         interfered with wheel/scroll events on some Chromium builds.
+         Page-level scroll stopped working when sleep was active.
+     v3 (current): swap a CSS variable. Body's background-color
+         picks up the warmer value. The rest of the UI (Tailwind
+         utilities like bg-zinc-950) stays dark. Subtle, but
+         crucially: no overlays, no filters, no containing-block or
+         scroll side effects.
 
-   The overlay is a `body::after` pseudo-element pinned `position:
-   fixed` to the viewport, with `pointer-events: none` so clicks pass
-   through to the real UI underneath. `mix-blend-mode: multiply` makes
-   the tint multiply with whatever's underneath — looks right both in
-   light and dark base modes. */
-html.sleep body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  background: rgba(180, 90, 30, 0.32);
-  mix-blend-mode: multiply;
-  z-index: 9999;
+   We could re-introduce a stronger warm-tint effect later, but it
+   would need to be done via a fixed div rendered OUTSIDE main and
+   modals would need to portal to <body> directly — bigger change,
+   not worth it for the current single-user beta.
+*/
+html.sleep {
+  --background: #1a0a05;
+  --foreground: #f0d4a8;
 }
 
 body {

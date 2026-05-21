@@ -16,6 +16,7 @@ import {
   completeInstance,
   missInstance,
 } from "@/app/actions/activities";
+import { rhythmCategoryLabel } from "@/lib/domain/rhythm-summary";
 import type { TagMap } from "@/lib/domain/tags";
 import { dispatchInstanceResolved } from "@/lib/ui/instance-resolved-event";
 
@@ -65,10 +66,18 @@ export function InstanceRow({
   const [isPending, startTransition] = useTransition();
   const activity = instance.activity;
   const isFrequency = activity.rhythm.type === "frequency";
-  const isSingle = activity.rhythm.type === "single";
+  const scheduledTimes = activity.scheduled_times ?? [];
+
+  // Friendly category text ("Once", "Daily", "Mon · Wed · Fri", etc.)
+  // shown right above the activity name so the user sees what kind of
+  // rhythm produced this row without opening the modal.
+  const rhythmCategory = rhythmCategoryLabel(
+    activity.rhythm,
+    scheduledTimes
+  );
 
   const overdueDays =
-    isSingle && instance.scheduled_for < todayStr
+    instance.scheduled_for < todayStr
       ? daysBetween(instance.scheduled_for, todayStr)
       : 0;
 
@@ -81,7 +90,6 @@ export function InstanceRow({
   //     etc. Target = scheduled_times.length.
   // This matches the user's expectation that a multi-times task
   // shouldn't be done after one click.
-  const scheduledTimes = activity.scheduled_times ?? [];
   const isMultiTime = scheduledTimes.length > 1;
   const isAccumulating = isFrequency || isMultiTime;
   // TS can't narrow rhythm.count from `isFrequency` (boolean) alone,
@@ -95,12 +103,20 @@ export function InstanceRow({
         : 0;
   const accumulatingProgress = instance.completionCount;
 
-  // For frequency rhythms the X/Y is shown as a separate badge next to the
-  // +1 button (more discoverable). For singles we still surface an overdue
-  // banner. Non-frequency, non-overdue rows just show the activity body.
+  // Past-due-pending = "Unlabeled" warning, shown for EVERY rhythm
+  // type (per user spec). Previously only "Once" (single) rhythms
+  // got an overdue banner; daily/weekly/interval/frequency rows now
+  // surface the same warning when a scheduled occurrence has slipped
+  // past today without a verdict.
   let hint: { text: string; tone: "muted" | "danger" } | null = null;
-  if (isSingle && overdueDays > 0) {
-    hint = { text: `Overdue by ${overdueDays}d`, tone: "danger" };
+  if (overdueDays > 0) {
+    hint = {
+      text:
+        overdueDays === 1
+          ? "Unlabeled — overdue by 1 day"
+          : `Unlabeled — overdue by ${overdueDays} days`,
+      tone: "danger",
+    };
   }
 
   // True when THIS instance counts as "Unlabeled" right now — past-due
@@ -172,6 +188,13 @@ export function InstanceRow({
           }`}
         />
         <div className="min-w-0 flex-1">
+          {/* Rhythm-type lozenge sits ABOVE the name as small caps so
+              the user sees what kind of activity this is at a glance
+              without opening the modal. e.g. "Daily", "Once",
+              "Every 3 days", "3x per week". */}
+          <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+            {rhythmCategory}
+          </p>
           <p className="truncate font-medium">{activity.name}</p>
           {activity.notes && (
             <p className="truncate text-sm text-zinc-500 dark:text-zinc-500">

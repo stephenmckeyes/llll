@@ -32,6 +32,7 @@ import {
   unarchiveActivityWithEdit,
 } from "@/app/actions/activities";
 import type { TagMap } from "@/lib/domain/tags";
+import { useBodyScrollLock } from "@/lib/ui/body-scroll-lock";
 
 type SubmitMode = "add" | "addAsNew";
 
@@ -59,14 +60,8 @@ export function UnarchiveModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  // Body scroll-lock while open.
-  useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, []);
+  // Ref-counted body scroll-lock — see lib/ui/body-scroll-lock.
+  useBodyScrollLock();
 
   // Submit handler keyed by which button the user clicked. Both buttons
   // are type="button" so they don't fire the form's default submit; we
