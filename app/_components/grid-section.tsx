@@ -32,7 +32,7 @@ import { GridNavigator } from "./grid-navigator";
 import type { DayInstance } from "./day-list";
 import type { IncompleteInfo } from "./incomplete-button";
 
-type GridRange = "week" | "month" | "total";
+type GridRange = "week" | "month" | "total" | "custom";
 
 export function GridSection({
   // Navigator props
@@ -40,6 +40,12 @@ export function GridSection({
   currentDate,
   prevDate,
   nextDate,
+  customFrom,
+  customTo,
+  customPrevFrom,
+  customPrevTo,
+  customNextFrom,
+  customNextTo,
   label,
   incompleteInfo,
   // Table props
@@ -58,6 +64,13 @@ export function GridSection({
   currentDate: string;
   prevDate: string;
   nextDate: string;
+  /** Custom-range navigation. All null unless range==="custom". */
+  customFrom: string | null;
+  customTo: string | null;
+  customPrevFrom: string | null;
+  customPrevTo: string | null;
+  customNextFrom: string | null;
+  customNextTo: string | null;
   label: string;
   incompleteInfo: IncompleteInfo;
   mode: GridMode;
@@ -126,6 +139,12 @@ export function GridSection({
           currentDate={currentDate}
           prevDate={prevDate}
           nextDate={nextDate}
+          customFrom={customFrom}
+          customTo={customTo}
+          customPrevFrom={customPrevFrom}
+          customPrevTo={customPrevTo}
+          customNextFrom={customNextFrom}
+          customNextTo={customNextTo}
           label={label}
           incompleteInfo={incompleteInfo}
         >

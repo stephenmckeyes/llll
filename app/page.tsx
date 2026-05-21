@@ -48,7 +48,12 @@ import { TagDotRow } from "./_components/tag-chip";
 import { TimeChip } from "./_components/time-chip";
 
 type ViewKind = "day" | "week" | "month" | "year" | "grid";
-type GridRange = "week" | "month" | "total";
+type GridRange = "week" | "month" | "total" | "custom";
+
+// Default lookback for the Custom range when the user hasn't yet
+// picked an explicit `from` / `to`. 30 days lets first-time visitors
+// see a useful window without forcing them to pick dates first.
+const CUSTOM_DEFAULT_DAYS = 30;
 
 // Top-level "section" tab — Calendar groups the day/week/month/year
 // views; Grid groups the habit-tracker week/month/total ranges.
@@ -65,6 +70,7 @@ const GRID_SUB_OPTIONS: ReadonlyArray<{ value: GridRange; label: string }> = [
   { value: "week", label: "Week" },
   { value: "month", label: "Month" },
   { value: "total", label: "Total" },
+  { value: "custom", label: "Custom" },
 ];
 
 // DayInstance (the shape passed to DayList) is imported from
@@ -82,7 +88,15 @@ const DAY_VIEW_AHEAD = 180;
 export default async function HomePage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string; date?: string; range?: string }>;
+  searchParams: Promise<{
+    view?: string;
+    date?: string;
+    range?: string;
+    /** Custom-range start (YYYY-MM-DD). Used only when range=custom. */
+    from?: string;
+    /** Custom-range end (YYYY-MM-DD). Used only when range=custom. */
+    to?: string;
+  }>;
 }) {
   const supabase = await createClient();
   const {
@@ -108,6 +122,10 @@ export default async function HomePage({
   const view = parseView(params.view);
   const date = parseDateParam(params.date);
   const range = parseGridRange(params.range);
+  // Custom range params — only meaningful when range==="custom" but we
+  // parse them up here so the GridView signature stays simple.
+  const customFrom = parseOptionalDateParam(params.from);
+  const customTo = parseOptionalDateParam(params.to);
 
   // Top up the user's activity_instances out to ~1 year ahead of whatever
   // they're looking at. Indefinite rhythms (no end_date) only get N days
@@ -269,6 +287,8 @@ export default async function HomePage({
         <GridView
           gridDate={date}
           range={range}
+          customFrom={customFrom}
+          customTo={customTo}
           userId={user.id}
           incompleteInfo={incompleteInfo}
           tagMap={tagMap}
@@ -363,6 +383,7 @@ function parseView(raw: string | undefined): ViewKind {
 function parseGridRange(raw: string | undefined): GridRange {
   if (raw === "month") return "month";
   if (raw === "total") return "total";
+  if (raw === "custom") return "custom";
   return "week";
 }
 
@@ -370,6 +391,15 @@ function parseDateParam(raw: string | undefined): string {
   if (!raw || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return TODAY_STR;
   const d = parseISO(raw);
   if (Number.isNaN(d.getTime())) return TODAY_STR;
+  return raw;
+}
+
+// Same shape but returns null on missing/invalid. Used for the
+// optional ?from / ?to params on the Custom grid range.
+function parseOptionalDateParam(raw: string | undefined): string | null {
+  if (!raw || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
+  const d = parseISO(raw);
+  if (Number.isNaN(d.getTime())) return null;
   return raw;
 }
 
@@ -1165,12 +1195,20 @@ function MiniMonth({
 async function GridView({
   gridDate,
   range,
+  customFrom,
+  customTo,
   userId,
   incompleteInfo,
   tagMap,
 }: {
   gridDate: string;
   range: GridRange;
+  /** Custom-range start. Only consulted when range==="custom". null
+   *  defaults to today - CUSTOM_DEFAULT_DAYS. */
+  customFrom: string | null;
+  /** Custom-range end. Only consulted when range==="custom". null
+   *  defaults to today. */
+  customTo: string | null;
   userId: string;
   incompleteInfo: IncompleteInfo;
   tagMap: TagMap;
@@ -1220,18 +1258,44 @@ async function GridView({
           "9999-12-31"
         );
 
+  // Custom-range bounds. Defaults: end = today, start = today - 30d.
+  // If the user supplied `from` later than `to`, we swap so the
+  // resulting interval is still valid (charitable parsing — saves a
+  // round-trip if they typo'd the order).
+  let customStart: Date;
+  let customEnd: Date;
+  if (range === "custom") {
+    const today = parseDate(TODAY_STR);
+    customEnd = customTo ? parseDate(customTo) : today;
+    customStart = customFrom
+      ? parseDate(customFrom)
+      : addDays(customEnd, -CUSTOM_DEFAULT_DAYS);
+    if (customStart > customEnd) {
+      const tmp = customStart;
+      customStart = customEnd;
+      customEnd = tmp;
+    }
+  } else {
+    customStart = parseDate(TODAY_STR);
+    customEnd = customStart;
+  }
+
   const rangeStart: Date =
     range === "week"
       ? startOfWeek(refDate, { weekStartsOn: 1 })
       : range === "month"
         ? startOfMonth(refDate)
-        : parseDate(earliestStartStr);
+        : range === "custom"
+          ? customStart
+          : parseDate(earliestStartStr);
   const rangeEnd: Date =
     range === "week"
       ? endOfWeek(refDate, { weekStartsOn: 1 })
       : range === "month"
         ? endOfMonth(refDate)
-        : parseDate(TODAY_STR);
+        : range === "custom"
+          ? customEnd
+          : parseDate(TODAY_STR);
   const rangeStartStr = format(rangeStart, "yyyy-MM-dd");
   const rangeEndStr = format(rangeEnd, "yyyy-MM-dd");
 
@@ -1468,21 +1532,54 @@ async function GridView({
         ? format(addMonths(rangeStart, 1), "yyyy-MM-dd")
         : gridDate;
 
+  // For custom range, prev/next shift the window by its current
+  // width. e.g. a 30-day window pressed "next" becomes the next 30
+  // days, with the days touching the previous window's last day.
+  const customWidthDays =
+    range === "custom"
+      ? Math.max(
+          0,
+          Math.round(
+            (rangeEnd.getTime() - rangeStart.getTime()) / 86_400_000
+          )
+        )
+      : 0;
+  const customPrevFrom =
+    range === "custom"
+      ? format(addDays(rangeStart, -(customWidthDays + 1)), "yyyy-MM-dd")
+      : null;
+  const customPrevTo =
+    range === "custom"
+      ? format(addDays(rangeStart, -1), "yyyy-MM-dd")
+      : null;
+  const customNextFrom =
+    range === "custom"
+      ? format(addDays(rangeEnd, 1), "yyyy-MM-dd")
+      : null;
+  const customNextTo =
+    range === "custom"
+      ? format(addDays(rangeEnd, customWidthDays + 1), "yyyy-MM-dd")
+      : null;
+
   const label =
     range === "week"
       ? `${format(rangeStart, "MMM d")} – ${format(rangeEnd, "MMM d, yyyy")}`
       : range === "month"
         ? format(refDate, "MMMM yyyy")
-        : rhythmicForRange.length === 0
-          ? "All time (no activities yet)"
-          : `Since ${format(rangeStart, "MMM d, yyyy")}`;
+        : range === "custom"
+          ? `${format(rangeStart, "MMM d")} – ${format(rangeEnd, "MMM d, yyyy")} (${customWidthDays + 1} days)`
+          : rhythmicForRange.length === 0
+            ? "All time (no activities yet)"
+            : `Since ${format(rangeStart, "MMM d, yyyy")}`;
 
   const bannerRangeLabel =
     range === "week"
       ? "this week"
       : range === "month"
         ? "this month"
-        : "in the visible range";
+        : range === "custom"
+          ? "in this range"
+          : "in the visible range";
 
   return (
     // GridSection owns the sticky navigator + tag-filter popover and
@@ -1495,9 +1592,22 @@ async function GridView({
         currentDate={gridDate}
         prevDate={prevDate}
         nextDate={nextDate}
+        // Custom-specific nav: the four window-shift dates are null for
+        // every other range so the navigator can ignore them.
+        customFrom={range === "custom" ? format(rangeStart, "yyyy-MM-dd") : null}
+        customTo={range === "custom" ? format(rangeEnd, "yyyy-MM-dd") : null}
+        customPrevFrom={customPrevFrom}
+        customPrevTo={customPrevTo}
+        customNextFrom={customNextFrom}
+        customNextTo={customNextTo}
         label={label}
         incompleteInfo={incompleteInfo}
-        mode={range}
+        // Custom range reuses Total's heatmap layout because it scales
+        // gracefully from a single week (a few columns) up to many
+        // months (the column-major-week heatmap caps cell size). The
+        // navigator UI handles all the custom-ness; the table doesn't
+        // need to know.
+        mode={range === "custom" ? "total" : range}
         rows={rows}
         dateCols={dateCols}
         todayStr={TODAY_STR}
