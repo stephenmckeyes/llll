@@ -23,6 +23,7 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 import {
   fetchActivityHistory,
@@ -93,7 +94,18 @@ export function ActivityHistoryModal({
     };
   }, [activityId]);
 
-  return (
+  // Render the modal as a portal direct-child of <body>. Why: this
+  // modal's open trigger lives inside an <ActivityRowActions> that's
+  // mounted inside a deeply-nested <details><ul><li> on the archive
+  // page. `position: fixed` is supposed to escape every ancestor and
+  // anchor to the viewport, but real browsers can fail to do so when
+  // the chain of ancestors gets long (or contains a transform/filter/
+  // contain we don't control). Portaling to document.body sidesteps
+  // the entire question — the modal is a top-level element. Falls
+  // back to nothing during SSR (typeof document === "undefined").
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
@@ -147,7 +159,8 @@ export function ActivityHistoryModal({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

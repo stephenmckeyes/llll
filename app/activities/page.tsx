@@ -3,14 +3,20 @@
 //
 // Two collapsible sections, each with its own sort dropdown:
 //   1. Archived            — only archived activities (the "trash bin")
-//   2. All Activities      — everything (both active and archived) so the
-//                            user can browse / re-sort their full list
-//                            without leaving this page.
+//   2. Active              — only non-archived activities, so the user
+//                            has one place to browse / sort the live
+//                            list without leaving this page.
+//
+// Important: these lists DO NOT OVERLAP. Each activity appears in
+// exactly one section. Earlier the bottom list showed every activity
+// including archived ones, which (a) duplicated archived cards and
+// (b) tripped a fixed-position modal bug when the same activity was
+// rendered twice. Splitting cleanly fixes both.
 //
 // Sort options per section: date created, name, rhythm type, last
 // completion. Each section's choice is independently persisted in a
-// URL search param (archivedSort / allSort) so deep-links and refreshes
-// preserve state.
+// URL search param (archivedSort / activeSort) so deep-links and
+// refreshes preserve state.
 // ---------------------------------------------------------------------------
 
 import Link from "next/link";
@@ -62,6 +68,9 @@ function parseSort(raw: string | undefined, fallback: SortKey): SortKey {
 export default async function ActivitiesPage({
   searchParams,
 }: {
+  // Note: `allSort` kept as a URL-param name for backward compat with
+  // any saved bookmarks/links — the section it controls is now called
+  // "Active" internally.
   searchParams: Promise<{ archivedSort?: string; allSort?: string }>;
 }) {
   // requireOnboardedUser handles both the unauthed → /login bounce and
@@ -83,11 +92,12 @@ export default async function ActivitiesPage({
 
   const all = (data ?? []) as unknown as ActivityRow[];
   const archived = all.filter((a) => a.archived_at !== null);
+  // ACTIVE = not archived. Disjoint with `archived` so each activity
+  // renders in exactly one section.
+  const active = all.filter((a) => a.archived_at === null);
   // Usage counts cover ACTIVE activities only — archived rows
   // shouldn't keep an old tag pinned to the top of the picker.
-  const usageByName = computeTagUsage(
-    all.filter((a) => a.archived_at === null)
-  );
+  const usageByName = computeTagUsage(active);
   const tagMap: TagMap = buildTagMap(
     (tagRows ?? []) as Array<{ id: string; name: string; color: string }>,
     usageByName
@@ -101,7 +111,7 @@ export default async function ActivitiesPage({
   const lastUseByActivity = await fetchLastUseByActivity(supabase, user.id);
 
   const archivedSorted = sortActivities(archived, archivedSort, lastUseByActivity);
-  const allSorted = sortActivities(all, allSort, lastUseByActivity);
+  const activeSorted = sortActivities(active, allSort, lastUseByActivity);
 
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-6 p-6">
@@ -116,7 +126,7 @@ export default async function ActivitiesPage({
           Archive
         </h1>
         <p className="text-sm text-zinc-500">
-          {archived.length} archived · {all.length} total
+          {active.length} active · {archived.length} archived · {all.length} total
         </p>
       </header>
 
@@ -151,21 +161,25 @@ export default async function ActivitiesPage({
       <details className="rounded-md border border-zinc-200 dark:border-zinc-800">
         <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
           <span className="text-sm font-medium uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
-            All activities ({all.length})
+            Active ({active.length})
           </span>
+          {/* URL param stays `allSort` for back-compat with any saved
+              bookmarks; the section it controls is just "Active" now. */}
           <SortSelect param="allSort" current={allSort} />
         </summary>
         <div className="border-t border-zinc-200 p-3 dark:border-zinc-800">
-          {allSorted.length === 0 ? (
-            <EmptyState text="No activities yet." />
+          {activeSorted.length === 0 ? (
+            <EmptyState text="No active activities. Add one from the dashboard." />
           ) : (
             <ul className="flex flex-col gap-2">
-              {allSorted.map((a) => (
+              {activeSorted.map((a) => (
+                // archived={false} always — this section only contains
+                // non-archived rows by construction.
                 <ActivityCard
                   key={a.id}
                   activity={a}
                   tagMap={tagMap}
-                  archived={a.archived_at !== null}
+                  archived={false}
                 />
               ))}
             </ul>
