@@ -105,6 +105,10 @@ export function UnarchiveModal({
           }
         }
       } catch (e) {
+        // Surface the actual error to the user AND to DevTools — without
+        // this, a failed server action would look like "the modal does
+        // nothing" because startTransition catches throws silently.
+        console.error("UnarchiveModal submit failed:", e);
         setError(e instanceof Error ? e.message : "Unknown error");
       }
     });

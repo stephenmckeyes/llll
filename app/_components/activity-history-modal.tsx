@@ -68,13 +68,26 @@ export function ActivityHistoryModal({
   // local state" pattern — the React 19 set-state-in-effect lint
   // (which targets cascading-render bugs) does not flag async fetches
   // resolving into setState inside the .then() handler.
+  //
+  // .catch() defends against the case where the server action throws
+  // (e.g., session expired mid-request) — without it, the modal would
+  // silently hang on "Loading history…" forever. console.error so
+  // the actual error shows up in DevTools for debugging.
   useEffect(() => {
     let alive = true;
-    fetchActivityHistory(activityId).then((result) => {
-      if (!alive) return;
-      if ("error" in result) setError(result.error);
-      else setPayload(result);
-    });
+    fetchActivityHistory(activityId)
+      .then((result) => {
+        if (!alive) return;
+        if ("error" in result) setError(result.error);
+        else setPayload(result);
+      })
+      .catch((err: unknown) => {
+        if (!alive) return;
+        const msg =
+          err instanceof Error ? err.message : "Failed to load history.";
+        console.error("fetchActivityHistory failed:", err);
+        setError(msg);
+      });
     return () => {
       alive = false;
     };

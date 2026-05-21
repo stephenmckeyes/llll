@@ -16,19 +16,21 @@ the per-time fan-out has to be in the reminder-schedule generator,
 not the activity model. Easy to forget — leaving this here as a
 specific check item.
 
-### Settings page — timezone change + 12/24h toggle
+### Settings page — additions
 
-The /settings page now ships with Account / Appearance (theme +
-sleep mode) / Data (JSON export + AI prompt) / Session (sign-out at
-bottom). Future additions for it:
+/settings was restructured into per-section sub-pages (Account /
+Timezone / Appearance / Data + sign-out at bottom of the index).
+Future additions:
 
-- **Timezone override** — `profiles.timezone` already exists, and
-  the onboarding flow seeds it from the browser. The Settings page
-  should let the user edit it later (an `<input>` mirroring the
-  onboarding form, plus a save action).
-- **12h vs 24h time format toggle** — paired with the existing
-  backlog item below. Will need a `profiles.time_format` column.
-- **Default activity visibility / notification preferences** — for
+- **2FA enrollment** — Supabase exposes MFA APIs (`auth.mfa.enroll
+  / challenge / verify`) but the enrollment flow + recovery-code
+  display need their own UI. Listed as a stub on /settings/account.
+- **Current-password reauthentication** before password change.
+  Today supabase.auth.updateUser({ password }) lets the user
+  change without re-verifying — fine for v1, not great if the
+  user shares a device.
+- **12h vs 24h time format toggle** — see item below.
+- **Default activity visibility / notification preferences** —
   later, after reminders ship.
 
 ### Alternate Grid-view visualizations
@@ -69,42 +71,31 @@ German user sees "08:00." A user override:
 - Setting lives on the settings page (which itself doesn't exist yet —
   ships with onboarding).
 
-## Banner-style calendar rendering (asked for, partial)
+## Banner-style calendar rendering (year view still pending)
 
-Activities should appear as **named banners** on calendar surfaces, not
-just counts. Status now: the create-activity preview shows each
-scheduled day with the activity name banner-inside-the-cell; the home
-Week view shows full banners per day; Month view still uses counts
-(small cells make multi-banner stacking tricky).
+Day, Week, and Month views now render real activity-name banners
+colored by first tag. Month view collapses overflow into "+N tag ·
++M tag" lines grouped by first tag. Still pending:
 
-Future direction (per user spec):
-- Month view: show 1–2 activity-name banners per cell + `(+N more)`
-  overflow badge when more apply that day.
-- Year view: density heatmap; click a month → zoom.
-- **Tag-grouped overflow**: instead of just `(+5)`, say `(+5 meetings)`
-  / `(+3 fitness)` so the overflow is informative. Implementation:
-  group remaining banners by their first tag; show top N tag-counts.
-- Banners colored by first tag (when tags become first-class).
+- **Year view**: density heatmap; click a month → zoom. Cells are
+  too small for name banners, so the design needs a different
+  approach (dot per activity, or per-month aggregate).
 
 ## Grid view follow-ups
 
-Grid view shipped with week / month / total ranges, with cells now
-opening the ActivityModal in place, singles filtered out and surfaced
-as a count banner, and a per-view "Incomplete (N)" jump chip. Still
-to do:
+Grid view shipped with Week / Month / Total / Custom ranges, column-
+header click-to-sort, in-place ActivityModal opens, an inline tag
+filter, and a per-view "Unlabeled (N)" jump chip. Custom range
+re-uses the Total heatmap layout and shifts by window-width on prev/
+next. Still to do:
 
-- **Group rows by activity tag** — currently flat alphabetical. Once
-  tags become first-class (skills layer), the grid should group rows
-  by primary tag with a small tag header per group, so the user
-  doesn't stare at a wall of unrelated activities side by side. Likely
-  also: collapse/expand per group, and a "no-tag" bucket at the
-  bottom.
-- **Custom range picker** — start/end date inputs for arbitrary
-  windows.
-- **Row sort** — currently alphabetical inside each group; add
-  toggles for "lowest success %" (where am I slipping) and "most
-  active this period."
-- **Color cells by activity tag** (once tag colors exist).
+- **Group rows by activity tag** — currently flat alphabetical. The
+  grid should group rows by primary tag with a small tag header per
+  group, so the user doesn't stare at a wall of unrelated activities
+  side by side. Likely also: collapse/expand per group, and a
+  "no-tag" bucket at the bottom.
+- **Color cells by activity tag** (a soft tint, additive on top of
+  the status color).
 - **Quick-complete from grid cell** — clicking an overdue/scheduled
   cell currently opens the full modal. A small popover with just
   Complete / Missed / Open buttons would be even faster for the
@@ -113,11 +104,10 @@ to do:
   anchor day. Consider showing "2/3 done" per period instead — would
   pair well with the tag-grouping above (you'd see weekly tag totals
   alongside the daily-rhythm rows).
-- **Year / multi-year range** — 365+-day grid is unreadable at normal
-  cell sizes. Either compress cells (heatmap-style, no glyphs) or a
-  separate "summary by week" layout (1 column per week, cell = "X of
-  Y done" that week). The Total tab covers the "give me one number
-  per activity" use case today.
+- **Year / multi-year range** — Total scales but a 5-year heatmap
+  has very small cells. Consider a "summary by week" layout option
+  (1 column per week, cell = "X of Y done" that week) as a
+  visualization alternative.
 
 ## Calendar export — subscribe to Mission from iPhone/Android/Google/Outlook
 
@@ -240,12 +230,9 @@ Calendar's vertical-scrolling year layout). Add as a follow-up: render
   before (minutes / hours / days / weeks), per-channel (in-app first,
   then email, then SMS, then push).
 - **Notification delivery** — cron / scheduled function fires reminders.
-  Start with in-app + email via Resend.
-- **All-activities management page** — list, edit, archive, abandon
-  (with reason). Currently no way to revisit an activity once created.
-- **Per-activity history view** — completions over time, streak, totals.
-- **Settings page** — TZ override, time format, default visibility,
-  notification preferences, password / email change.
+  Start with in-app + email via Resend. When this ships, the per-time
+  fan-out (see "Multi-time reminders verification" above) must be in
+  the schedule generator, not the activity model.
 - **Activity-level visibility + friends + clans** — schema field is in
   place from day 1; UI/sharing layer not built.
 - **Skill aggregation** — promote frequently-used tags into "skills"
