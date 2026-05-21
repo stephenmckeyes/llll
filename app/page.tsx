@@ -27,7 +27,12 @@ import { redirect } from "next/navigation";
 import { ensureInstancesBackfilled } from "@/lib/domain/backfill";
 import { rhythmCategoryLabel } from "@/lib/domain/rhythm-summary";
 import { computeStreak } from "@/lib/domain/streak";
-import { buildTagMap, computeTagUsage, type TagMap } from "@/lib/domain/tags";
+import {
+  buildTagMap,
+  computeTagUsage,
+  tagChipClasses,
+  type TagMap,
+} from "@/lib/domain/tags";
 import { createClient } from "@/lib/supabase/server";
 import type { Rhythm } from "@/lib/validators/rhythm";
 
@@ -39,7 +44,6 @@ import {
 } from "./_components/day-list";
 import { GridSection } from "./_components/grid-section";
 import { type IncompleteInfo } from "./_components/incomplete-button";
-import { MonthInstanceBox } from "./_components/month-instance-box";
 import { TagDotRow } from "./_components/tag-chip";
 import { TimeChip } from "./_components/time-chip";
 
@@ -907,14 +911,15 @@ async function MonthView({
   const gridStart = startOfWeek(monthStart, { weekStartsOn: 1 });
 
   // Fetch over the visible grid (might include neighbor-month days).
-  // Tag dots at the bottom of each cell pull from instance.tags (the
-  // per-occurrence snapshot), so editing the activity's tags doesn't
-  // reshuffle past displays.
+  // The query now also pulls the activity NAME so we can render real
+  // name-banners inside each cell (banner-style month view).
+  // Per-instance tags stay the visual source for color hints — same
+  // immutable-history reasoning that drives Day chips.
   const gridEnd = addDays(gridStart, 41);
   const { data } = await supabase
     .from("activity_instances")
     .select(
-      "id, scheduled_for, status, tags, activities!inner(archived_at)"
+      "id, scheduled_for, status, tags, activities!inner(name, archived_at)"
     )
     .gte("scheduled_for", format(gridStart, "yyyy-MM-dd"))
     .lte("scheduled_for", format(gridEnd, "yyyy-MM-dd"))
@@ -922,6 +927,7 @@ async function MonthView({
 
   type CellInstance = {
     id: string;
+    name: string;
     status: string;
     tags: string[];
   };
@@ -931,10 +937,21 @@ async function MonthView({
     scheduled_for: string;
     status: string;
     tags: string[] | null;
+    // PostgREST returns the inner-join as either an object or an
+    // array-of-one depending on the version — normalize below.
+    activities:
+      | { name: string; archived_at: string | null }
+      | Array<{ name: string; archived_at: string | null }>
+      | null;
   };
   for (const i of (data ?? []) as MonthRow[]) {
+    const act = Array.isArray(i.activities)
+      ? i.activities[0]
+      : i.activities;
+    if (!act) continue;
     (byDate[i.scheduled_for] ??= []).push({
       id: i.id,
+      name: act.name,
       status: i.status,
       tags: i.tags ?? [],
     });
@@ -1602,6 +1619,21 @@ function toDayInstance(
 
 // ---------------------------------------------------------------------------
 
+// Per-instance banner shape used by MonthCell. Carries the activity
+// name so the cell can render real text, not just a status box.
+type MonthBanner = {
+  id: string;
+  name: string;
+  status: string;
+  tags: string[];
+};
+
+// How many activity-name banners fit inside one month cell before we
+// collapse the rest into an overflow line. Two is a comfortable read
+// for the cell heights at 7-col layout; on mobile (narrower cells)
+// the second banner still fits because cells are wider than tall.
+const MONTH_BANNERS_PER_CELL = 2;
+
 function MonthCell({
   date,
   dateStr,
@@ -1614,24 +1646,27 @@ function MonthCell({
   dateStr: string;
   inMonth: boolean;
   isToday: boolean;
-  instances: Array<{ id: string; status: string; tags: string[] }>;
+  instances: MonthBanner[];
   tagMap: TagMap;
 }) {
   const hasAny = instances.length > 0;
-  const MAX_BOXES = 5;
-  const shown = instances.slice(0, MAX_BOXES);
-  const extra = Math.max(0, instances.length - MAX_BOXES);
+  const visible = instances.slice(0, MONTH_BANNERS_PER_CELL);
+  const hidden = instances.slice(MONTH_BANNERS_PER_CELL);
 
-  // Union of all distinct tag names across the day's instances. The
-  // dot row at the bottom of the cell is dense by design — one dot
-  // per unique tag color, not per instance. Max 4 visible before
-  // an overflow "+N" indicator.
-  const tagNames = Array.from(
-    new Set(instances.flatMap((i) => i.tags))
-  );
+  // Tag-grouped overflow: when more banners exist than fit, group the
+  // hidden ones by their FIRST tag name and report the biggest groups.
+  // "+5 fitness · +3 work" tells the user what KIND of stuff is hiding,
+  // not just how much — far more informative than a bare "+8".
+  const overflowSummary = hidden.length > 0
+    ? summarizeOverflow(hidden)
+    : null;
 
+  // Cell shell. We dropped aspect-square — banners need real vertical
+  // room. min-h-20 keeps cells readable on most screens; on phones
+  // they're naturally wider than tall in a 7-col layout, which suits
+  // text banners.
   let cls =
-    "relative flex aspect-square flex-col items-center gap-0.5 rounded p-1 text-xs transition-colors";
+    "relative flex min-h-20 flex-col gap-0.5 rounded p-1 text-xs transition-colors";
   if (!inMonth) cls += " text-zinc-400 dark:text-zinc-600";
   else cls += " text-zinc-700 dark:text-zinc-300";
   if (isToday) cls += " ring-1 ring-zinc-900 dark:ring-zinc-50";
@@ -1639,47 +1674,103 @@ function MonthCell({
 
   return (
     <div className={cls}>
-      {/* Whole-cell click target → day view. Boxes layered on top capture
-          their own clicks. */}
+      {/* Whole-cell click target → day view. Banners sit on top with
+          pointer-events: none so the whole cell remains clickable. */}
       <Link
         href={`/?view=day&date=${dateStr}`}
         aria-label={`Open ${dateStr}`}
         className="absolute inset-0 z-0 rounded hover:bg-zinc-100 dark:hover:bg-zinc-900"
       />
-      <span className={`relative z-10 pointer-events-none ${isToday ? "font-semibold" : ""}`}>
+      <span
+        className={`relative z-10 pointer-events-none self-start ${
+          isToday ? "font-semibold" : ""
+        }`}
+      >
         {date.getDate()}
       </span>
       {inMonth && hasAny && (
-        <div className="relative z-10 mt-0.5 flex flex-wrap items-center justify-center gap-px">
-          {shown.map((inst) => (
-            <MonthInstanceBox
+        <div className="relative z-10 flex flex-col gap-0.5">
+          {visible.map((inst) => (
+            <MonthBannerPill
               key={inst.id}
-              instanceId={inst.id}
-              status={inst.status}
-              scheduledFor={dateStr}
+              banner={inst}
+              tagMap={tagMap}
             />
           ))}
-          {extra > 0 && (
-            <span className="pointer-events-none text-[8px] font-medium text-zinc-500">
-              +{extra}
+          {overflowSummary && (
+            <span className="pointer-events-none truncate text-[9px] font-medium text-zinc-500 dark:text-zinc-400">
+              {overflowSummary}
             </span>
           )}
         </div>
       )}
-      {/* Tag dots at the bottom of the cell. Tiny (4px) so they fit
-          even when an instance box stack is above them. */}
-      {inMonth && tagNames.length > 0 && (
-        <div className="relative z-10 mt-auto flex w-full items-end justify-center pb-0.5">
-          <TagDotRow
-            names={tagNames}
-            tags={tagMap}
-            dotClassName="h-1 w-1"
-            max={4}
-          />
-        </div>
-      )}
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+
+/** Tiny activity-name banner inside a month cell. Background tints with
+ *  the activity's first tag (or zinc if untagged). A leading status
+ *  glyph ✓/✗/!/· tells the user the outcome at a glance without needing
+ *  a separate badge. */
+function MonthBannerPill({
+  banner,
+  tagMap,
+}: {
+  banner: MonthBanner;
+  tagMap: TagMap;
+}) {
+  // Color comes from the FIRST tag — keeps the cell readable when an
+  // activity has many tags. Untagged falls back to zinc.
+  const firstTag = banner.tags[0];
+  const tagInfo = firstTag ? tagMap[firstTag] : undefined;
+  // tagChipClasses returns "bg-X-100 text-X-800 dark:bg-X-900 dark:text-X-200"
+  // — exactly the soft-pastel banner look we want.
+  const colorCls = tagInfo
+    ? tagChipClasses(tagInfo.color)
+    : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300";
+
+  // Status decoration: glyph prefix + strikethrough for missed so a
+  // user scanning the month sees outcomes without reading every name.
+  let glyph = "";
+  let extraCls = "";
+  if (banner.status === "completed") glyph = "✓ ";
+  else if (banner.status === "missed") {
+    glyph = "✗ ";
+    extraCls = " line-through opacity-70";
+  } else if (banner.status === "pending") {
+    // Past-pending = unlabeled; future-pending = scheduled (no glyph).
+    // We can't tell past vs future without today's date here, but the
+    // banner doesn't need that distinction — both are "no verdict yet."
+    glyph = "· ";
+  }
+
+  return (
+    <span
+      title={banner.name}
+      className={`pointer-events-none truncate rounded-sm px-1 py-0.5 text-[10px] font-medium leading-tight ${colorCls}${extraCls}`}
+    >
+      {glyph}
+      {banner.name}
+    </span>
+  );
+}
+
+/** Group hidden banners by first tag and assemble a "+N tag · +M tag"
+ *  summary, capping at the top 2 groups so the line still fits. Untagged
+ *  banners pool under "(untagged)". */
+function summarizeOverflow(hidden: MonthBanner[]): string {
+  const counts: Record<string, number> = {};
+  for (const b of hidden) {
+    const key = b.tags[0] ?? "(untagged)";
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+  const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  const top = entries.slice(0, 2);
+  const summarized = top.map(([name, n]) => `+${n} ${name}`).join(" · ");
+  const remainder = entries.length > 2 ? ` · +${entries.length - 2}…` : "";
+  return summarized + remainder;
 }
 
 // ---------------------------------------------------------------------------
