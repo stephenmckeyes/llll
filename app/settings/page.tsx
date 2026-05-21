@@ -1,18 +1,13 @@
 // ---------------------------------------------------------------------------
-// /settings — central place for everything that isn't day-to-day activity
-// management. Replaces the "Sign out" button in the main header. Sections:
+// /settings — the Settings index.
 //
-//   1. Account         — email (read-only). Future: display name, password
-//                        change, email change.
-//   2. Appearance      — theme picker (system / light / dark / sleep).
-//                        Sleep mode = dark + warm filter for evenings.
-//   3. Data            — export everything as JSON for AI trend analysis +
-//                        a paste-ready AI prompt template.
-//   4. Sign out        — at the very bottom per user spec, so it's not the
-//                        first thing the user sees.
+// iPhone-Settings-style: a list of link tiles, each leading to its own
+// focused sub-page. The actual configurable bits (theme, export, TZ,
+// account) all live under /settings/<name>. This page is just the
+// chooser.
 //
-// Server component (auth check + email lookup). All interactive bits
-// live in their own client components.
+// Sign-out lives at the very bottom (per user spec — not the first
+// thing the user sees).
 // ---------------------------------------------------------------------------
 
 import Link from "next/link";
@@ -20,24 +15,40 @@ import Link from "next/link";
 import { signOut } from "@/app/actions/auth";
 import { requireOnboardedUser } from "@/lib/auth/require-onboarded-user";
 
-import { ExportButton } from "./export-button";
-import { ThemeToggle } from "./theme-toggle";
+type TileItem = {
+  href: string;
+  label: string;
+  hint: string;
+};
 
-// The prompt the user can paste into an AI alongside their downloaded
-// JSON. Kept here so it's discoverable + editable in one place.
-const AI_PROMPT_TEMPLATE = `Below is my Mission productivity export. Please:
-
-1. Identify the days of the week or times of day when I most often skip activities.
-2. Find pairs of activities that seem to interfere with each other (correlated misses).
-3. Read the notes on completion rows for common blockers or themes.
-4. Surface 3-5 trends I might not see myself, with the data that supports each.
-
-Export follows.`;
+const TILES: TileItem[] = [
+  {
+    href: "/settings/account",
+    label: "Account",
+    hint: "Email, password, display name.",
+  },
+  {
+    href: "/settings/timezone",
+    label: "Timezone",
+    hint: "Anchor your day at the right TZ.",
+  },
+  {
+    href: "/settings/appearance",
+    label: "Appearance",
+    hint: "Light, dark, sleep mode.",
+  },
+  {
+    href: "/settings/data",
+    label: "Data",
+    hint: "Export your activities as JSON.",
+  },
+];
 
 export default async function SettingsPage() {
-  // requireOnboardedUser handles both the unauthed → /login bounce and
-  // the not-yet-onboarded → /onboarding bounce.
-  const { user } = await requireOnboardedUser();
+  // Auth + onboarded gate. We don't need the user/profile here (each
+  // sub-page fetches what it needs), but bouncing unauthed visitors is
+  // still required.
+  await requireOnboardedUser();
 
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-8 bg-white p-6 dark:bg-zinc-950">
@@ -53,50 +64,36 @@ export default async function SettingsPage() {
         </h1>
       </header>
 
-      {/* ----------------------------- Account ----------------------------- */}
-      <Section title="Account">
-        <Row label="Email">
-          <span className="text-sm">{user.email}</span>
-        </Row>
-        <p className="text-xs text-zinc-500 dark:text-zinc-400">
-          Display name, password, and email-change controls land in a
-          future update. If you need to change your email today, contact
-          support.
-        </p>
-      </Section>
+      <ul className="flex flex-col gap-2">
+        {TILES.map((t) => (
+          <li key={t.href}>
+            <Link
+              href={t.href}
+              className="flex items-center justify-between gap-3 rounded-md border border-zinc-200 bg-white px-4 py-3 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900"
+            >
+              <span className="flex flex-col">
+                <span className="text-sm font-medium">{t.label}</span>
+                <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                  {t.hint}
+                </span>
+              </span>
+              <span
+                aria-hidden
+                className="text-lg leading-none text-zinc-400 dark:text-zinc-600"
+              >
+                ›
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
 
-      {/* ----------------------------- Appearance -------------------------- */}
-      <Section title="Appearance">
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Theme controls how Mission looks. Sleep mode dims the screen
-          and shifts colors warm to minimize blue light before bed.
-        </p>
-        <ThemeToggle />
-      </Section>
-
-      {/* ----------------------------- Data -------------------------------- */}
-      <Section title="Data">
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Download every activity, instance, and completion in your
-          account as a JSON file. Useful for analyzing your patterns in
-          an AI — paste the file alongside the prompt below.
-        </p>
-        <ExportButton />
-
-        <details className="rounded-md border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900">
-          <summary className="cursor-pointer px-3 py-2 text-sm font-medium">
-            Paste-ready AI prompt
-          </summary>
-          <pre className="overflow-x-auto whitespace-pre-wrap break-words border-t border-zinc-200 p-3 text-xs text-zinc-700 dark:border-zinc-800 dark:text-zinc-300">
-            {AI_PROMPT_TEMPLATE}
-          </pre>
-        </details>
-      </Section>
-
-      {/* ----------------------------- Sign out ---------------------------- */}
-      {/* At the very bottom per user spec. Single page-level form so the
-          signOut action posts cleanly. */}
-      <Section title="Session">
+      {/* Sign-out at the very bottom — keeps it out of the "primary
+          actions" lane visually, but still one click away. */}
+      <section className="mt-auto flex flex-col gap-3 border-t border-zinc-200 pt-6 dark:border-zinc-800">
+        <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+          Session
+        </h2>
         <form action={signOut}>
           <button
             type="submit"
@@ -105,45 +102,7 @@ export default async function SettingsPage() {
             Sign out
           </button>
         </form>
-      </Section>
+      </section>
     </main>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Layout helpers
-// ---------------------------------------------------------------------------
-
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="flex flex-col gap-3">
-      <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
-}
-
-function Row({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-wrap items-baseline gap-2">
-      <dt className="w-24 shrink-0 text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-        {label}
-      </dt>
-      <dd className="min-w-0 flex-1 break-words">{children}</dd>
-    </div>
   );
 }
