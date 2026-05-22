@@ -44,13 +44,15 @@ export function IncompleteButton({ info }: { info: IncompleteInfo }) {
   }
 
   // Subscribe to instance-resolved events. Each event with
-  // wasUnlabeled=true means the user just decided an unlabeled row;
-  // drop our count by 1 (floor at 0 so a stale double-fire can't go
-  // negative).
+  // wasUnlabeled=true means the user just decided (or un-decided) an
+  // unlabeled row. delta is -1 when resolving (drop the chip) and +1
+  // when un-labeling back to pending (restore it). Floor at 0 so a
+  // stale double-fire can't go negative.
   useEffect(() => {
     return subscribeInstanceResolved((detail) => {
       if (!detail.wasUnlabeled) return;
-      setCount((c) => Math.max(0, c - 1));
+      const delta = detail.delta ?? -1;
+      setCount((c) => Math.max(0, c + delta));
     });
   }, []);
 

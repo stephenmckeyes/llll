@@ -141,6 +141,19 @@ export function DayList({
     []
   );
 
+  // Undo a mark-in-place resolution (the "Unlabel" button on a row the
+  // user just completed/missed). Drops the entry so the row re-renders
+  // with its Complete/Missed buttons; the server-side revert is fired by
+  // the row itself via unlabelInstance.
+  const clearResolved = useCallback((id: string) => {
+    setResolved((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Map(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+
   // Group instances by date for fast lookup. Archived activities are
   // filtered out; resolved rows STAY (rendered as done in place).
   const live = useMemo(
@@ -324,6 +337,7 @@ export function DayList({
               onOpenInstance={setOpenInstance}
               resolved={resolved}
               onResolve={markResolved}
+              onUnresolve={clearResolved}
               tagMap={tagMap}
             />
           ))}
@@ -354,6 +368,7 @@ function DaySection({
   onOpenInstance,
   resolved,
   onResolve,
+  onUnresolve,
   tagMap,
 }: {
   date: Date;
@@ -365,6 +380,7 @@ function DaySection({
   onOpenInstance: (inst: DayInstance) => void;
   resolved: ReadonlyMap<string, "completed" | "missed">;
   onResolve: (id: string, status: "completed" | "missed") => void;
+  onUnresolve: (id: string) => void;
   tagMap: TagMap;
 }) {
   const isToday = dateStr === todayStr;
@@ -425,6 +441,7 @@ function DaySection({
               onOpen={() => onOpenInstance(inst)}
               resolution={resolved.get(inst.id) ?? null}
               onResolve={onResolve}
+              onUnresolve={onUnresolve}
               tagMap={tagMap}
             />
           ))}

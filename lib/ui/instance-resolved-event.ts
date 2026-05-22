@@ -29,6 +29,10 @@ export type InstanceResolvedDetail = {
    *  decrement; false-valued events are still dispatched for future
    *  optimistic-UI consumers but currently ignored. */
   wasUnlabeled: boolean;
+  /** How to nudge the chip when `wasUnlabeled` is true. -1 (default) for
+   *  resolving an unlabeled row (drop the chip); +1 for the reverse —
+   *  un-labeling a row back to past-due-pending restores the chip. */
+  delta?: number;
 };
 
 export function dispatchInstanceResolved(detail: InstanceResolvedDetail) {

@@ -15,6 +15,7 @@ import { useState, useTransition } from "react";
 import {
   completeInstance,
   missInstance,
+  unlabelInstance,
 } from "@/app/actions/activities";
 import { rhythmCategoryLabel } from "@/lib/domain/rhythm-summary";
 import type { TagMap } from "@/lib/domain/tags";
@@ -44,6 +45,7 @@ export function InstanceRow({
   todayStr,
   onOpen,
   onResolve,
+  onUnresolve,
   resolution,
   tagMap,
 }: {
@@ -62,6 +64,14 @@ export function InstanceRow({
    * the target; earlier +1s just bump the count in place.
    */
   onResolve: (id: string, status: "completed" | "missed") => void;
+  /**
+   * Revert callback. Fires when the user taps "Unlabel" on a row they
+   * just resolved in place — clears the parent's resolution so the row
+   * returns to its actionable (Complete / Missed) state. Pairs with the
+   * unlabelInstance server action below, which removes the completion(s)
+   * and sets the instance back to pending server-side.
+   */
+  onUnresolve: (id: string) => void;
   /** This occurrence's current resolution (null = still actionable). */
   resolution: "completed" | "missed" | null;
   /** Name → color lookup for the tag chips below the activity name. */
@@ -203,6 +213,22 @@ export function InstanceRow({
     });
   }
 
+  // Revert an accidental Complete/Missed without reloading the page.
+  // Returns the row to its actionable state instantly, clears any
+  // optimistic +1 progress (unlabelInstance wipes every logged
+  // completion server-side), and — if this occurrence was past-due —
+  // restores the "Unlabeled" chip the resolve had dropped.
+  function handleUnlabel() {
+    onUnresolve(instance.id);
+    setOptimisticDelta(-instance.completionCount);
+    if (isCurrentlyUnlabeled) {
+      dispatchInstanceResolved({ wasUnlabeled: true, delta: 1 });
+    }
+    startTransition(async () => {
+      await unlabelInstance(instance.id);
+    });
+  }
+
   return (
     <li
       className={`flex w-full min-w-0 items-center justify-between gap-2 rounded-md border border-zinc-200 bg-white p-3 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900 ${
@@ -270,16 +296,28 @@ export function InstanceRow({
       {resolution ? (
         // Resolved IN PLACE — the row keeps its slot so the list doesn't
         // reflow under rapid tapping. A status pill replaces the action
-        // buttons; the row clears on the next navigation/refresh.
-        <span
-          className={`min-h-11 inline-flex shrink-0 items-center rounded-md px-3 py-2 text-xs font-semibold ${
-            resolution === "completed"
-              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
-              : "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
-          }`}
-        >
-          {resolution === "completed" ? "✓ Done" : "✗ Missed"}
-        </span>
+        // buttons, alongside an "Unlabel" button so an accidental tap can
+        // be reverted to pending without reloading the page. The row
+        // otherwise clears on the next navigation/refresh.
+        <div className="flex shrink-0 items-center gap-2">
+          <span
+            className={`min-h-11 inline-flex items-center rounded-md px-3 py-2 text-xs font-semibold ${
+              resolution === "completed"
+                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                : "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
+            }`}
+          >
+            {resolution === "completed" ? "✓ Done" : "✗ Missed"}
+          </span>
+          <button
+            type="button"
+            onClick={handleUnlabel}
+            title="Tapped by accident? Revert to pending."
+            className="min-h-11 shrink-0 touch-manipulation rounded-md border border-zinc-300 px-3 py-2 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-100 active:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
+          >
+            Unlabel
+          </button>
+        </div>
       ) : (
         <>
           {/* Accumulating progress badge. Shown for frequency rhythms
