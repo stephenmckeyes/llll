@@ -17,6 +17,7 @@
   "dependencies": {
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.105.4",
+    "@vercel/speed-insights": "^2.0.0",
     "date-fns": "^4.1.0",
     "drizzle-orm": "^0.45.2",
     "next": "16.2.6",
