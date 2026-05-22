@@ -36,8 +36,10 @@ export function TotalView({
   activities: ActivityRow[];
   tagMap: TagMap;
 }) {
-  const [groupBy, setGroupBy] = useState<GroupBy>("status");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  // Defaults: grouped by Tag, showing Active only (per user request) — the
+  // most useful "what am I actively working on, organized by area" view.
+  const [groupBy, setGroupBy] = useState<GroupBy>("tag");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
   const [openId, setOpenId] = useState<string | null>(null);
 
   const filtered = useMemo(() => {

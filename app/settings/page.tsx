@@ -42,6 +42,11 @@ const TILES: TileItem[] = [
     label: "Data",
     hint: "Export your activities as JSON.",
   },
+  {
+    href: "/settings/feedback",
+    label: "Feedback",
+    hint: "Report a bug or suggest an improvement.",
+  },
 ];
 
 export default async function SettingsPage() {

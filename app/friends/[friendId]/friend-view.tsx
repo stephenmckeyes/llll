@@ -121,6 +121,10 @@ export function FriendView({
 // Total — grouped Active / Archived, with a Copy action on each card.
 // ---------------------------------------------------------------------------
 
+type GroupBy = "status" | "tag" | "rhythm";
+type StatusFilter = "all" | "active" | "archived";
+type ShareGroup = { key: string; label: string; items: SharedActivity[] };
+
 function TotalReadOnly({
   shares,
   tagMap,
@@ -130,32 +134,166 @@ function TotalReadOnly({
   tagMap: TagMap;
   onCopy: (s: SharedActivity) => void;
 }) {
-  const active = shares
-    .filter((s) => s.archivedAt === null)
-    .sort((a, b) => a.name.localeCompare(b.name));
-  const archived = shares
-    .filter((s) => s.archivedAt !== null)
-    .sort((a, b) => a.name.localeCompare(b.name));
+  // Mirrors the individual Total View: group by Status / Tag / Rhythm, with
+  // an Active / Archived filter. Defaults to Tag + Active to match the
+  // dashboard's default.
+  const [groupBy, setGroupBy] = useState<GroupBy>("tag");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
+
+  const filtered = useMemo(() => {
+    if (statusFilter === "active")
+      return shares.filter((s) => s.archivedAt === null);
+    if (statusFilter === "archived")
+      return shares.filter((s) => s.archivedAt !== null);
+    return shares;
+  }, [shares, statusFilter]);
+
+  const groups = useMemo(
+    () => buildShareGroups(filtered, groupBy),
+    [filtered, groupBy]
+  );
 
   return (
     <div className="flex flex-col gap-4">
-      <Group label="Active" count={active.length}>
-        {active.map((s) => (
-          <ShareCard key={s.shareId} share={s} tagMap={tagMap} onCopy={onCopy} />
-        ))}
-      </Group>
-      {archived.length > 0 && (
-        <Group label="Archived" count={archived.length}>
-          {archived.map((s) => (
-            <ShareCard
-              key={s.shareId}
-              share={s}
-              tagMap={tagMap}
-              onCopy={onCopy}
-            />
-          ))}
-        </Group>
+      <div className="flex flex-col gap-3 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+        <ControlRow label="Group by">
+          <Segmented
+            options={[
+              ["status", "Status"],
+              ["tag", "Tag"],
+              ["rhythm", "Rhythm"],
+            ]}
+            value={groupBy}
+            onChange={(v) => setGroupBy(v as GroupBy)}
+          />
+        </ControlRow>
+        <ControlRow label="Show">
+          <Segmented
+            options={[
+              ["all", "All"],
+              ["active", "Active"],
+              ["archived", "Archived"],
+            ]}
+            value={statusFilter}
+            onChange={(v) => setStatusFilter(v as StatusFilter)}
+          />
+        </ControlRow>
+      </div>
+
+      {groups.length === 0 ? (
+        <p className="rounded-md border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700">
+          Nothing matches this filter.
+        </p>
+      ) : (
+        groups.map((g) => (
+          <Group key={g.key} label={g.label} count={g.items.length}>
+            {g.items.map((s) => (
+              <ShareCard
+                key={s.shareId}
+                share={s}
+                tagMap={tagMap}
+                onCopy={onCopy}
+              />
+            ))}
+          </Group>
+        ))
       )}
+    </div>
+  );
+}
+
+function buildShareGroups(
+  rows: SharedActivity[],
+  groupBy: GroupBy
+): ShareGroup[] {
+  if (groupBy === "status") {
+    const active = rows.filter((s) => s.archivedAt === null);
+    const archived = rows.filter((s) => s.archivedAt !== null);
+    const out: ShareGroup[] = [];
+    if (active.length > 0 || archived.length === 0)
+      out.push({ key: "active", label: "Active", items: sortByName(active) });
+    if (archived.length > 0)
+      out.push({
+        key: "archived",
+        label: "Archived",
+        items: sortByName(archived),
+      });
+    return out;
+  }
+  if (groupBy === "rhythm") {
+    return groupShares(rows, (s) =>
+      rhythmCategoryLabel(s.rhythm, s.scheduledTimes)
+    );
+  }
+  // tag
+  return groupShares(rows, (s) => s.defaultSkillTags[0] ?? "No tag");
+}
+
+function groupShares(
+  rows: SharedActivity[],
+  keyOf: (s: SharedActivity) => string
+): ShareGroup[] {
+  const buckets = new Map<string, SharedActivity[]>();
+  for (const s of rows) {
+    const k = keyOf(s);
+    const arr = buckets.get(k);
+    if (arr) arr.push(s);
+    else buckets.set(k, [s]);
+  }
+  return Array.from(buckets.keys())
+    .sort((a, b) => a.localeCompare(b))
+    .map((k) => ({ key: k, label: k, items: sortByName(buckets.get(k) ?? []) }));
+}
+
+function sortByName(rows: SharedActivity[]): SharedActivity[] {
+  return [...rows].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function ControlRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="w-16 shrink-0 text-xs font-medium uppercase tracking-wide text-zinc-500">
+        {label}
+      </span>
+      {children}
+    </div>
+  );
+}
+
+function Segmented({
+  options,
+  value,
+  onChange,
+}: {
+  options: ReadonlyArray<readonly [string, string]>;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1">
+      {options.map(([val, label]) => {
+        const active = val === value;
+        return (
+          <button
+            key={val}
+            type="button"
+            onClick={() => onChange(val)}
+            className={`touch-manipulation rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+              active
+                ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            }`}
+          >
+            {label}
+          </button>
+        );
+      })}
     </div>
   );
 }
