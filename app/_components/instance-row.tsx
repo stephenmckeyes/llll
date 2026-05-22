@@ -113,8 +113,8 @@ export function InstanceRow({
     hint = {
       text:
         overdueDays === 1
-          ? "Unlabeled — overdue by 1 day"
-          : `Unlabeled — overdue by ${overdueDays} days`,
+          ? "Unlabeled — 1 day ago"
+          : `Unlabeled — ${overdueDays} days ago`,
       tone: "danger",
     };
   }

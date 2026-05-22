@@ -17,16 +17,17 @@
    Prevents the page (and the form inside it) from jumping a few pixels
    wider/narrower when content grows past the viewport height.
 
-   The body overflow-x is a belt-and-suspenders fix: even if some child
-   somehow has a min-content larger than the viewport, the page won't
-   widen sideways; the overflow is clipped at the body. Inputs and rows
-   still get truncate / line-clamp on their content. */
+   IMPORTANT — we used to also set `body { overflow-x: hidden }` as a
+   belt-and-suspenders horizontal-clip. CSS's orthogonal-axis rule
+   meant that turned body into a sized scroll container (`overflow-y`
+   silently became `auto`), which interacted with the layout's flex
+   constraints in a way that BROKE page-level scrolling — every view
+   that didn't have its own inner scroll container (Week, Month, Year,
+   Grid, Archive) became unscrollable. The natural-scroll behavior
+   without that property is preferable; long text is already clipped
+   by `truncate` / `line-clamp` utilities elsewhere. */
 html {
   scrollbar-gutter: stable;
-}
-
-body {
-  overflow-x: hidden;
 }
 
 :root {

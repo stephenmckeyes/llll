@@ -52,12 +52,22 @@ export default function RootLayout({
       // mutates <html>'s className before React hydrates, which would
       // otherwise trigger a mismatch warning.
       suppressHydrationWarning
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      // Intentionally NO `h-full` / `min-h-full` / `flex` here. Past
+      // versions constrained <html> and <body> to viewport height and
+      // made <body> a flex container; combined with `overflow-x:
+      // hidden` in globals.css that turned <body> into a sized scroll
+      // container instead of letting the viewport scroll naturally.
+      // Result: page-level scroll silently broke everywhere except
+      // views that used their OWN internal scroll container (Day view).
+      // Keeping the markup minimal here lets the browser handle
+      // viewport scroll by default. Each page's `<main>` carries its
+      // own `min-h-svh` so short pages still look full.
+      className={`${geistSans.variable} ${geistMono.variable} antialiased`}
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body>{children}</body>
     </html>
   );
 }
