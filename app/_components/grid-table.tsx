@@ -289,6 +289,19 @@ export function GridTable({
     return arr;
   }, [rows, sort, typeStages]);
 
+  // Hidden rows always sink to the bottom of the list, BELOW any column
+  // sort, so the active set stays clean and uncluttered. Their relative
+  // order is preserved from visibleRows for predictability.
+  const orderedRows = useMemo(() => {
+    if (off.size === 0) return visibleRows;
+    const shown: GridRow[] = [];
+    const hidden: GridRow[] = [];
+    for (const r of visibleRows) {
+      (off.has(r.activity.id) ? hidden : shown).push(r);
+    }
+    return [...shown, ...hidden];
+  }, [visibleRows, off]);
+
   const headerControls = {
     sort,
     cycleSort,
@@ -304,7 +317,7 @@ export function GridTable({
         </p>
       ) : mode === "week" ? (
         <WeekTable
-          rows={visibleRows}
+          rows={orderedRows}
           dateCols={dateCols}
           todayStr={todayStr}
           off={off}
@@ -315,7 +328,7 @@ export function GridTable({
         />
       ) : mode === "month" ? (
         <MonthTable
-          rows={visibleRows}
+          rows={orderedRows}
           dateCols={dateCols}
           todayStr={todayStr}
           off={off}
@@ -326,7 +339,7 @@ export function GridTable({
         />
       ) : (
         <TotalTable
-          rows={visibleRows}
+          rows={orderedRows}
           dateCols={dateCols}
           todayStr={todayStr}
           off={off}
@@ -469,8 +482,8 @@ function WeekTable({
   return (
     <table className="w-full table-fixed border-separate border-spacing-0 text-xs">
       <colgroup>
-        <col className="w-[5.5rem] sm:w-[8rem]" />
-        <col className="w-[3rem] sm:w-[4.5rem]" />
+        <col className="w-[6.5rem] sm:w-[8rem]" />
+        <col className="w-[2rem] sm:w-[4.5rem]" />
         <col />
         <col className="w-[4rem] sm:w-[5.5rem]" />
       </colgroup>
@@ -519,7 +532,7 @@ function WeekTable({
                 row={row}
                 isOff={isOff}
                 onToggle={onToggle}
-                linesMax={1}
+                linesMax={2}
               />
               {isOff ? (
                 <CollapsedRow span={3} />
@@ -594,8 +607,8 @@ function MonthTable({
   return (
     <table className="w-full table-fixed border-separate border-spacing-0 text-xs">
       <colgroup>
-        <col className="w-[5.5rem] sm:w-[8rem]" />
-        <col className="w-[3rem] sm:w-[4.5rem]" />
+        <col className="w-[6.5rem] sm:w-[8rem]" />
+        <col className="w-[2rem] sm:w-[4.5rem]" />
         <col />
         <col className="w-[4rem] sm:w-[5.5rem]" />
       </colgroup>
@@ -735,8 +748,8 @@ function TotalTable({
   return (
     <table className="w-full table-fixed border-separate border-spacing-0 text-xs">
       <colgroup>
-        <col className="w-[5.5rem] sm:w-[8rem]" />
-        <col className="w-[3rem] sm:w-[4.5rem]" />
+        <col className="w-[6.5rem] sm:w-[8rem]" />
+        <col className="w-[2rem] sm:w-[4.5rem]" />
         <col />
         <col className="w-[4rem] sm:w-[5.5rem]" />
       </colgroup>
@@ -835,7 +848,7 @@ function CollapsedRow({ span }: { span: number }) {
       colSpan={span}
       className="border-b border-zinc-100 px-2 py-1 text-[10px] italic text-zinc-400 dark:border-zinc-900"
     >
-      <span className="opacity-60">Off — toggle on to see history.</span>
+      <span className="opacity-60">Hidden — toggle to show.</span>
     </td>
   );
 }
@@ -968,7 +981,10 @@ function Tooltip({
 
 // Activity-name cell. `linesMax` caps how many wrapped lines the name
 // shows before truncating with "…", per mode:
-//   - Week:  1 (cells block is a single row of cells; no wrapping)
+//   - Week:  2 (the Activity column is narrow on mobile, so wrapping to
+//             a 2nd line roughly doubles how much of the name is
+//             readable; day cells stay aspect-square and just center
+//             in the slightly-taller row, so box sizes don't change)
 //   - Month: 3 (cells block is multi-row but cells are short
 //             rectangles → ~100px tall; 3 name lines fit comfortably)
 //   - Total: 2 (cells block can shrink down to ~20-30px for power

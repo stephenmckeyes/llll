@@ -614,9 +614,10 @@ function EditRhythmBody({
         <ActivityFormFields initialValues={activity} tagMap={tagMap} />
 
         <p className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-          Saving regenerates this activity&rsquo;s future schedule. Past
-          occurrences and their completions are kept; you&rsquo;ll be asked
-          to confirm before changes apply.
+          Saving these edits will change this activity and all future
+          activities made by this rhythm/schedule. Past occurrences
+          remain unchanged. You will be asked to confirm before changes
+          apply.
         </p>
 
         {state && "error" in state && (

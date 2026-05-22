@@ -21,6 +21,14 @@ export default async function AppearanceSettingsPage() {
         shifts colors warm to minimize blue light before bed.
       </p>
       <ThemeToggle />
+
+      <p className="text-xs text-zinc-500 dark:text-zinc-400">
+        <strong>Battery:</strong> on phones with OLED screens (most recent
+        iPhones and Android flagships) dark and sleep modes draw less
+        power — roughly 5–15% less at typical brightness, and up to ~40%
+        at high brightness, since black pixels are switched off. On LCD
+        screens it makes no meaningful difference.
+      </p>
     </SettingsShell>
   );
 }
