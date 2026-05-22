@@ -85,3 +85,36 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* ---------------------------------------------------------------------------
+   TOUCH / TAP behavior (mobile)
+   ---------------------------------------------------------------------------
+   Fixes two reported mobile problems:
+     1. "Highlights text instead of pressing the button" — a tap that
+        the browser interprets as the start of a text selection.
+        `user-select: none` on interactive elements stops the long-press
+        text selection so taps register as taps.
+     2. Tap lag / double-tap-zoom delay — `touch-action: manipulation`
+        removes the legacy ~300ms click delay and disables
+        double-tap-to-zoom on controls. `-webkit-tap-highlight-color`
+        removes the grey flash overlay iOS draws on tap.
+
+   Scoped to actual controls (button, links, role=button, summary,
+   labels, switches) so normal body text stays selectable. */
+button,
+a,
+summary,
+label,
+[role="button"],
+[role="switch"] {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+button,
+summary,
+[role="button"],
+[role="switch"] {
+  -webkit-user-select: none;
+  user-select: none;
+}

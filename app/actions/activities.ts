@@ -280,7 +280,12 @@ export async function completeInstance(instanceId: string) {
   if (!user) redirect("/login");
 
   await logCompletion(supabase, user.id, { instanceIds: [instanceId] });
-  invalidateBackfillCache(user.id);
+  // PERF: do NOT invalidate the backfill cache here. Completing an
+  // instance doesn't change which FUTURE instances should exist, so
+  // there's nothing for backfill to redo. Invalidating forced a full
+  // backfill (activities + future-instances queries + generation) on
+  // the revalidation that follows EVERY complete — a multi-second
+  // mobile stall. Backfill still runs on its normal throttle.
   revalidatePath("/");
 }
 
@@ -565,7 +570,9 @@ export async function setInstanceProgress(
     .update({ status: newStatus })
     .eq("id", instanceId);
 
-  invalidateBackfillCache(user.id);
+  // PERF: no backfill invalidation — changing an instance's completion
+  // count / status doesn't affect future instance generation. (Same
+  // reasoning as completeInstance.)
   revalidatePath("/");
 }
 
@@ -787,7 +794,8 @@ export async function missInstance(instanceId: string) {
     .update({ status: "missed" })
     .eq("id", instanceId);
 
-  invalidateBackfillCache(user.id);
+  // PERF: no backfill invalidation — marking missed doesn't change
+  // future instance generation. (Same reasoning as completeInstance.)
   revalidatePath("/");
 }
 

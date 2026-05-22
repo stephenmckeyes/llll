@@ -77,7 +77,29 @@ const GRID_SUB_OPTIONS: ReadonlyArray<{ value: GridRange; label: string }> = [
 // _components/day-list. WeekView still uses its own internal type below.
 
 const WEEK_HEADERS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const TODAY_STR = new Date().toISOString().slice(0, 10);
+
+// "Today" must be computed in the USER'S timezone, not the server's.
+// Vercel runs in UTC, so `new Date().toISOString()` returns the UTC
+// date — which is already "tomorrow" for any user west of UTC late in
+// their day (e.g. 9pm Alaska = 5am next-day UTC). That was the
+// "today is a day ahead" bug. We resolve the user's profile timezone
+// per-request in HomePage and thread the result (`todayStr`) into
+// every view + helper instead of reading a module-level UTC constant.
+function todayInTimeZone(tz: string): string {
+  try {
+    // en-CA formats as YYYY-MM-DD, which is exactly our wire format.
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+  } catch {
+    // Invalid/unknown TZ string → fall back to server UTC date.
+    return new Date().toISOString().slice(0, 10);
+  }
+}
+
 // Day view window: how many days back / forward from the selected date.
 // Matches DayList's constants; controls how wide a slice we fetch.
 const DAY_VIEW_BACK = 90;
@@ -106,56 +128,23 @@ export default async function HomePage({
 
   const params = await searchParams;
   const view = parseView(params.view);
-  const date = parseDateParam(params.date);
   const range = parseGridRange(params.range);
   // Custom range params — only meaningful when range==="custom" but we
   // parse them up here so the GridView signature stays simple.
   const customFrom = parseOptionalDateParam(params.from);
   const customTo = parseOptionalDateParam(params.to);
 
-  // Top up the user's activity_instances out to ~1 year ahead of whatever
-  // they're looking at. Indefinite rhythms (no end_date) only get N days
-  // of instances generated up front; without this, the calendar "runs
-  // out" of future days after that window.
-  //
-  // Why 1 year and not "truly infinite": we materialize one row per
-  // occurrence (so each instance can carry its own completed/missed/X-of-Y
-  // state). Generating to truly-infinite would mean rows we'll never
-  // look at. 1 year is "feels indefinite to a human navigating forward"
-  // while keeping a sane upper bound on row count. The real
-  // architectural fix — store the rhythm rule only and project at view
-  // time, materialize on interaction — is in BACKLOG.md.
-  //
-  // Idempotent: already-present instances get skipped via the unique
-  // index + ignoreDuplicates on upsert inside backfill.
-  const backfillThrough = (() => {
-    const [y, m, d] = date.split("-").map(Number);
-    const ref = new Date(y, m - 1, d);
-    ref.setFullYear(ref.getFullYear() + 1);
-    return format(ref, "yyyy-MM-dd");
-  })();
-
-  // ---- PERF: one parallel batch instead of four serial round-trips ------
-  // The onboarding-gate profile check, the instance backfill, the tag
-  // palette fetch, and the incomplete-count query are all independent of
-  // each other — each needs only `user.id`, none needs another's result.
-  // Running them serially (the old code) stacked ~4 Supabase round-trips
-  // before the page could even start rendering; on a ~80-120ms mobile
-  // round-trip that's ~400ms of dead time. Promise.all collapses them to
-  // the latency of the single slowest query.
-  //
-  // Ordering safety: `ensureInstancesBackfilled` writes FUTURE instances
-  // while `fetchIncompleteInfo` reads PAST ones — disjoint rows, no race.
-  // The per-view data fetch (inside DayView / WeekView / GridView / etc.)
-  // still runs AFTER this batch resolves (it's in the returned JSX), so
-  // it always sees the freshly-backfilled rows.
-  const [profileResult, , tagFetch, incompleteInfo] = await Promise.all([
+  // ---- Batch 1: profile + tag palette -----------------------------------
+  // The profile gives us BOTH the onboarding gate AND the user's
+  // timezone (which we need to compute "today" correctly — see below).
+  // The tag palette is independent of today, so it rides along in the
+  // same parallel batch.
+  const [profileResult, tagFetch] = await Promise.all([
     supabase
       .from("profiles")
-      .select("onboarded_at")
+      .select("timezone, onboarded_at")
       .eq("id", user.id)
       .maybeSingle(),
-    ensureInstancesBackfilled(supabase, user.id, backfillThrough),
     Promise.all([
       supabase.from("tags").select("id, name, color"),
       supabase
@@ -163,27 +152,55 @@ export default async function HomePage({
         .select("default_skill_tags")
         .is("archived_at", null),
     ]),
-    fetchIncompleteInfo(supabase),
   ]);
 
   // Onboarding gate: a signed-in user who hasn't completed onboarding
   // (profiles.onboarded_at IS NULL) gets bounced to /onboarding before
-  // ever seeing the dashboard. We check AFTER the parallel batch — an
-  // unboarded user "wastes" the other three queries, but that path only
-  // hits on the very first login and they're being redirected anyway.
-  // (We can't use requireOnboardedUser here because that helper
-  // redirects to /login on no-user, but this page renders
+  // ever seeing the dashboard. Checking here also short-circuits Batch 2
+  // for unboarded users. (We can't use requireOnboardedUser here because
+  // that helper redirects to /login on no-user, but this page renders
   // <SignedOutLanding /> for that case instead.)
   const profile = profileResult.data;
   if (!profile || !profile.onboarded_at) {
     redirect("/onboarding");
   }
 
+  // "Today" in the USER'S timezone — NOT the server's UTC clock. This is
+  // the fix for the "today is a day ahead" bug: Vercel runs in UTC, so
+  // the old module-level `new Date().toISOString()` returned tomorrow's
+  // date for any user west of UTC late in their day. Everything date-
+  // relative (default landing date, incomplete cutoff, isToday highlight)
+  // keys off this single value, threaded into every view + helper.
+  const todayStr = todayInTimeZone(profile.timezone ?? "UTC");
+  const date = parseDateParam(params.date, todayStr);
+
+  // Top up the user's activity_instances out to ~1 year ahead of whatever
+  // they're looking at. Indefinite rhythms (no end_date) only get N days
+  // of instances generated up front; without this, the calendar "runs
+  // out" of future days after that window. Idempotent — already-present
+  // instances are skipped via the unique index + ignoreDuplicates.
+  const backfillThrough = (() => {
+    const [y, m, d] = date.split("-").map(Number);
+    const ref = new Date(y, m - 1, d);
+    ref.setFullYear(ref.getFullYear() + 1);
+    return format(ref, "yyyy-MM-dd");
+  })();
+
+  // ---- Batch 2: backfill + incomplete count -----------------------------
+  // Both need the resolved `todayStr` / `date`, so they run after Batch 1.
+  // They're mutually independent (backfill WRITES future instances,
+  // fetchIncompleteInfo READS past ones — disjoint rows), so they
+  // parallelize. The per-view fetch (inside DayView / GridView / etc.)
+  // runs after this resolves and therefore sees the backfilled rows.
+  const [, incompleteInfo] = await Promise.all([
+    ensureInstancesBackfilled(supabase, user.id, backfillThrough),
+    fetchIncompleteInfo(supabase, todayStr),
+  ]);
+
   // ---- Tag palette ------------------------------------------------------
-  // Per-user name → color lookup. Threaded into every component that
-  // renders tag chips or dots. `usageByName` tallies how many active
-  // activities use each tag so the picker's "Most frequent" list sorts
-  // by popularity. (Both queries already ran in the batch above.)
+  // Per-user name → color lookup (queries ran in Batch 1). `usageByName`
+  // tallies how many active activities use each tag so the picker's
+  // "Most frequent" list sorts by popularity.
   const [{ data: tagRows }, { data: activityTagRows }] = tagFetch;
   const usageByName = computeTagUsage(
     (activityTagRows ?? []) as Array<{ default_skill_tags: string[] | null }>
@@ -208,26 +225,31 @@ export default async function HomePage({
           end up touching. Before this, the unscrolled state showed a
           32px gap that the scrolled state didn't, which looked like
           the layout "compressed" on scroll. Now both states match. */}
+      {/* Header. On mobile (<sm) the title and the action buttons stack
+          vertically and the buttons wrap, so nothing overflows the
+          viewport (the old `shrink-0` row forced horizontal scroll to
+          reach Settings on a phone). On sm+ it's the original
+          title-left / buttons-right row. */}
       <header className="mb-6 flex flex-col gap-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
             <h1 className="text-3xl font-semibold tracking-tight">Mission</h1>
             <p className="flex flex-wrap items-center gap-x-2 text-xs text-zinc-500">
-              <span>{user.email}</span>
+              <span className="truncate">{user.email}</span>
               <span aria-hidden>·</span>
               <TimeChip />
             </p>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Link
               href="/activities/new"
-              className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
+              className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
             >
               + Add Activity
             </Link>
             <Link
               href="/activities"
-              className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+              className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
             >
               Archive
             </Link>
@@ -237,7 +259,7 @@ export default async function HomePage({
                 one click away. */}
             <Link
               href="/settings"
-              className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+              className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
             >
               Settings
             </Link>
@@ -267,6 +289,7 @@ export default async function HomePage({
       {view === "day" && (
         <DayView
           startDate={date}
+          todayStr={todayStr}
           incompleteInfo={incompleteInfo}
           tagMap={tagMap}
         />
@@ -274,6 +297,7 @@ export default async function HomePage({
       {view === "week" && (
         <WeekView
           weekDate={date}
+          todayStr={todayStr}
           incompleteInfo={incompleteInfo}
           tagMap={tagMap}
         />
@@ -281,16 +305,22 @@ export default async function HomePage({
       {view === "month" && (
         <MonthView
           monthDate={date}
+          todayStr={todayStr}
           incompleteInfo={incompleteInfo}
           tagMap={tagMap}
         />
       )}
       {view === "year" && (
-        <YearView yearDate={date} incompleteInfo={incompleteInfo} />
+        <YearView
+          yearDate={date}
+          todayStr={todayStr}
+          incompleteInfo={incompleteInfo}
+        />
       )}
       {view === "grid" && (
         <GridView
           gridDate={date}
+          todayStr={todayStr}
           range={range}
           customFrom={customFrom}
           customTo={customTo}
@@ -309,7 +339,8 @@ export default async function HomePage({
 // ---------------------------------------------------------------------------
 
 async function fetchIncompleteInfo(
-  supabase: Awaited<ReturnType<typeof createClient>>
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  todayStr: string
 ): Promise<IncompleteInfo> {
   // Strictly-past pending instances on still-active activities. "Strictly
   // less than today" so the chip doesn't pester the user about things
@@ -342,13 +373,13 @@ async function fetchIncompleteInfo(
       .select("id", { count: "exact", head: true })
       .in("activity_id", ids)
       .eq("status", "pending")
-      .lt("scheduled_for", TODAY_STR),
+      .lt("scheduled_for", todayStr),
     supabase
       .from("activity_instances")
       .select("scheduled_for")
       .in("activity_id", ids)
       .eq("status", "pending")
-      .lt("scheduled_for", TODAY_STR)
+      .lt("scheduled_for", todayStr)
       .order("scheduled_for", { ascending: true })
       .limit(1)
       .maybeSingle(),
@@ -392,10 +423,10 @@ function parseGridRange(raw: string | undefined): GridRange {
   return "week";
 }
 
-function parseDateParam(raw: string | undefined): string {
-  if (!raw || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return TODAY_STR;
+function parseDateParam(raw: string | undefined, todayStr: string): string {
+  if (!raw || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return todayStr;
   const d = parseISO(raw);
-  if (Number.isNaN(d.getTime())) return TODAY_STR;
+  if (Number.isNaN(d.getTime())) return todayStr;
   return raw;
 }
 
@@ -601,10 +632,12 @@ function SubTab({
 
 async function DayView({
   startDate,
+  todayStr,
   incompleteInfo,
   tagMap,
 }: {
   startDate: string;
+  todayStr: string;
   incompleteInfo: IncompleteInfo;
   tagMap: TagMap;
 }) {
@@ -709,7 +742,7 @@ async function DayView({
       instances={instances}
       completedByDate={completedByDate}
       missedByDate={missedByDate}
-      todayStr={TODAY_STR}
+      todayStr={todayStr}
       incompleteInfo={incompleteInfo}
       tagMap={tagMap}
     />
@@ -723,10 +756,12 @@ async function DayView({
 
 async function WeekView({
   weekDate,
+  todayStr,
   incompleteInfo,
   tagMap,
 }: {
   weekDate: string;
+  todayStr: string;
   incompleteInfo: IncompleteInfo;
   tagMap: TagMap;
 }) {
@@ -798,7 +833,7 @@ async function WeekView({
     return {
       date,
       dateStr,
-      isToday: dateStr === TODAY_STR,
+      isToday: dateStr === todayStr,
       items: byDate[dateStr] ?? [],
     };
   });
@@ -931,10 +966,12 @@ function WeekBanner({
 
 async function MonthView({
   monthDate,
+  todayStr,
   incompleteInfo,
   tagMap,
 }: {
   monthDate: string;
+  todayStr: string;
   incompleteInfo: IncompleteInfo;
   tagMap: TagMap;
 }) {
@@ -999,7 +1036,7 @@ async function MonthView({
       date,
       dateStr,
       inMonth: date >= monthStart && date <= monthEnd,
-      isToday: dateStr === TODAY_STR,
+      isToday: dateStr === todayStr,
       instances: byDate[dateStr] ?? [],
     };
   });
@@ -1045,9 +1082,11 @@ async function MonthView({
 
 async function YearView({
   yearDate,
+  todayStr,
   incompleteInfo,
 }: {
   yearDate: string;
+  todayStr: string;
   incompleteInfo: IncompleteInfo;
 }) {
   const supabase = await createClient();
@@ -1103,6 +1142,7 @@ async function YearView({
             key={m.monthIndex}
             monthStart={m.monthStart}
             byDate={byDate}
+            todayStr={todayStr}
           />
         ))}
       </div>
@@ -1113,9 +1153,11 @@ async function YearView({
 function MiniMonth({
   monthStart,
   byDate,
+  todayStr,
 }: {
   monthStart: Date;
   byDate: Record<string, { pending: number; completed: number }>;
+  todayStr: string;
 }) {
   const monthEnd = endOfMonth(monthStart);
   const gridStart = startOfWeek(monthStart, { weekStartsOn: 1 });
@@ -1131,7 +1173,7 @@ function MiniMonth({
       date,
       dateStr,
       inMonth,
-      isToday: dateStr === TODAY_STR,
+      isToday: dateStr === todayStr,
       hasActivity: inMonth && (counts.pending > 0 || counts.completed > 0),
     };
   });
@@ -1199,6 +1241,7 @@ function MiniMonth({
 
 async function GridView({
   gridDate,
+  todayStr,
   range,
   customFrom,
   customTo,
@@ -1207,6 +1250,7 @@ async function GridView({
   tagMap,
 }: {
   gridDate: string;
+  todayStr: string;
   range: GridRange;
   /** Custom-range start. Only consulted when range==="custom". null
    *  defaults to today - CUSTOM_DEFAULT_DAYS. */
@@ -1257,7 +1301,7 @@ async function GridView({
   const rhythmicForRange = activities.filter((a) => a.rhythm.type !== "single");
   const earliestStartStr =
     rhythmicForRange.length === 0
-      ? TODAY_STR
+      ? todayStr
       : rhythmicForRange.reduce(
           (min, a) => (a.start_date < min ? a.start_date : min),
           "9999-12-31"
@@ -1270,7 +1314,7 @@ async function GridView({
   let customStart: Date;
   let customEnd: Date;
   if (range === "custom") {
-    const today = parseDate(TODAY_STR);
+    const today = parseDate(todayStr);
     customEnd = customTo ? parseDate(customTo) : today;
     customStart = customFrom
       ? parseDate(customFrom)
@@ -1281,7 +1325,7 @@ async function GridView({
       customEnd = tmp;
     }
   } else {
-    customStart = parseDate(TODAY_STR);
+    customStart = parseDate(todayStr);
     customEnd = customStart;
   }
 
@@ -1300,7 +1344,7 @@ async function GridView({
         ? endOfMonth(refDate)
         : range === "custom"
           ? customEnd
-          : parseDate(TODAY_STR);
+          : parseDate(todayStr);
   const rangeStartStr = format(rangeStart, "yyyy-MM-dd");
   const rangeEndStr = format(rangeEnd, "yyyy-MM-dd");
 
@@ -1401,7 +1445,7 @@ async function GridView({
             .from("activity_instances")
             .select("activity_id, scheduled_for, status")
             .in("activity_id", rhythmicIds)
-            .lte("scheduled_for", TODAY_STR)
+            .lte("scheduled_for", todayStr)
             .order("scheduled_for", { ascending: false })
             .then((r) => (r.data ?? []) as StreakInst[]),
     ]);
@@ -1480,7 +1524,7 @@ async function GridView({
       } else if (inst.status === "missed") {
         state = "missed";
         missed++;
-      } else if (dateStr < TODAY_STR) {
+      } else if (dateStr < todayStr) {
         // pending + past — what we now show to the user as "Unlabeled".
         state = "overdue";
         unlabeled++;
@@ -1501,7 +1545,7 @@ async function GridView({
     const streak = computeStreak(
       streakByActivity.get(act.id) ?? [],
       act.rhythm,
-      TODAY_STR
+      todayStr
     );
 
     return {
@@ -1617,7 +1661,7 @@ async function GridView({
         mode={range === "custom" ? "total" : range}
         rows={rows}
         dateCols={dateCols}
-        todayStr={TODAY_STR}
+        todayStr={todayStr}
         rangeLabel={bannerRangeLabel}
         singlesDone={singlesDone}
         singlesTotal={singlesTotal}
