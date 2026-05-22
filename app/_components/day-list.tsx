@@ -37,6 +37,7 @@ import {
 import { ActivityModal } from "./activity-modal";
 import { IncompleteButton, type IncompleteInfo } from "./incomplete-button";
 import { InstanceRow } from "./instance-row";
+import { NewActivityModal } from "./new-activity-modal";
 
 const DAY_VIEW_BACK = 90;
 const DAY_VIEW_AHEAD = 180;
@@ -112,6 +113,9 @@ export function DayList({
   const [currentDate, setCurrentDate] = useState(initialDate);
   const [dateInputValue, setDateInputValue] = useState(initialDate);
   const [openInstance, setOpenInstance] = useState<DayInstance | null>(null);
+  // Which day's "+ Add activity" placeholder was tapped (null = closed).
+  // Opens NewActivityModal pre-dated to that day.
+  const [addDay, setAddDay] = useState<string | null>(null);
 
   // "I just resolved this" map: instanceId → "completed" | "missed".
   //
@@ -358,6 +362,7 @@ export function DayList({
               onResolve={markResolved}
               onUnresolve={clearResolved}
               onDropdownUnlabel={handleDropdownUnlabel}
+              onAdd={setAddDay}
               tagMap={tagMap}
             />
           ))}
@@ -370,6 +375,14 @@ export function DayList({
           todayStr={todayStr}
           onClose={() => setOpenInstance(null)}
           tagMap={tagMap}
+        />
+      )}
+
+      {addDay && (
+        <NewActivityModal
+          startDate={addDay}
+          tagMap={tagMap}
+          onClose={() => setAddDay(null)}
         />
       )}
     </div>
@@ -390,6 +403,7 @@ function DaySection({
   onResolve,
   onUnresolve,
   onDropdownUnlabel,
+  onAdd,
   tagMap,
 }: {
   date: Date;
@@ -403,6 +417,7 @@ function DaySection({
   onResolve: (id: string, status: "completed" | "missed") => void;
   onUnresolve: (id: string) => void;
   onDropdownUnlabel: (id: string) => void;
+  onAdd: (dateStr: string) => void;
   tagMap: TagMap;
 }) {
   const isToday = dateStr === todayStr;
@@ -471,6 +486,17 @@ function DaySection({
           ))}
         </div>
       )}
+
+      {/* "+ Add activity" placeholder — closes out every day so the user
+          can drop a new activity straight onto that date. Opens
+          NewActivityModal pre-dated to this day. */}
+      <button
+        type="button"
+        onClick={() => onAdd(dateStr)}
+        className="flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-zinc-300 px-3 py-2 text-xs font-medium text-zinc-500 transition-colors hover:border-zinc-400 hover:bg-zinc-50 hover:text-zinc-700 dark:border-zinc-700 dark:hover:border-zinc-600 dark:hover:bg-zinc-900 dark:hover:text-zinc-300"
+      >
+        + Add activity
+      </button>
     </section>
   );
 }
