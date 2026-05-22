@@ -44,13 +44,6 @@ export default async function FriendsPage() {
         <h1 className="text-3xl font-semibold tracking-tight">Friends</h1>
       </header>
 
-      <Link
-        href="/shared"
-        className="inline-flex w-fit items-center rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-      >
-        Shared with me →
-      </Link>
-
       {incomingCount > 0 && (
         <Link
           href="/notifications"
@@ -98,6 +91,12 @@ export default async function FriendsPage() {
                   )}
                 </div>
                 <div className="flex shrink-0 gap-2">
+                  <Link
+                    href={`/friends/${f.otherId}`}
+                    className="inline-flex items-center rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+                  >
+                    View
+                  </Link>
                   <ShareRhythmsButton
                     friendId={f.otherId}
                     friendName={nameOf(f)}

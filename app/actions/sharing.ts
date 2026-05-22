@@ -181,6 +181,55 @@ export type SharedActivity = {
 // definition (so it can be displayed read-only and copied) plus the
 // owner's safe fields and the share's settings — and ONLY rows where the
 // caller is the recipient.
+// A dated occurrence of a shared rhythm, returned by the
+// get_shared_instances_with_me RPC. Only present for shares where the owner
+// turned ON "share my progress" (and the activity isn't archived) — so a
+// template-only or archived share contributes NO instances.
+export type SharedInstance = {
+  ownerId: string;
+  activityId: string;
+  instanceId: string;
+  scheduledFor: string;
+  status: "pending" | "completed" | "missed" | "skipped" | "shifted";
+  completionCount: number;
+};
+
+// getSharedInstancesWithMe — occurrences (+ completion state) of every
+// rhythm shared WITH the caller within [from, to]. Read-only; gated to
+// share_progress=true, non-archived activities by the RPC. The caller
+// filters by ownerId to scope to one friend.
+export async function getSharedInstancesWithMe(
+  from: string,
+  to: string
+): Promise<SharedInstance[]> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data } = await supabase.rpc("get_shared_instances_with_me", {
+    p_from: from,
+    p_to: to,
+  });
+  const rows = (data ?? []) as Array<{
+    owner_id: string;
+    activity_id: string;
+    instance_id: string;
+    scheduled_for: string;
+    status: string;
+    completion_count: number;
+  }>;
+  return rows.map((r) => ({
+    ownerId: r.owner_id,
+    activityId: r.activity_id,
+    instanceId: r.instance_id,
+    scheduledFor: r.scheduled_for,
+    status: r.status as SharedInstance["status"],
+    completionCount: r.completion_count,
+  }));
+}
+
 export async function getSharedWithMe(): Promise<SharedActivity[]> {
   const supabase = await createClient();
   const {
