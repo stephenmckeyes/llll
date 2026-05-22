@@ -45,6 +45,7 @@ import {
 import { GridSection } from "./_components/grid-section";
 import { type IncompleteInfo } from "./_components/incomplete-button";
 import { TagDotRow } from "./_components/tag-chip";
+import { TabPending } from "./_components/tab-pending";
 import { TimeChip } from "./_components/time-chip";
 
 type ViewKind = "day" | "week" | "month" | "year" | "grid";
@@ -591,13 +592,14 @@ function SectionTab({
     <Link
       href={href}
       // py tightened from py-1.5 → py-1 to keep the header compact.
-      className={`flex-1 rounded px-3 py-1 text-center text-sm font-semibold transition-colors ${
+      className={`flex flex-1 items-center justify-center rounded px-3 py-1 text-center text-sm font-semibold transition-colors ${
         active
           ? "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
           : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
       }`}
     >
       {label}
+      <TabPending />
     </Link>
   );
 }
@@ -615,13 +617,14 @@ function SubTab({
     <Link
       href={href}
       // py tightened from py-1 → py-0.5.
-      className={`flex-1 rounded px-3 py-0.5 text-center text-xs font-medium transition-colors ${
+      className={`flex flex-1 items-center justify-center rounded px-3 py-0.5 text-center text-xs font-medium transition-colors ${
         active
           ? "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
           : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
       }`}
     >
       {label}
+      <TabPending />
     </Link>
   );
 }
