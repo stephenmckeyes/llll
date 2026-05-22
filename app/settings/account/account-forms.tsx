@@ -29,15 +29,20 @@ const inputClasses =
 export function AccountForms({
   currentEmail,
   currentDisplayName,
+  currentUsername,
 }: {
   currentEmail: string;
   currentDisplayName: string;
+  currentUsername: string;
 }) {
   // NOTE (dev): 2FA enrollment via Supabase MFA is tracked in BACKLOG —
   // intentionally NOT surfaced to users as a "coming soon" note.
   return (
     <div className="flex flex-col gap-8">
-      <DisplayNameForm initial={currentDisplayName} />
+      <ProfileForm
+        initialName={currentDisplayName}
+        initialUsername={currentUsername}
+      />
       <EmailForm currentEmail={currentEmail} />
       <PasswordForm />
     </div>
@@ -46,27 +51,50 @@ export function AccountForms({
 
 // ---------------------------------------------------------------------------
 
-function DisplayNameForm({ initial }: { initial: string }) {
+function ProfileForm({
+  initialName,
+  initialUsername,
+}: {
+  initialName: string;
+  initialUsername: string;
+}) {
   const [state, formAction, isPending] = useActionState<
     UpdateProfileState,
     FormData
   >(updateProfile, null);
 
   return (
-    <FormSection title="Display name">
-      <form action={formAction} className="flex flex-col gap-2">
+    <FormSection title="Profile">
+      <form action={formAction} className="flex flex-col gap-3">
         <label className="block">
           <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
-            What should we call you?
+            Display name
           </span>
           <input
             type="text"
             name="displayName"
             maxLength={80}
-            defaultValue={initial}
+            defaultValue={initialName}
             placeholder="(optional)"
             className={`${inputClasses} mt-1`}
           />
+        </label>
+        <label className="block">
+          <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+            Username
+          </span>
+          <input
+            type="text"
+            name="username"
+            defaultValue={initialUsername}
+            placeholder="e.g. stephen_m"
+            className={`${inputClasses} mt-1`}
+          />
+          <span className="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">
+            Friends can find you by this. 3–30 characters: letters,
+            numbers, dot or underscore. (They can also find you by your
+            email.)
+          </span>
         </label>
         <StateMessage state={state} />
         <SubmitButton isPending={isPending} label="Save" />

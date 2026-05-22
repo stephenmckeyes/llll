@@ -73,7 +73,42 @@ export const profiles = pgTable("profiles", {
   // at the time of migration 0007 are grandfathered (onboarded_at =
   // created_at) so we don't bounce returning users to a setup screen.
   onboardedAt: timestamp("onboarded_at", { withTimezone: true }),
+  // Social layer (migration 0010). `username` is an optional, unique
+  // (case-insensitive) handle for friend lookup; `email` is
+  // denormalized from auth.users (kept in sync by the signup trigger)
+  // so friend search can match an exact email without exposing
+  // auth.users to clients.
+  username: text("username"),
+  email: text("email"),
 });
+
+// ===========================================================================
+// friendships (migration 0010) — one row per (requester, addressee).
+// status: pending → accepted | declined. "Active" friends = accepted.
+// ===========================================================================
+
+export const friendships = pgTable(
+  "friendships",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    requesterId: uuid("requester_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    addresseeId: uuid("addressee_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    status: text("status").notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    respondedAt: timestamp("responded_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("friendships_pair_unique").on(t.requesterId, t.addresseeId),
+    index("friendships_addressee_idx").on(t.addresseeId, t.status),
+    index("friendships_requester_idx").on(t.requesterId, t.status),
+  ]
+);
 
 // ===========================================================================
 // activities  (unified producer table)

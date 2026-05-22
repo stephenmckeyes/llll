@@ -23,6 +23,7 @@ export default async function AccountSettingsPage() {
       <AccountForms
         currentEmail={user.email ?? ""}
         currentDisplayName={profile.display_name ?? ""}
+        currentUsername={profile.username ?? ""}
       />
     </SettingsShell>
   );

@@ -66,6 +66,20 @@ export async function updateProfile(
     update.display_name = raw.length === 0 ? null : raw;
   }
 
+  if (formData.has("username")) {
+    const raw = String(formData.get("username") ?? "").trim();
+    if (raw.length === 0) {
+      update.username = null;
+    } else if (!/^[a-zA-Z0-9_.]{3,30}$/.test(raw)) {
+      return {
+        error:
+          "Username must be 3–30 characters: letters, numbers, dot or underscore.",
+      };
+    } else {
+      update.username = raw;
+    }
+  }
+
   if (Object.keys(update).length === 0) {
     return { error: "Nothing to update." };
   }
@@ -74,7 +88,13 @@ export async function updateProfile(
     .from("profiles")
     .update(update)
     .eq("id", user.id);
-  if (error) return { error: error.message };
+  if (error) {
+    // Unique-violation on the username index → friendly message.
+    if (error.code === "23505") {
+      return { error: "That username is already taken." };
+    }
+    return { error: error.message };
+  }
 
   // The TimeChip in the header reads from the profile. Revalidate so
   // it picks up the new TZ on the next render.
