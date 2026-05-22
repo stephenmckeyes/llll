@@ -33,19 +33,13 @@ export function AccountForms({
   currentEmail: string;
   currentDisplayName: string;
 }) {
+  // NOTE (dev): 2FA enrollment via Supabase MFA is tracked in BACKLOG —
+  // intentionally NOT surfaced to users as a "coming soon" note.
   return (
     <div className="flex flex-col gap-8">
       <DisplayNameForm initial={currentDisplayName} />
       <EmailForm currentEmail={currentEmail} />
       <PasswordForm />
-
-      {/* Backlog: 2FA enrollment via Supabase MFA. Stub note so the
-          user sees it's coming and where it lives. */}
-      <section className="rounded-md border border-dashed border-zinc-300 bg-zinc-50 p-4 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400">
-        <strong>Two-factor authentication</strong> is on the roadmap —
-        Supabase&rsquo;s MFA APIs need their own enrollment UI +
-        recovery-code flow. Coming soon.
-      </section>
     </div>
   );
 }

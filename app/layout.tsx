@@ -12,10 +12,23 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// Link-preview metadata (this is what WhatsApp / iMessage / etc. show
+// when the URL is pasted). Kept deliberately minimal: just the name +
+// one tagline, no product explanation. openGraph/twitter mirror the
+// same so every platform shows the identical, tidy preview.
 export const metadata: Metadata = {
   title: "Mission",
-  description:
-    "A simple, RuneScape-inspired productivity tracker. Build rhythms, log progress, grow.",
+  description: "An app for those on a mission.",
+  openGraph: {
+    title: "Mission",
+    description: "An app for those on a mission.",
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: "Mission",
+    description: "An app for those on a mission.",
+  },
 };
 
 // Pre-hydration inline script that reads the user's saved theme out of

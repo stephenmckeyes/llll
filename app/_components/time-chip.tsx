@@ -49,7 +49,7 @@ export function TimeChip() {
 
   return (
     <span
-      title={`Your timezone: ${tzFull}. Change in Settings (coming soon).`}
+      title={`Your timezone: ${tzFull}. Change it in Settings → Timezone.`}
       className="inline-flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400"
     >
       <span aria-hidden>🕒</span>

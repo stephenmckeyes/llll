@@ -44,6 +44,27 @@ export default async function OnboardingPage() {
       </header>
 
       <OnboardingForm initialEmail={user.email ?? ""} />
+
+      {/* Quick "install as an app" tip — shown once, during first
+          sign-in. Mission is a website, but adding it to the home
+          screen makes it open full-screen like a native app. */}
+      <section className="rounded-md border border-zinc-200 bg-zinc-50 p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+        <h2 className="font-medium">Add Mission to your home screen</h2>
+        <p className="mt-1 text-zinc-600 dark:text-zinc-400">
+          For an app-like, full-screen experience, add Mission to your
+          phone&rsquo;s home screen:
+        </p>
+        <ul className="mt-2 flex flex-col gap-1 text-zinc-600 dark:text-zinc-400">
+          <li>
+            <strong>iPhone (Safari):</strong> tap the Share button, then{" "}
+            <em>Add to Home Screen</em>.
+          </li>
+          <li>
+            <strong>Android (Chrome):</strong> tap the ⋮ menu, then{" "}
+            <em>Add to Home screen</em>.
+          </li>
+        </ul>
+      </section>
     </main>
   );
 }
