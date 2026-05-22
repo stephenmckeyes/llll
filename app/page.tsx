@@ -104,20 +104,6 @@ export default async function HomePage({
   } = await supabase.auth.getUser();
   if (!user) return <SignedOutLanding />;
 
-  // Onboarding gate: a signed-in user who hasn't completed onboarding
-  // (profiles.onboarded_at IS NULL) gets bounced to /onboarding before
-  // ever seeing the dashboard. We can't use requireOnboardedUser here
-  // because that helper redirects to /login on no-user, but this page
-  // wants to render <SignedOutLanding /> for that case.
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("onboarded_at")
-    .eq("id", user.id)
-    .maybeSingle();
-  if (!profile || !profile.onboarded_at) {
-    redirect("/onboarding");
-  }
-
   const params = await searchParams;
   const view = parseView(params.view);
   const date = parseDateParam(params.date);
@@ -148,26 +134,57 @@ export default async function HomePage({
     ref.setFullYear(ref.getFullYear() + 1);
     return format(ref, "yyyy-MM-dd");
   })();
-  await ensureInstancesBackfilled(supabase, user.id, backfillThrough);
+
+  // ---- PERF: one parallel batch instead of four serial round-trips ------
+  // The onboarding-gate profile check, the instance backfill, the tag
+  // palette fetch, and the incomplete-count query are all independent of
+  // each other — each needs only `user.id`, none needs another's result.
+  // Running them serially (the old code) stacked ~4 Supabase round-trips
+  // before the page could even start rendering; on a ~80-120ms mobile
+  // round-trip that's ~400ms of dead time. Promise.all collapses them to
+  // the latency of the single slowest query.
+  //
+  // Ordering safety: `ensureInstancesBackfilled` writes FUTURE instances
+  // while `fetchIncompleteInfo` reads PAST ones — disjoint rows, no race.
+  // The per-view data fetch (inside DayView / WeekView / GridView / etc.)
+  // still runs AFTER this batch resolves (it's in the returned JSX), so
+  // it always sees the freshly-backfilled rows.
+  const [profileResult, , tagFetch, incompleteInfo] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("onboarded_at")
+      .eq("id", user.id)
+      .maybeSingle(),
+    ensureInstancesBackfilled(supabase, user.id, backfillThrough),
+    Promise.all([
+      supabase.from("tags").select("id, name, color"),
+      supabase
+        .from("activities")
+        .select("default_skill_tags")
+        .is("archived_at", null),
+    ]),
+    fetchIncompleteInfo(supabase),
+  ]);
+
+  // Onboarding gate: a signed-in user who hasn't completed onboarding
+  // (profiles.onboarded_at IS NULL) gets bounced to /onboarding before
+  // ever seeing the dashboard. We check AFTER the parallel batch — an
+  // unboarded user "wastes" the other three queries, but that path only
+  // hits on the very first login and they're being redirected anyway.
+  // (We can't use requireOnboardedUser here because that helper
+  // redirects to /login on no-user, but this page renders
+  // <SignedOutLanding /> for that case instead.)
+  const profile = profileResult.data;
+  if (!profile || !profile.onboarded_at) {
+    redirect("/onboarding");
+  }
 
   // ---- Tag palette ------------------------------------------------------
   // Per-user name → color lookup. Threaded into every component that
-  // renders tag chips or dots (DayList, ActivityModal, GridTable,
-  // calendar week/month cells). Activities reference tags by name
-  // verbatim in `default_skill_tags[]`; this map is just the optional
-  // color metadata. Unknown names render gray via the fallback.
-  //
-  // We also tally per-tag usage (count of active activities using
-  // each tag) so the picker's "Most frequent" list can sort by
-  // popularity rather than creation order. One small extra query
-  // — usage is per-user and the working set is typically tiny.
-  const [{ data: tagRows }, { data: activityTagRows }] = await Promise.all([
-    supabase.from("tags").select("id, name, color"),
-    supabase
-      .from("activities")
-      .select("default_skill_tags")
-      .is("archived_at", null),
-  ]);
+  // renders tag chips or dots. `usageByName` tallies how many active
+  // activities use each tag so the picker's "Most frequent" list sorts
+  // by popularity. (Both queries already ran in the batch above.)
+  const [{ data: tagRows }, { data: activityTagRows }] = tagFetch;
   const usageByName = computeTagUsage(
     (activityTagRows ?? []) as Array<{ default_skill_tags: string[] | null }>
   );
@@ -175,18 +192,6 @@ export default async function HomePage({
     (tagRows ?? []) as Array<{ id: string; name: string; color: string }>,
     usageByName
   );
-
-  // ---- "Incomplete" surfacing -------------------------------------------
-  // Past-dated instances still in `pending` status (the user neither
-  // completed them nor marked them missed) feed the per-view "Incomplete"
-  // chip. We grab the OLDEST such date plus the total count in one round
-  // trip via an HEAD + ORDER ASC + LIMIT 1, since the same numbers feed
-  // every view.
-  //
-  // We exclude archived activities — they shouldn't keep nagging from a
-  // past life. RLS already scopes to the current user; the inner-join on
-  // `activities` filters by archived_at.
-  const incompleteInfo = await fetchIncompleteInfo(supabase);
 
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col bg-white p-6 dark:bg-zinc-950">
@@ -1335,21 +1340,6 @@ async function GridView({
     tags: string[] | null;
     completion_instances: Array<{ completion_id: string }> | null;
   };
-
-  const rhythmicInstances =
-    rhythmicIds.length === 0
-      ? []
-      : (((
-          await supabase
-            .from("activity_instances")
-            .select(
-              "id, activity_id, scheduled_for, status, tags, completion_instances ( completion_id )"
-            )
-            .in("activity_id", rhythmicIds)
-            .gte("scheduled_for", rangeStartStr)
-            .lte("scheduled_for", rangeEndStr)
-        ).data ?? []) as unknown as InstanceRow[]);
-
   // For singles we need the full instance + completion-count payload
   // so the expandable banner can open each into the same ActivityModal
   // that pending rows open. The fields mirror what InstanceRow shape
@@ -1361,11 +1351,41 @@ async function GridView({
     status: string;
     completion_instances: Array<{ completion_id: string }> | null;
   };
-  const singlesInstances =
-    singleIds.length === 0
-      ? []
-      : (((
-          await supabase
+  // Streak data: ALL past-or-today instances per rhythmic activity. No
+  // lookback cap — the streak walks back until it hits a missed/
+  // unlabeled or runs out of history. Sorted DESC so the walker stops
+  // at the first non-completed past period. (If this ever gets heavy
+  // for multi-year users, move to a per-activity `last_break_at`
+  // aggregate column updated on completion — noted in BACKLOG.)
+  type StreakInst = {
+    activity_id: string;
+    scheduled_for: string;
+    status: string;
+  };
+
+  // ---- PERF: all three instance fetches in ONE parallel batch -----------
+  // rhythmicInstances (the visible cells), singlesInstances (the
+  // one-time-events banner), and streakInstances (per-row streak
+  // counters) each depend ONLY on the activity-id lists computed above,
+  // never on one another. Running them serially stacked three Supabase
+  // round-trips on the heaviest view in the app; Promise.all collapses
+  // them to the latency of the single slowest query.
+  const [rhythmicInstances, singlesInstances, streakInstances] =
+    await Promise.all([
+      rhythmicIds.length === 0
+        ? Promise.resolve([] as InstanceRow[])
+        : supabase
+            .from("activity_instances")
+            .select(
+              "id, activity_id, scheduled_for, status, tags, completion_instances ( completion_id )"
+            )
+            .in("activity_id", rhythmicIds)
+            .gte("scheduled_for", rangeStartStr)
+            .lte("scheduled_for", rangeEndStr)
+            .then((r) => (r.data ?? []) as unknown as InstanceRow[]),
+      singleIds.length === 0
+        ? Promise.resolve([] as SingleInstanceRow[])
+        : supabase
             .from("activity_instances")
             .select(
               "id, activity_id, scheduled_for, status, tags, completion_instances ( completion_id )"
@@ -1374,7 +1394,17 @@ async function GridView({
             .gte("scheduled_for", rangeStartStr)
             .lte("scheduled_for", rangeEndStr)
             .order("scheduled_for", { ascending: true })
-        ).data ?? []) as unknown as SingleInstanceRow[]);
+            .then((r) => (r.data ?? []) as unknown as SingleInstanceRow[]),
+      rhythmicIds.length === 0
+        ? Promise.resolve([] as StreakInst[])
+        : supabase
+            .from("activity_instances")
+            .select("activity_id, scheduled_for, status")
+            .in("activity_id", rhythmicIds)
+            .lte("scheduled_for", TODAY_STR)
+            .order("scheduled_for", { ascending: false })
+            .then((r) => (r.data ?? []) as StreakInst[]),
+    ]);
 
   let singlesDone = 0;
   const singlesTotal = singlesInstances.length;
@@ -1407,30 +1437,7 @@ async function GridView({
     inner.set(i.scheduled_for, i);
   }
 
-  // ---- 5b. Streak data --------------------------------------------------
-  // For the per-row streak counter we need ALL past-or-today instances
-  // per activity. No lookback cap — the streak walks back until it hits
-  // a missed/unlabeled or runs out of history. For typical users this
-  // is a few thousand rows; for a heavy multi-year user it scales
-  // linearly with their history. If that ever becomes a perf problem
-  // we can move to a per-activity DB-side aggregate (a `last_break_at`
-  // column updated on completion).
-  //
-  // Sorted DESC by scheduled_for so the streak walker can stop at the
-  // first non-completed past period without scanning further history.
-  type StreakInst = { activity_id: string; scheduled_for: string; status: string };
-  const streakInstances =
-    rhythmicIds.length === 0
-      ? []
-      : (((
-          await supabase
-            .from("activity_instances")
-            .select("activity_id, scheduled_for, status")
-            .in("activity_id", rhythmicIds)
-            .lte("scheduled_for", TODAY_STR)
-            .order("scheduled_for", { ascending: false })
-        ).data ?? []) as StreakInst[]);
-
+  // ---- 5b. Streak index (data fetched in the parallel batch above) ------
   const streakByActivity = new Map<string, StreakInst[]>();
   for (const inst of streakInstances) {
     const arr = streakByActivity.get(inst.activity_id) ?? [];
