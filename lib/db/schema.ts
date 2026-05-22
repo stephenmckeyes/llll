@@ -26,6 +26,7 @@
 
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   date,
   index,
   jsonb,
@@ -285,5 +286,43 @@ export const tags = pgTable(
   (t) => [
     uniqueIndex("tags_user_name_idx").on(t.userId, t.name),
     index("tags_user_idx").on(t.userId),
+  ]
+);
+
+// ===========================================================================
+// activity_shares (migration 0011) — "owner shared activity A with friend B".
+// ---------------------------------------------------------------------------
+// One row per (activity, recipient). Sharing is always per-activity, per-
+// friend (nothing is public) and revocable. `share_progress` controls
+// whether the recipient also sees the owner's completion history, or just
+// the template/schedule. Friends read shared rhythms ONLY through the
+// SECURITY DEFINER get_shared_with_me() RPC — never by editing the owner's
+// rows. See lib/db/migrations/0011_activity_shares.sql.
+// ===========================================================================
+
+export const activityShares = pgTable(
+  "activity_shares",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    activityId: uuid("activity_id")
+      .notNull()
+      .references(() => activities.id, { onDelete: "cascade" }),
+    ownerId: uuid("owner_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    sharedWithId: uuid("shared_with_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    // true = recipient sees the owner's completion history; false = the
+    // template/schedule only. Default true so friends can follow along.
+    shareProgress: boolean("share_progress").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("activity_shares_unique").on(t.activityId, t.sharedWithId),
+    index("activity_shares_recipient_idx").on(t.sharedWithId),
+    index("activity_shares_owner_idx").on(t.ownerId),
   ]
 );

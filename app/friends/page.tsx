@@ -14,6 +14,7 @@ import { requireOnboardedUser } from "@/lib/auth/require-onboarded-user";
 import { PendingLink } from "@/app/_components/pending-link";
 
 import { FriendRowButton, FriendSearch } from "./friends-client";
+import { ShareRhythmsButton } from "./share-modal";
 
 function nameOf(e: SocialEntry): string {
   return e.otherDisplayName || (e.otherUsername ? `@${e.otherUsername}` : "Someone");
@@ -42,6 +43,13 @@ export default async function FriendsPage() {
         </PendingLink>
         <h1 className="text-3xl font-semibold tracking-tight">Friends</h1>
       </header>
+
+      <Link
+        href="/shared"
+        className="inline-flex w-fit items-center rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+      >
+        Shared with me →
+      </Link>
 
       {incomingCount > 0 && (
         <Link
@@ -89,11 +97,17 @@ export default async function FriendsPage() {
                     </p>
                   )}
                 </div>
-                <FriendRowButton
-                  friendshipId={f.friendshipId}
-                  label="Remove"
-                  confirmText={`Remove ${nameOf(f)} from your friends?`}
-                />
+                <div className="flex shrink-0 gap-2">
+                  <ShareRhythmsButton
+                    friendId={f.otherId}
+                    friendName={nameOf(f)}
+                  />
+                  <FriendRowButton
+                    friendshipId={f.friendshipId}
+                    label="Remove"
+                    confirmText={`Remove ${nameOf(f)} from your friends?`}
+                  />
+                </div>
               </li>
             ))}
           </ul>
