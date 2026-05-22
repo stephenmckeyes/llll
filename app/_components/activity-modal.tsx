@@ -21,7 +21,7 @@ import {
   archiveActivity,
   completeInstance,
   missInstance,
-  updateActivityFields,
+  updateInstanceFields,
   updateActivityRhythm,
   type UpdateActivityRhythmState,
   type UpdateActivityState,
@@ -33,17 +33,14 @@ import {
 } from "@/lib/domain/rhythm-summary";
 import type { TagMap } from "@/lib/domain/tags";
 
-import {
-  normalizeReminder,
-  type Reminder,
-} from "@/lib/validators/reminder";
+import { normalizeReminder } from "@/lib/validators/reminder";
 import { useBodyScrollLock } from "@/lib/ui/body-scroll-lock";
 import { dispatchInstanceResolved } from "@/lib/ui/instance-resolved-event";
 
 import { ActivityFormFields } from "./activity-form-fields";
 import { ActivityHistoryModal } from "./activity-history-modal";
 import type { DayInstance } from "./day-list";
-import { formatReminder, RemindersField } from "./reminders-field";
+import { formatReminder } from "./reminders-field";
 import { TagChipList } from "./tag-chip";
 import { TagPicker } from "./tag-picker";
 
@@ -78,6 +75,10 @@ export function ActivityModal({
   const [isPending, startTransition] = useTransition();
   const activity = instance.activity;
   const isSingle = activity.rhythm.type === "single";
+
+  // Effective per-occurrence values — an "Edit activity" override on
+  // THIS instance wins over the series (activity) value.
+  const effectiveName = instance.overrideName ?? activity.name;
 
   // Escape closes in any mode. Per user request, edit modes use the same
   // dismiss-on-outside-click as the details view; explicit Cancel buttons
@@ -172,7 +173,7 @@ export function ActivityModal({
               ? "Edit activity"
               : mode === "edit-rhythm"
                 ? "Edit rhythm"
-                : activity.name}
+                : effectiveName}
           </h2>
           <button
             type="button"
@@ -193,7 +194,7 @@ export function ActivityModal({
           />
         ) : mode === "edit-activity" ? (
           <EditActivityBody
-            activity={activity}
+            instance={instance}
             tagMap={tagMap}
             onDone={() => onClose()}
             onCancel={() => setMode("details")}
@@ -273,6 +274,9 @@ function DetailsBody({
   isSingle: boolean;
   tagMap: TagMap;
 }) {
+  // Effective per-occurrence values (override wins over series).
+  const effectiveNotes = instance.overrideNotes ?? activity.notes;
+  const effectivePriority = instance.overridePriority ?? activity.priority;
   return (
     <div className="flex-1 overflow-y-auto px-5 py-4">
       <dl className="flex flex-col gap-2 text-sm">
@@ -292,7 +296,7 @@ function DetailsBody({
           )}
         </DetailRow>
         <DetailRow label="Priority">
-          {PRIORITY_LABEL[activity.priority] ?? "Medium"}
+          {PRIORITY_LABEL[effectivePriority] ?? "Medium"}
         </DetailRow>
         {activity.rhythm.type === "frequency" && (
           <DetailRow label="Progress">
@@ -304,24 +308,24 @@ function DetailsBody({
         </DetailRow>
       </dl>
 
-      {activity.notes && (
+      {effectiveNotes && (
         <div className="mt-5">
           <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
             Notes
           </h3>
           <p className="whitespace-pre-wrap break-words text-sm">
-            {activity.notes}
+            {effectiveNotes}
           </p>
         </div>
       )}
 
-      {activity.default_skill_tags.length > 0 && (
+      {instance.tags.length > 0 && (
         <div className="mt-5">
           <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
             Tags
           </h3>
           <TagChipList
-            names={activity.default_skill_tags}
+            names={instance.tags}
             tags={tagMap}
             size="sm"
           />
@@ -347,34 +351,37 @@ function DetailsBody({
 }
 
 // ---------------------------------------------------------------------------
-// Edit-activity body — inline form for name / notes / tags / priority.
-// (Rhythm + dates + times come in the next dedicated turn.)
+// Edit-activity body — edits ONLY this single occurrence (per-instance
+// overrides for name / notes / tags / priority). It never touches the
+// parent activity or any other occurrence. Series-level changes (rhythm,
+// schedule dates, times, reminders) go through Edit Rhythm.
 // ---------------------------------------------------------------------------
 
 function EditActivityBody({
-  activity,
+  instance,
   tagMap,
   onDone,
   onCancel,
 }: {
-  activity: DayInstance["activity"];
+  instance: DayInstance;
   tagMap: TagMap;
   onDone: () => void;
   onCancel: () => void;
 }) {
-  // useActionState wants an action with shape (prev, formData) -> next state.
-  // Bind the activity id up front so the action receives it server-side.
-  const boundAction = updateActivityFields.bind(null, activity.id);
+  const activity = instance.activity;
+  // Bind to the INSTANCE id — updateInstanceFields writes per-occurrence
+  // override columns on activity_instances, not the shared activity row.
+  const boundAction = updateInstanceFields.bind(null, instance.id);
   const [state, formAction, isPending] = useActionState<
     UpdateActivityState,
     FormData
   >(boundAction, null);
 
-  const [priority, setPriority] = useState<number>(activity.priority);
-  const [reminders, setReminders] = useState<Reminder[]>(
-    activity.reminders.map(normalizeReminder)
+  // Prefill with this occurrence's EFFECTIVE values (its override if it
+  // has one, else the series value).
+  const [priority, setPriority] = useState<number>(
+    instance.overridePriority ?? activity.priority
   );
-  const isSingle = activity.rhythm.type === "single";
 
   // If the action returns ok, close the modal so the user sees the refreshed
   // data when they reopen it.
@@ -403,19 +410,11 @@ function EditActivityBody({
       <div className="flex-1 overflow-y-auto px-5 py-4">
         <input type="hidden" name="priority" value={priority} />
 
-        {/* Scope warning. The edit fields here change activity-level
-            metadata (name / notes / tags / priority / date range), not
-            the rhythm. Schedule changes (when/how often it repeats)
-            go through Edit Rhythm so the future instances get
-            regenerated cleanly. Surface this up-front so the user
-            doesn't expect "edit activity" to retroactively reshuffle
-            their calendar. */}
+        {/* Scope notice — these edits are per-occurrence only. */}
         <p className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-          <strong>Heads up:</strong> these edits apply to this activity
-          itself (name, notes, tags, dates, priority, reminders). To
-          change the schedule (when / how often it repeats), use{" "}
-          <em>Edit Rhythm</em> instead — that regenerates future
-          occurrences.
+          <strong>Notice:</strong> These edits apply only to this single
+          activity. To change future activities within this rhythm, use{" "}
+          <em>Edit Rhythm</em>.
         </p>
 
         <label className="block">
@@ -425,7 +424,7 @@ function EditActivityBody({
             name="name"
             required
             maxLength={120}
-            defaultValue={activity.name}
+            defaultValue={instance.overrideName ?? activity.name}
             className={inputClasses}
           />
         </label>
@@ -438,57 +437,20 @@ function EditActivityBody({
             name="notes"
             rows={3}
             maxLength={500}
-            defaultValue={activity.notes ?? ""}
+            defaultValue={instance.overrideNotes ?? activity.notes ?? ""}
             className={`${inputClasses} resize-none`}
           />
         </label>
 
         <div className="mt-4">
           <p className="mb-1 text-sm font-medium">Tags</p>
-          {/* Same TagPicker as the create form. Hidden inputs emit
-              `name="tag"` per selected — the updateActivityFields
-              action reads them via formData.getAll("tag"). */}
+          {/* Tags are already per-instance (snapshotted). Editing here
+              writes this occurrence's `tags` only. */}
           <TagPicker
-            initialSelected={activity.default_skill_tags}
+            initialSelected={instance.tags}
             initialTagMap={tagMap}
           />
         </div>
-
-        {/* Dates. Editing these does NOT change the rhythm itself — for that
-            use Edit rhythm. Pending future instances outside the new range
-            are cleaned up server-side. */}
-        <fieldset className="mt-4">
-          <legend className="text-sm font-medium">Schedule</legend>
-          <div className="mt-1 grid grid-cols-2 gap-3">
-            <label className="block">
-              <span className="text-xs font-medium text-zinc-500">
-                Start date
-              </span>
-              <input
-                type="date"
-                name="startDate"
-                required
-                defaultValue={activity.start_date}
-                className={`${inputClasses} mt-1`}
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs font-medium text-zinc-500">
-                End date{" "}
-                <span className="font-normal">
-                  {isSingle ? "(n/a for Once)" : "(optional)"}
-                </span>
-              </span>
-              <input
-                type="date"
-                name="endDate"
-                defaultValue={activity.end_date ?? ""}
-                disabled={isSingle}
-                className={`${inputClasses} mt-1`}
-              />
-            </label>
-          </div>
-        </fieldset>
 
         <fieldset className="mt-4">
           <legend className="text-sm font-medium">Priority</legend>
@@ -509,18 +471,6 @@ function EditActivityBody({
             ))}
           </div>
         </fieldset>
-
-        <div className="mt-4">
-          <RemindersField
-            reminders={reminders}
-            setReminders={setReminders}
-          />
-        </div>
-
-        {/* Hidden inputs to surface the controlled reminders state in
-            FormData (the visible inputs inside RemindersField already do
-            this; this is belt-and-suspenders in case React strips the
-            uncontrolled inputs during fast re-renders). */}
 
         {state && "error" in state && (
           <p

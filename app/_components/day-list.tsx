@@ -49,6 +49,13 @@ export type DayInstance = {
    *  edited via Edit Activity. Edit Rhythm regenerates pending future
    *  instances and they pick up the fresh snapshot. */
   tags: string[];
+  /** Per-occurrence overrides set by "Edit activity" (NULL = inherit
+   *  from the parent activity). Display uses `overrideX ?? activity.X`;
+   *  "Edit rhythm" edits the series and ignores these. Editing one
+   *  occurrence never touches any other occurrence. */
+  overrideName: string | null;
+  overrideNotes: string | null;
+  overridePriority: number | null;
   activity: {
     id: string;
     name: string;

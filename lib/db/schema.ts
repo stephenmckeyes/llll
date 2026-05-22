@@ -155,6 +155,12 @@ export const activityInstances = pgTable(
       .array()
       .notNull()
       .default(sql`'{}'::text[]`),
+    // Per-occurrence overrides (NULL = inherit from the parent activity).
+    // Set by "Edit activity", which edits ONLY this occurrence. "Edit
+    // rhythm" edits the series (the activities row) instead.
+    name: text("name"),
+    notes: text("notes"),
+    priority: smallint("priority"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

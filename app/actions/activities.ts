@@ -718,6 +718,81 @@ export async function updateActivityFields(
   return { ok: true };
 }
 
+// ---------------------------------------------------------------------------
+// updateInstanceFields — "Edit activity" for ONE occurrence.
+//
+// Writes per-occurrence OVERRIDE columns on the activity_instances row
+// (name / notes / priority / tags) and NEVER touches the parent activity
+// or any other occurrence. This is the fix for "editing an activity's
+// notes changed every future occurrence": those fields used to live only
+// on the shared activity row. The app reads
+// `coalesce(instance.override, activity.value)` for display, so an
+// occurrence with no override still shows the series value.
+//
+// Series-wide edits (rhythm, schedule dates, times, reminders) are a
+// separate path — updateActivityRhythm, reached via "Edit rhythm".
+// ---------------------------------------------------------------------------
+
+const instanceEditSchema = z.object({
+  name: z.string().trim().min(1, "Name can't be empty.").max(120),
+  notes: z.string().trim().max(500),
+  priority: z.number().int().min(1).max(3),
+});
+
+export async function updateInstanceFields(
+  instanceId: string,
+  _prev: UpdateActivityState,
+  formData: FormData
+): Promise<UpdateActivityState> {
+  const parsed = instanceEditSchema.safeParse({
+    name: formData.get("name"),
+    notes: formData.get("notes") ?? "",
+    priority: Number(formData.get("priority") ?? 2),
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
+  }
+
+  // Tags come from the TagPicker (one hidden `<input name="tag">` per
+  // selected). Deduplicate to be safe.
+  const tags = Array.from(
+    new Set(
+      formData
+        .getAll("tag")
+        .map(String)
+        .map((s) => s.trim())
+        .filter(Boolean)
+    )
+  );
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  // Per-occurrence override write — ONLY this instance row. RLS scopes
+  // it to the user via the activity-FK policy (same path completeInstance
+  // / missInstance already update through).
+  const { error } = await supabase
+    .from("activity_instances")
+    .update({
+      name: parsed.data.name,
+      notes: parsed.data.notes.length === 0 ? null : parsed.data.notes,
+      priority: parsed.data.priority,
+      tags,
+    })
+    .eq("id", instanceId);
+
+  if (error) return { error: error.message };
+
+  // No backfill invalidation — a per-occurrence edit doesn't change
+  // future instance generation. Revalidate so the day list reflects the
+  // override on the next render.
+  revalidatePath("/");
+  return { ok: true };
+}
+
 export async function unarchiveActivity(activityId: string) {
   const supabase = await createClient();
   const {

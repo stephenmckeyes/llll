@@ -72,6 +72,12 @@ export function InstanceRow({
   const isFrequency = activity.rhythm.type === "frequency";
   const scheduledTimes = activity.scheduled_times ?? [];
 
+  // Effective per-occurrence values: an "Edit activity" override on THIS
+  // instance wins; otherwise inherit the series (activity) value.
+  const effectiveName = instance.overrideName ?? activity.name;
+  const effectiveNotes = instance.overrideNotes ?? activity.notes;
+  const effectivePriority = instance.overridePriority ?? activity.priority;
+
   // Friendly category text ("Once", "Daily", "Mon · Wed · Fri", etc.)
   // shown right above the activity name so the user sees what kind of
   // rhythm produced this row without opening the modal.
@@ -202,9 +208,9 @@ export function InstanceRow({
       >
         <span
           aria-hidden
-          title={`${PRIORITY_LABEL[activity.priority] ?? "Medium"} priority`}
+          title={`${PRIORITY_LABEL[effectivePriority] ?? "Medium"} priority`}
           className={`mt-1.5 inline-block h-2 w-2 shrink-0 rounded-full ${
-            PRIORITY_DOT_CLASS[activity.priority] ?? PRIORITY_DOT_CLASS[2]
+            PRIORITY_DOT_CLASS[effectivePriority] ?? PRIORITY_DOT_CLASS[2]
           }`}
         />
         <div className="min-w-0 flex-1">
@@ -215,10 +221,10 @@ export function InstanceRow({
           <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
             {rhythmCategory}
           </p>
-          <p className="truncate font-medium">{activity.name}</p>
-          {activity.notes && (
+          <p className="truncate font-medium">{effectiveName}</p>
+          {effectiveNotes && (
             <p className="truncate text-sm text-zinc-500 dark:text-zinc-500">
-              {activity.notes}
+              {effectiveNotes}
             </p>
           )}
           {activity.scheduled_times.length > 0 && (

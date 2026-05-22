@@ -672,6 +672,9 @@ async function DayView({
       scheduled_for,
       status,
       tags,
+      name,
+      notes,
+      priority,
       activities (
         id,
         name,
@@ -699,6 +702,11 @@ async function DayView({
     scheduled_for: string;
     status: string;
     tags: string[] | null;
+    // Per-occurrence overrides (instance's own columns, NOT the joined
+    // activity's). NULL = inherit from the activity.
+    name: string | null;
+    notes: string | null;
+    priority: number | null;
     activities: DayInstance["activity"] | null;
     completion_instances: Array<{ completion_id: string }> | null;
   };
@@ -715,6 +723,9 @@ async function DayView({
     id: r.id,
     scheduled_for: r.scheduled_for,
     tags: r.tags ?? [],
+    overrideName: r.name ?? null,
+    overrideNotes: r.notes ?? null,
+    overridePriority: r.priority ?? null,
     activity: r.activities,
     completionCount: r.completion_instances?.length ?? 0,
   });
@@ -1386,6 +1397,12 @@ async function GridView({
     scheduled_for: string;
     status: string;
     tags: string[] | null;
+    // Per-occurrence overrides — threaded through toDayInstance so the
+    // ActivityModal opened from a grid cell shows/edits this
+    // occurrence's own name/notes/priority.
+    name: string | null;
+    notes: string | null;
+    priority: number | null;
     completion_instances: Array<{ completion_id: string }> | null;
   };
   // For singles we need the full instance + completion-count payload
@@ -1397,6 +1414,10 @@ async function GridView({
     activity_id: string;
     scheduled_for: string;
     status: string;
+    tags: string[] | null;
+    name: string | null;
+    notes: string | null;
+    priority: number | null;
     completion_instances: Array<{ completion_id: string }> | null;
   };
   // Streak data: ALL past-or-today instances per rhythmic activity. No
@@ -1425,7 +1446,7 @@ async function GridView({
         : supabase
             .from("activity_instances")
             .select(
-              "id, activity_id, scheduled_for, status, tags, completion_instances ( completion_id )"
+              "id, activity_id, scheduled_for, status, tags, name, notes, priority, completion_instances ( completion_id )"
             )
             .in("activity_id", rhythmicIds)
             .gte("scheduled_for", rangeStartStr)
@@ -1436,7 +1457,7 @@ async function GridView({
         : supabase
             .from("activity_instances")
             .select(
-              "id, activity_id, scheduled_for, status, tags, completion_instances ( completion_id )"
+              "id, activity_id, scheduled_for, status, tags, name, notes, priority, completion_instances ( completion_id )"
             )
             .in("activity_id", singleIds)
             .gte("scheduled_for", rangeStartStr)
@@ -1741,6 +1762,11 @@ function toDayInstance(
     id: string;
     scheduled_for: string;
     tags?: string[] | null;
+    // Per-occurrence overrides (instance columns). Optional so callers
+    // that don't select them still type-check; absent → inherit.
+    name?: string | null;
+    notes?: string | null;
+    priority?: number | null;
     completion_instances: Array<{ completion_id: string }> | null;
   },
   act: {
@@ -1765,6 +1791,9 @@ function toDayInstance(
     // to the activity's CURRENT tags — still reasonable since we
     // can't know what they were historically.
     tags: inst.tags ?? act.default_skill_tags ?? [],
+    overrideName: inst.name ?? null,
+    overrideNotes: inst.notes ?? null,
+    overridePriority: inst.priority ?? null,
     completionCount: inst.completion_instances?.length ?? 0,
     activity: {
       id: act.id,
