@@ -722,6 +722,10 @@ async function DayView({
   const toInstance = (r: RawInstance & { activities: DayInstance["activity"] }): DayInstance => ({
     id: r.id,
     scheduled_for: r.scheduled_for,
+    status:
+      r.status === "completed" || r.status === "missed"
+        ? r.status
+        : "pending",
     tags: r.tags ?? [],
     overrideName: r.name ?? null,
     overrideNotes: r.notes ?? null,
@@ -1761,6 +1765,7 @@ function toDayInstance(
   inst: {
     id: string;
     scheduled_for: string;
+    status?: string | null;
     tags?: string[] | null;
     // Per-occurrence overrides (instance columns). Optional so callers
     // that don't select them still type-check; absent → inherit.
@@ -1790,6 +1795,10 @@ function toDayInstance(
     // column (legacy data, or query that didn't select it), fall back
     // to the activity's CURRENT tags — still reasonable since we
     // can't know what they were historically.
+    status:
+      inst.status === "completed" || inst.status === "missed"
+        ? inst.status
+        : "pending",
     tags: inst.tags ?? act.default_skill_tags ?? [],
     overrideName: inst.name ?? null,
     overrideNotes: inst.notes ?? null,

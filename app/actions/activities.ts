@@ -884,6 +884,47 @@ export async function skipInstance(instanceId: string) {
 }
 
 // ---------------------------------------------------------------------------
+// unlabelInstance — revert a completed/missed occurrence back to pending.
+// For accidental taps: from the Completed/Missed dropdown the modal offers
+// "Unlabel" in place of the verdict the row already carries.
+//
+// If it was completed, we also remove the linked completion(s) so the
+// occurrence truly resets (X/Y count back to 0). Missed rows have no
+// completions to clean up.
+// ---------------------------------------------------------------------------
+
+export async function unlabelInstance(instanceId: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: links } = await supabase
+    .from("completion_instances")
+    .select("completion_id")
+    .eq("instance_id", instanceId);
+  const completionIds = Array.from(
+    new Set(((links ?? []) as Array<{ completion_id: string }>).map(
+      (l) => l.completion_id
+    ))
+  );
+  if (completionIds.length > 0) {
+    // Deleting the completion cascades to its completion_instances rows.
+    await supabase.from("completions").delete().in("id", completionIds);
+  }
+
+  await supabase
+    .from("activity_instances")
+    .update({ status: "pending" })
+    .eq("id", instanceId);
+
+  // Per-occurrence change, no future-generation impact → no backfill
+  // invalidation. The modal calls router.refresh() so the day view moves
+  // the row from the Completed/Missed dropdown back to the active list.
+}
+
+// ---------------------------------------------------------------------------
 // deleteActivity — PERMANENT hard delete. Cascading FKs wipe instances and
 // linked completions. Only allowed for already-archived rows; the UI in
 // /activities exposes this only in the Archived section, by design.

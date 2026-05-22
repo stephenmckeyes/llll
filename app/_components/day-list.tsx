@@ -43,6 +43,10 @@ const TOTAL_DAYS = DAY_VIEW_BACK + 1 + DAY_VIEW_AHEAD;
 export type DayInstance = {
   id: string;
   scheduled_for: string;
+  /** Current verdict. Drives the modal's action bar — a completed or
+   *  missed occurrence offers "Unlabel" (revert to pending) in place of
+   *  the verdict it already carries. */
+  status: "pending" | "completed" | "missed";
   completionCount: number;
   /** Tag NAMES snapshotted at instance generation. Per-instance —
    *  doesn't change when the activity's `default_skill_tags` is

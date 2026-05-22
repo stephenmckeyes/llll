@@ -21,6 +21,7 @@ import {
   archiveActivity,
   completeInstance,
   missInstance,
+  unlabelInstance,
   updateInstanceFields,
   updateActivityRhythm,
   type UpdateActivityRhythmState,
@@ -140,6 +141,15 @@ export function ActivityModal({
     });
   }
 
+  function handleUnlabel() {
+    // Revert an accidental complete/missed back to pending.
+    onClose();
+    startTransition(async () => {
+      await unlabelInstance(instance.id);
+      router.refresh();
+    });
+  }
+
   function handleDropAndSave() {
     const ok = window.confirm(
       "Drop this activity and save its history? You can recover it from Manage → Archived."
@@ -210,16 +220,37 @@ export function ActivityModal({
 
         {mode === "details" && (
           <div className="flex flex-wrap gap-2 border-t border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
-            <Primary
-              label="Complete"
-              disabled={isPending}
-              onClick={handleComplete}
-            />
-            <Secondary
-              label="Missed"
-              disabled={isPending}
-              onClick={handleMissed}
-            />
+            {/* Verdict buttons are status-aware: a row already marked
+                completed/missed swaps that verdict's button for
+                "Unlabel" (revert to pending) so an accidental tap is
+                easy to undo, while still letting you switch to the other
+                verdict. */}
+            {instance.status === "completed" ? (
+              <Secondary
+                label="Unlabel"
+                disabled={isPending}
+                onClick={handleUnlabel}
+              />
+            ) : (
+              <Primary
+                label="Complete"
+                disabled={isPending}
+                onClick={handleComplete}
+              />
+            )}
+            {instance.status === "missed" ? (
+              <Secondary
+                label="Unlabel"
+                disabled={isPending}
+                onClick={handleUnlabel}
+              />
+            ) : (
+              <Secondary
+                label="Missed"
+                disabled={isPending}
+                onClick={handleMissed}
+              />
+            )}
             <Secondary
               label="Edit activity"
               disabled={isPending}
