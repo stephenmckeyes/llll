@@ -150,6 +150,7 @@ export function GridTable({
   singles,
   userId,
   tagMap,
+  readOnly = false,
 }: {
   mode: GridMode;
   rows: GridRow[];
@@ -164,8 +165,15 @@ export function GridTable({
   /** Name → color lookup; threaded into the per-row Tags popover and
    *  the ActivityModal opened from a clicked cell. */
   tagMap: TagMap;
+  /** Read-only mode (friend view). Cells/singles don't open the owner's
+   *  mutation modal — clicks are inert. Sort + row hide still work since
+   *  they're view-only. Default false keeps the dashboard unchanged. */
+  readOnly?: boolean;
 }) {
   const [openInstance, setOpenInstance] = useState<DayInstance | null>(null);
+  // In read-only mode opening the modal is a no-op, so cell clicks never
+  // surface the (owner-only) Complete/Edit/Drop actions.
+  const handleOpenInstance = readOnly ? () => {} : setOpenInstance;
   const { off, toggle } = useRowOffSet(userId);
 
   // ---- Click-to-sort state ----------------------------------------------
@@ -322,7 +330,7 @@ export function GridTable({
           todayStr={todayStr}
           off={off}
           onToggle={toggle}
-          onOpenInstance={setOpenInstance}
+          onOpenInstance={handleOpenInstance}
           tagMap={tagMap}
           headerControls={headerControls}
         />
@@ -333,7 +341,7 @@ export function GridTable({
           todayStr={todayStr}
           off={off}
           onToggle={toggle}
-          onOpenInstance={setOpenInstance}
+          onOpenInstance={handleOpenInstance}
           tagMap={tagMap}
           headerControls={headerControls}
         />
@@ -344,7 +352,7 @@ export function GridTable({
           todayStr={todayStr}
           off={off}
           onToggle={toggle}
-          onOpenInstance={setOpenInstance}
+          onOpenInstance={handleOpenInstance}
           tagMap={tagMap}
           headerControls={headerControls}
         />
@@ -355,7 +363,7 @@ export function GridTable({
         total={singlesTotal}
         rangeLabel={rangeLabel}
         singles={singles}
-        onOpenInstance={setOpenInstance}
+        onOpenInstance={handleOpenInstance}
       />
 
       <GridLegend />

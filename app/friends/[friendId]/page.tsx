@@ -105,6 +105,7 @@ export default async function FriendViewPage({
       </header>
 
       <FriendView
+        friendId={friendId}
         friendName={friendName}
         shares={shares}
         instances={instances}
