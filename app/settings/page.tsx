@@ -10,7 +10,7 @@
 // thing the user sees).
 // ---------------------------------------------------------------------------
 
-import Link from "next/link";
+import { PendingLink } from "@/app/_components/pending-link";
 
 import { signOut } from "@/app/actions/auth";
 import { requireOnboardedUser } from "@/lib/auth/require-onboarded-user";
@@ -53,12 +53,12 @@ export default async function SettingsPage() {
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-8 bg-white p-6 dark:bg-zinc-950">
       <header>
-        <Link
+        <PendingLink
           href="/"
-          className="text-sm text-zinc-500 underline-offset-2 hover:underline"
+          className="inline-flex items-center text-sm text-zinc-500 underline-offset-2 hover:underline"
         >
           ← Mission
-        </Link>
+        </PendingLink>
         <h1 className="mt-1 text-3xl font-semibold tracking-tight">
           Settings
         </h1>
@@ -67,7 +67,7 @@ export default async function SettingsPage() {
       <ul className="flex flex-col gap-2">
         {TILES.map((t) => (
           <li key={t.href}>
-            <Link
+            <PendingLink
               href={t.href}
               className="flex items-center justify-between gap-3 rounded-md border border-zinc-200 bg-white px-4 py-3 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900"
             >
@@ -83,7 +83,7 @@ export default async function SettingsPage() {
               >
                 ›
               </span>
-            </Link>
+            </PendingLink>
           </li>
         ))}
       </ul>

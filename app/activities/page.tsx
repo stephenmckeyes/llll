@@ -19,7 +19,7 @@
 // refreshes preserve state.
 // ---------------------------------------------------------------------------
 
-import Link from "next/link";
+import { PendingLink } from "@/app/_components/pending-link";
 
 import { requireOnboardedUser } from "@/lib/auth/require-onboarded-user";
 import {
@@ -116,12 +116,12 @@ export default async function ActivitiesPage({
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-6 p-6">
       <header>
-        <Link
+        <PendingLink
           href="/"
-          className="text-sm text-zinc-500 underline-offset-2 hover:underline"
+          className="inline-flex items-center text-sm text-zinc-500 underline-offset-2 hover:underline"
         >
           ← Mission
-        </Link>
+        </PendingLink>
         <h1 className="mt-1 text-3xl font-semibold tracking-tight">
           Archive
         </h1>

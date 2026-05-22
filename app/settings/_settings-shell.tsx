@@ -12,7 +12,7 @@
 // arrow.
 // ---------------------------------------------------------------------------
 
-import Link from "next/link";
+import { PendingLink } from "@/app/_components/pending-link";
 
 export function SettingsShell({
   title,
@@ -24,12 +24,12 @@ export function SettingsShell({
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-6 bg-white p-6 dark:bg-zinc-950">
       <header className="flex flex-col gap-1">
-        <Link
+        <PendingLink
           href="/settings"
-          className="text-sm text-zinc-500 underline-offset-2 hover:underline"
+          className="inline-flex items-center text-sm text-zinc-500 underline-offset-2 hover:underline"
         >
           ← Settings
-        </Link>
+        </PendingLink>
         <h1 className="text-3xl font-semibold tracking-tight">{title}</h1>
       </header>
       {children}

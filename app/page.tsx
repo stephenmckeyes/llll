@@ -44,6 +44,7 @@ import {
 } from "./_components/day-list";
 import { GridSection } from "./_components/grid-section";
 import { type IncompleteInfo } from "./_components/incomplete-button";
+import { PendingLink } from "./_components/pending-link";
 import { TagDotRow } from "./_components/tag-chip";
 import { TabPending } from "./_components/tab-pending";
 import { TimeChip } from "./_components/time-chip";
@@ -242,28 +243,28 @@ export default async function HomePage({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Link
+            <PendingLink
               href="/activities/new"
-              className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
+              className="inline-flex items-center rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
             >
               + Add Activity
-            </Link>
-            <Link
+            </PendingLink>
+            <PendingLink
               href="/activities"
-              className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+              className="inline-flex items-center rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
             >
               Archive
-            </Link>
+            </PendingLink>
             {/* Per user spec: Settings replaces Sign out at the top.
                 The sign-out button now lives at the bottom of /settings,
                 so it's not the first thing the user sees but is still
                 one click away. */}
-            <Link
+            <PendingLink
               href="/settings"
-              className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+              className="inline-flex items-center rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
             >
               Settings
-            </Link>
+            </PendingLink>
           </div>
         </div>
 
