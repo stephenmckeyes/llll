@@ -1,0 +1,73 @@
+// ---------------------------------------------------------------------------
+// SectionTabs — the top-level section switcher shared by the dashboard
+// (Calendar / Grid live at "/") and the Total View page ("/activities").
+//
+// Three peers, in line:
+//   - Calendar   → /?view=day
+//   - Grid       → /?view=grid&range=week
+//   - Total View → /activities  (every activity, grouped + filterable)
+//
+// Kept in its own file so the three tabs render identically on both
+// surfaces. The per-section SUB-tabs (Calendar's day/week/month/year,
+// Grid's week/month/total/custom) still live in the dashboard's
+// ViewSwitcher — Total View has none.
+// ---------------------------------------------------------------------------
+
+import Link from "next/link";
+
+import { TabPending } from "./tab-pending";
+
+export type SectionKind = "calendar" | "grid" | "total";
+
+export function SectionTabs({
+  active,
+  date,
+}: {
+  active: SectionKind;
+  /** YYYY-MM-DD carried into the Calendar/Grid links so hopping sections
+   *  keeps the user roughly where they were. */
+  date: string;
+}) {
+  return (
+    <nav
+      className="flex gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800"
+      aria-label="Section"
+    >
+      <SectionTab
+        label="Calendar"
+        href={`/?view=day&date=${date}`}
+        active={active === "calendar"}
+      />
+      <SectionTab
+        label="Grid"
+        href={`/?view=grid&range=week&date=${date}`}
+        active={active === "grid"}
+      />
+      <SectionTab label="Total View" href="/activities" active={active === "total"} />
+    </nav>
+  );
+}
+
+function SectionTab({
+  label,
+  href,
+  active,
+}: {
+  label: string;
+  href: string;
+  active: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      className={`flex flex-1 items-center justify-center rounded px-3 py-1 text-center text-sm font-semibold transition-colors ${
+        active
+          ? "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
+          : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
+      }`}
+    >
+      {label}
+      <TabPending />
+    </Link>
+  );
+}

@@ -45,6 +45,7 @@ import {
 import { GridSection } from "./_components/grid-section";
 import { type IncompleteInfo } from "./_components/incomplete-button";
 import { PendingLink } from "./_components/pending-link";
+import { SectionTabs } from "./_components/section-tabs";
 import { TagDotRow } from "./_components/tag-chip";
 import { TabPending } from "./_components/tab-pending";
 import { TimeChip } from "./_components/time-chip";
@@ -262,12 +263,9 @@ export default async function HomePage({
             >
               Notifications
             </PendingLink>
-            <PendingLink
-              href="/activities"
-              className="inline-flex items-center rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-            >
-              Archive
-            </PendingLink>
+            {/* "Total View" (the old Archive page, now showing every
+                activity) lives as a third section tab in line with
+                Calendar / Grid — see SectionTabs. */}
             {/* Per user spec: Settings replaces Sign out at the top.
                 The sign-out button now lives at the bottom of /settings,
                 so it's not the first thing the user sees but is still
@@ -509,12 +507,6 @@ function ViewSwitcher({
   range: GridRange;
   date: string;
 }) {
-  // Clicking the "Calendar" / "Grid" top tabs jumps to a sensible
-  // default sub-tab (Day for Calendar, Week for Grid) when crossing
-  // sections. Within a section the user can hop sub-tabs freely.
-  const calendarHref = `/?view=day&date=${date}`;
-  const gridHref = `/?view=grid&range=week&date=${date}`;
-
   return (
     // Tighter vertical rhythm: gap-2 → gap-1 between the section row
     // and the sub-tab row, and the wrapping nav uses p-0.5 instead of
@@ -522,22 +514,9 @@ function ViewSwitcher({
     // visible on shorter laptop windows even with the filter button
     // now living inside the navigator.
     <div className="flex flex-col gap-1">
-      {/* Row 1: section tabs */}
-      <nav
-        className="flex gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800"
-        aria-label="Section"
-      >
-        <SectionTab
-          label="Calendar"
-          href={calendarHref}
-          active={section === "calendar"}
-        />
-        <SectionTab
-          label="Grid"
-          href={gridHref}
-          active={section === "grid"}
-        />
-      </nav>
+      {/* Row 1: section tabs (Calendar / Grid / Total View) — shared with
+          the Total View page via SectionTabs. */}
+      <SectionTabs active={section} date={date} />
 
       {/* Row 2: sub-tabs (Calendar's day/week/month/year, or Grid's
           week/month/total ranges). */}
@@ -590,31 +569,6 @@ function StickyNav({ children }: { children: React.ReactNode }) {
     <div className="sticky top-[5rem] z-20 -mx-6 bg-white px-6 py-2 dark:bg-zinc-950">
       {children}
     </div>
-  );
-}
-
-function SectionTab({
-  label,
-  href,
-  active,
-}: {
-  label: string;
-  href: string;
-  active: boolean;
-}) {
-  return (
-    <Link
-      href={href}
-      // py tightened from py-1.5 → py-1 to keep the header compact.
-      className={`flex flex-1 items-center justify-center rounded px-3 py-1 text-center text-sm font-semibold transition-colors ${
-        active
-          ? "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
-          : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
-      }`}
-    >
-      {label}
-      <TabPending />
-    </Link>
   );
 }
 

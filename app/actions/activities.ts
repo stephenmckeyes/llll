@@ -269,6 +269,140 @@ export async function createActivity(
 }
 
 // ---------------------------------------------------------------------------
+// createDraftActivity — "Save for later". Stashes an activity in the
+// archive WITHOUT putting it on any calendar. Because it generates no
+// instances, it can be saved with incomplete details: only a NAME is
+// required. The rest is best-effort (an invalid rhythm falls back to
+// "Once", malformed reminders are dropped). The user finishes + activates
+// it later via Unarchive, which re-validates everything through the normal
+// edit form before it goes live. No backfill impact (archived rows are
+// never generated), so we don't touch the backfill cache.
+// ---------------------------------------------------------------------------
+
+export async function createDraftActivity(
+  _prev: ActivityFormState,
+  formData: FormData
+): Promise<ActivityFormState> {
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) {
+    return { error: "Give your draft a name so you can find it later." };
+  }
+  if (name.length > 120) return { error: "Name is too long (max 120)." };
+
+  const notesRaw = String(formData.get("notes") ?? "").trim();
+  const notes = notesRaw.length === 0 ? null : notesRaw;
+
+  const tags = Array.from(
+    new Set(
+      formData
+        .getAll("tag")
+        .map(String)
+        .map((s) => s.trim())
+        .filter(Boolean)
+    )
+  );
+
+  const priority = clampInt(formData.get("priority"), 1, 3, 2);
+
+  const scheduledTimes = formData
+    .getAll("scheduledTime")
+    .map(String)
+    .filter((s) => /^\d{2}:\d{2}$/.test(s));
+
+  // Best-effort rhythm — a draft doesn't have to be a valid schedule yet.
+  const rhythm = buildDraftRhythm(formData, scheduledTimes);
+
+  // Dates are optional for a draft. Default start to today; pin a single's
+  // end to its start so the row stays coherent if unarchived unchanged.
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const startDate = parseDateField(formData.get("startDate")) ?? todayStr;
+  const endDate =
+    rhythm.type === "single"
+      ? startDate
+      : parseDateField(formData.get("endDate"));
+
+  // Reminders best-effort: keep if valid, else drop — a draft must never
+  // fail to save over a malformed reminder.
+  const remindersParsed = remindersSchema.safeParse(
+    parseRemindersFromForm(formData)
+  );
+  const reminders = remindersParsed.success ? remindersParsed.data : [];
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase.from("activities").insert({
+    user_id: user.id,
+    name,
+    notes,
+    rhythm,
+    start_date: startDate,
+    end_date: endDate,
+    priority,
+    default_skill_tags: tags,
+    scheduled_times: scheduledTimes,
+    reminders,
+    // The whole point: parked in the archive, generating no instances.
+    archived_at: new Date().toISOString(),
+  });
+  if (error) return { error: error.message };
+
+  revalidatePath("/activities");
+  redirect("/activities");
+}
+
+// Build a best-effort Rhythm from the form for a draft. Mirrors the rhythm
+// switch in createActivity, but never throws: anything that doesn't parse
+// degrades to a plain "Once" so the draft always saves.
+function buildDraftRhythm(
+  formData: FormData,
+  scheduledTimes: string[]
+): Rhythm {
+  const rhythmType = String(formData.get("rhythmType") ?? "single");
+  let candidate: unknown;
+  switch (rhythmType) {
+    case "daily":
+      candidate =
+        scheduledTimes.length > 1
+          ? {
+              type: "frequency",
+              count: scheduledTimes.length,
+              perCount: 1,
+              perUnit: "days",
+            }
+          : { type: "daily" };
+      break;
+    case "weekdays":
+      candidate = {
+        type: "weekdays",
+        days: formData.getAll("weekday").map(String),
+      };
+      break;
+    case "interval":
+      candidate = {
+        type: "interval",
+        days: clampInt(formData.get("intervalDays"), 1, 365, 2),
+      };
+      break;
+    case "frequency":
+      candidate = {
+        type: "frequency",
+        count: clampInt(formData.get("frequencyCount"), 1, 99, 3),
+        perCount: clampInt(formData.get("frequencyPerCount"), 1, 99, 1),
+        perUnit: String(formData.get("frequencyPerUnit") ?? "weeks"),
+      };
+      break;
+    default:
+      candidate = { type: "single" };
+  }
+  const parsed = rhythmSchema.safeParse(candidate);
+  return parsed.success ? parsed.data : { type: "single" };
+}
+
+// ---------------------------------------------------------------------------
 // completeInstance — wraps logCompletion() for the day-list tap on home.
 // ---------------------------------------------------------------------------
 

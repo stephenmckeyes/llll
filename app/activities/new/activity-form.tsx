@@ -8,10 +8,11 @@
 // controlled value attributes flow through naturally.
 // ---------------------------------------------------------------------------
 
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState, useTransition } from "react";
 
 import {
   createActivity,
+  createDraftActivity,
   type ActivityFormState,
 } from "@/app/actions/activities";
 import type {
@@ -61,6 +62,44 @@ export function ActivityForm({
     ActivityFormState,
     FormData
   >(createActivity, null);
+
+  // "Save for later" path — files the activity into the archive (Total
+  // View) as a draft without putting it on any calendar. Uses an
+  // imperative call (not the form's action) so it can run alongside the
+  // primary "Add Activity" submit. Drafts skip most validation; only a
+  // name is required.
+  const formRef = useRef<HTMLFormElement>(null);
+  const [draftPending, startDraft] = useTransition();
+  const [draftError, setDraftError] = useState<string | null>(null);
+
+  function handleSaveForLater() {
+    const form = formRef.current;
+    if (!form) return;
+    // A name is the one thing a draft needs (to find it later). Surface
+    // the native "please fill this in" on the name field if it's empty.
+    const nameInput = form.querySelector<HTMLInputElement>(
+      'input[name="name"]'
+    );
+    if (nameInput && !nameInput.value.trim()) {
+      nameInput.reportValidity();
+      return;
+    }
+    const ok = window.confirm(
+      "Save this as a draft for later?\n\n" +
+        "It will be parked in Total View → Archived (not on any calendar) " +
+        "so you can finish it when you're ready. To activate it later, open " +
+        "Total View, find it under Archived, and choose Unarchive."
+    );
+    if (!ok) return;
+    setDraftError(null);
+    const fd = new FormData(form);
+    startDraft(async () => {
+      // On success the action redirects to /activities; on failure it
+      // returns { error }.
+      const res = await createDraftActivity(null, fd);
+      if (res && "error" in res) setDraftError(res.error);
+    });
+  }
 
   // ---- Controlled inputs that the preview depends on --------------------
   //
@@ -162,6 +201,7 @@ export function ActivityForm({
     // sections appeared/disappeared (Weekdays chips, long typed names),
     // the form's width changed and mx-auto centering shifted it sideways.
     <form
+      ref={formRef}
       action={formAction}
       onKeyDown={(e) => {
         // Don't let Enter inside an input submit the form. Only the
@@ -532,14 +572,35 @@ export function ActivityForm({
           {state.error}
         </p>
       )}
+      {draftError && (
+        <p
+          role="alert"
+          className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300"
+        >
+          {draftError}
+        </p>
+      )}
 
-      <button
-        type="submit"
-        disabled={isPending}
-        className="mt-1 self-start rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
-      >
-        {isPending ? "Adding…" : "Add Activity"}
-      </button>
+      <div className="mt-1 flex flex-wrap gap-2">
+        <button
+          type="submit"
+          disabled={isPending || draftPending}
+          className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
+        >
+          {isPending ? "Adding…" : "Add Activity"}
+        </button>
+        {/* Save-for-later: parks a draft in Total View → Archived without
+            scheduling it. Lets the user capture an idea before it's fully
+            specced. */}
+        <button
+          type="button"
+          onClick={handleSaveForLater}
+          disabled={isPending || draftPending}
+          className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+        >
+          {draftPending ? "Saving…" : "Save for later"}
+        </button>
+      </div>
     </form>
   );
 }

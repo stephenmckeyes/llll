@@ -23,8 +23,10 @@ import {
   useMemo,
   useRef,
   useState,
+  useTransition,
 } from "react";
 
+import { unlabelInstance } from "@/app/actions/activities";
 import { summarizeRhythm } from "@/lib/domain/rhythm-summary";
 import type { TagMap } from "@/lib/domain/tags";
 import {
@@ -105,6 +107,7 @@ export function DayList({
   tagMap: TagMap;
 }) {
   const router = useRouter();
+  const [, startUnlabelTransition] = useTransition();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [currentDate, setCurrentDate] = useState(initialDate);
   const [dateInputValue, setDateInputValue] = useState(initialDate);
@@ -153,6 +156,22 @@ export function DayList({
       return next;
     });
   }, []);
+
+  // Unlabel a row that's ALREADY in the Completed/Missed dropdown (resolved
+  // in a previous session / before the last refresh). Unlike the in-place
+  // revert above, these rows are server-rendered into the dropdown, so we
+  // revert on the server then router.refresh() to move the row back into
+  // the active list. This is a deliberate one-off correction (not the
+  // rapid-tap path), so a soft refresh here is fine.
+  const handleDropdownUnlabel = useCallback(
+    (id: string) => {
+      startUnlabelTransition(async () => {
+        await unlabelInstance(id);
+        router.refresh();
+      });
+    },
+    [router]
+  );
 
   // Group instances by date for fast lookup. Archived activities are
   // filtered out; resolved rows STAY (rendered as done in place).
@@ -338,6 +357,7 @@ export function DayList({
               resolved={resolved}
               onResolve={markResolved}
               onUnresolve={clearResolved}
+              onDropdownUnlabel={handleDropdownUnlabel}
               tagMap={tagMap}
             />
           ))}
@@ -369,6 +389,7 @@ function DaySection({
   resolved,
   onResolve,
   onUnresolve,
+  onDropdownUnlabel,
   tagMap,
 }: {
   date: Date;
@@ -381,6 +402,7 @@ function DaySection({
   resolved: ReadonlyMap<string, "completed" | "missed">;
   onResolve: (id: string, status: "completed" | "missed") => void;
   onUnresolve: (id: string) => void;
+  onDropdownUnlabel: (id: string) => void;
   tagMap: TagMap;
 }) {
   const isToday = dateStr === todayStr;
@@ -419,11 +441,13 @@ function DaySection({
             kind="completed"
             items={completed}
             onOpen={onOpenInstance}
+            onUnlabel={onDropdownUnlabel}
           />
           <MarkedTable
             kind="missed"
             items={missed}
             onOpen={onOpenInstance}
+            onUnlabel={onDropdownUnlabel}
           />
         </div>
       </details>
@@ -461,10 +485,12 @@ function MarkedTable({
   kind,
   items,
   onOpen,
+  onUnlabel,
 }: {
   kind: "completed" | "missed";
   items: DayMarkedItem[];
   onOpen: (inst: DayInstance) => void;
+  onUnlabel: (id: string) => void;
 }) {
   const title = kind === "completed" ? "Completed" : "Missed";
   const headerCls =
@@ -498,12 +524,12 @@ function MarkedTable({
       </p>
       <ul className="mt-1 flex flex-col gap-1">
         {items.map((it) => (
-          <li key={it.id}>
+          <li key={it.id} className="flex items-stretch gap-1">
             <button
               type="button"
               onClick={() => onOpen(it.instance)}
               title="Click to open — you can revert or edit"
-              className="flex w-full min-w-0 items-start gap-2 rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-left text-xs transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900"
+              className="flex min-w-0 flex-1 items-start gap-2 rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-left text-xs transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900"
             >
               <span
                 aria-hidden
@@ -525,6 +551,17 @@ function MarkedTable({
                   </span>
                 )}
               </span>
+            </button>
+            {/* Quick revert — sends this occurrence back to pending (out
+                of the dropdown, back into the active list) without opening
+                the modal. */}
+            <button
+              type="button"
+              onClick={() => onUnlabel(it.id)}
+              title="Tapped by accident? Revert to pending."
+              className="shrink-0 touch-manipulation rounded-md border border-zinc-200 px-2 text-[11px] font-medium text-zinc-600 transition-colors hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-900"
+            >
+              Unlabel
             </button>
           </li>
         ))}

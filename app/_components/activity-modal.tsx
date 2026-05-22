@@ -540,7 +540,7 @@ function EditActivityBody({
 // regenerates pending future instances via the updateActivityRhythm action.
 // ---------------------------------------------------------------------------
 
-function EditRhythmBody({
+export function EditRhythmBody({
   activity,
   tagMap,
   onDone,
