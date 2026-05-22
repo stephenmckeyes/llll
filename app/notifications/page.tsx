@@ -9,11 +9,13 @@
 import Link from "next/link";
 
 import { getSocialOverview, type SocialEntry } from "@/app/actions/friends";
+import { getSharedWithMe } from "@/app/actions/sharing";
 import { requireOnboardedUser } from "@/lib/auth/require-onboarded-user";
 
 import { PendingLink } from "@/app/_components/pending-link";
 
 import { RequestActions } from "./request-actions";
+import { SharedNotifications } from "./shared-notifications";
 
 function nameOf(e: SocialEntry): string {
   return e.otherDisplayName || (e.otherUsername ? `@${e.otherUsername}` : "Someone");
@@ -45,7 +47,10 @@ export default async function NotificationsPage() {
   const { supabase, user, profile } = await requireOnboardedUser();
   const todayStr = todayInTimeZone(profile.timezone ?? "UTC");
 
-  const entries = await getSocialOverview();
+  const [entries, shares] = await Promise.all([
+    getSocialOverview(),
+    getSharedWithMe(),
+  ]);
   const incoming = entries.filter(
     (e) => e.status === "pending" && e.direction === "incoming"
   );
@@ -127,6 +132,9 @@ export default async function NotificationsPage() {
           </ul>
         )}
       </section>
+
+      {/* 1b. Shared with you */}
+      <SharedNotifications shares={shares} />
 
       {/* 2. Reminders */}
       <section className="flex flex-col gap-3">

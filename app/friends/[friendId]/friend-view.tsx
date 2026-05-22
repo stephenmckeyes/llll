@@ -28,8 +28,9 @@ import { CopyShareModal } from "../copy-share-modal";
 
 type ViewKind = "total" | "calendar" | "grid";
 
-// How many days back the read-only grid heatmap covers (ending today).
-const GRID_DAYS = 35;
+// Hard cap on grid columns so a friend with years of shared history doesn't
+// blow out the table width. We keep the most recent COLS days of the range.
+const GRID_MAX_COLS = 70;
 
 export function FriendView({
   friendName,
@@ -364,7 +365,11 @@ function StatusPill({
 }
 
 // ---------------------------------------------------------------------------
-// Grid — compact read-only heatmap of the last GRID_DAYS days.
+// Grid — read-only heatmap, one row per shared rhythm. Columns span the
+// actual range of shared occurrences (so future-scheduled days show too,
+// which is what was making the old "last 35 days" version look empty for a
+// freshly-shared rhythm). Mirrors the individual grid's colors + a Success
+// column + legend.
 // ---------------------------------------------------------------------------
 
 function GridReadOnly({
@@ -378,32 +383,48 @@ function GridReadOnly({
   todayStr: string;
   friendName: string;
 }) {
-  // Activities that actually have shared occurrences (progress shared,
+  const byId = useMemo(
+    () => new Map(shares.map((s) => [s.activityId, s])),
+    [shares]
+  );
+
+  // Rows: activities that actually have shared occurrences (progress shared,
   // non-archived). Others live only in Total.
-  const activeShares = useMemo(() => {
-    const withInstances = new Set(instances.map((i) => i.activityId));
-    return shares
-      .filter((s) => withInstances.has(s.activityId))
+  const rows = useMemo(() => {
+    const ids = new Set(instances.map((i) => i.activityId));
+    return Array.from(ids)
+      .map((id) => byId.get(id))
+      .filter((s): s is SharedActivity => Boolean(s))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [shares, instances]);
+  }, [instances, byId]);
 
-  // Columns: the last GRID_DAYS days ending today.
+  // Columns derived from the real occurrence range (always including today
+  // as the right edge), clamped to the most recent GRID_MAX_COLS days.
   const cols = useMemo(() => {
-    const out: string[] = [];
-    for (let i = GRID_DAYS - 1; i >= 0; i--) out.push(addDaysToYmd(todayStr, -i));
-    return out;
-  }, [todayStr]);
+    if (instances.length === 0) return [];
+    let min = instances[0].scheduledFor;
+    let max = instances[0].scheduledFor;
+    for (const i of instances) {
+      if (i.scheduledFor < min) min = i.scheduledFor;
+      if (i.scheduledFor > max) max = i.scheduledFor;
+    }
+    if (max < todayStr) max = todayStr;
+    const all = enumerateDates(min, max);
+    return all.length > GRID_MAX_COLS
+      ? all.slice(all.length - GRID_MAX_COLS)
+      : all;
+  }, [instances, todayStr]);
 
-  // (activityId|date) → status for O(1) cell lookup.
-  const statusByCell = useMemo(() => {
-    const m = new Map<string, SharedInstance["status"]>();
+  // (activityId|date) → instance for O(1) cell lookup.
+  const cellByKey = useMemo(() => {
+    const m = new Map<string, SharedInstance>();
     for (const inst of instances) {
-      m.set(`${inst.activityId}|${inst.scheduledFor}`, inst.status);
+      m.set(`${inst.activityId}|${inst.scheduledFor}`, inst);
     }
     return m;
   }, [instances]);
 
-  if (activeShares.length === 0) {
+  if (rows.length === 0) {
     return (
       <p className="rounded-md border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500 dark:border-zinc-700">
         Nothing to chart — {friendName} hasn&rsquo;t shared any active rhythms
@@ -413,48 +434,92 @@ function GridReadOnly({
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="border-separate border-spacing-0.5">
-        <tbody>
-          {activeShares.map((s) => (
-            <tr key={s.shareId}>
-              <td className="sticky left-0 z-10 bg-white pr-2 align-middle dark:bg-zinc-950">
-                <span className="block max-w-[8rem] truncate text-xs font-medium">
-                  {s.name}
-                </span>
-              </td>
-              {cols.map((date) => {
-                const status = statusByCell.get(`${s.activityId}|${date}`);
-                return (
-                  <td key={date} className="p-0">
-                    <div
-                      title={`${s.name} · ${date}${
-                        status ? ` · ${status}` : ""
-                      }`}
-                      className={`h-4 w-4 rounded-sm ${cellClass(
-                        status,
-                        date,
-                        todayStr
-                      )}`}
-                    />
+    <div className="flex flex-col gap-3">
+      <div className="overflow-x-auto">
+        <table className="border-separate border-spacing-0 text-xs">
+          <tbody>
+            {rows.map((s) => {
+              const st = rowStats(s.activityId, cols, cellByKey, todayStr);
+              return (
+                <tr key={s.shareId}>
+                  <th
+                    scope="row"
+                    className="sticky left-0 z-10 bg-white pr-2 text-left align-middle dark:bg-zinc-950"
+                  >
+                    <span className="block max-w-[7rem] truncate text-xs font-medium">
+                      {s.name}
+                    </span>
+                    <span className="block text-[10px] text-zinc-400">
+                      {rhythmCategoryLabel(s.rhythm, s.scheduledTimes)}
+                    </span>
+                  </th>
+                  {cols.map((date) => {
+                    const inst = cellByKey.get(`${s.activityId}|${date}`);
+                    return (
+                      <td key={date} className="p-px">
+                        <div
+                          title={`${s.name} · ${date}${
+                            inst ? ` · ${inst.status}` : ""
+                          }`}
+                          className={`h-3.5 w-3.5 rounded-[2px] ${gridCellClass(
+                            inst?.status,
+                            date,
+                            todayStr
+                          )}`}
+                        />
+                      </td>
+                    );
+                  })}
+                  <td className="sticky right-0 z-10 bg-white pl-2 text-right align-middle tabular-nums dark:bg-zinc-950">
+                    {st.pct === null ? (
+                      <span className="text-zinc-400">—</span>
+                    ) : (
+                      <span className={pctClass(st.pct)}>
+                        {st.done}/{st.onHook} · {st.pct}%
+                      </span>
+                    )}
                   </td>
-                );
-              })}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <p className="mt-3 flex flex-wrap items-center gap-3 text-[11px] text-zinc-500">
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="flex flex-wrap items-center gap-3 text-[11px] text-zinc-500">
         <Legend className="bg-emerald-500" label="Done" />
         <Legend className="bg-red-500" label="Missed" />
-        <Legend className="bg-amber-400" label="Unlabeled" />
-        <Legend className="bg-zinc-200 dark:bg-zinc-800" label="Scheduled" />
+        <Legend className="bg-amber-300 dark:bg-amber-700" label="Unlabeled" />
+        <Legend
+          className="border border-zinc-300 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900"
+          label="Scheduled"
+        />
       </p>
     </div>
   );
 }
 
-function cellClass(
+function rowStats(
+  activityId: string,
+  cols: string[],
+  cellByKey: Map<string, SharedInstance>,
+  todayStr: string
+): { done: number; onHook: number; pct: number | null } {
+  let done = 0;
+  let missed = 0;
+  let overdue = 0;
+  for (const date of cols) {
+    const inst = cellByKey.get(`${activityId}|${date}`);
+    if (!inst) continue;
+    if (inst.status === "completed") done++;
+    else if (inst.status === "missed") missed++;
+    else if (inst.status === "pending" && date < todayStr) overdue++;
+  }
+  const onHook = done + missed + overdue;
+  const pct = onHook > 0 ? Math.round((done / onHook) * 100) : null;
+  return { done, onHook, pct };
+}
+
+function gridCellClass(
   status: SharedInstance["status"] | undefined,
   date: string,
   todayStr: string
@@ -463,11 +528,34 @@ function cellClass(
   if (status === "missed") return "bg-red-500";
   if (status === "pending") {
     return date < todayStr
-      ? "bg-amber-400"
-      : "bg-zinc-200 dark:bg-zinc-800";
+      ? "bg-amber-300 dark:bg-amber-700"
+      : "border border-zinc-300 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900";
   }
-  // No occurrence on this day.
+  if (status === "skipped" || status === "shifted") {
+    return "bg-zinc-200 dark:bg-zinc-800";
+  }
+  // No occurrence scheduled this day.
   return "bg-transparent";
+}
+
+function pctClass(pct: number): string {
+  if (pct >= 80) return "font-semibold text-emerald-700 dark:text-emerald-300";
+  if (pct >= 50) return "text-amber-700 dark:text-amber-300";
+  return "text-red-700 dark:text-red-300";
+}
+
+// Enumerate YYYY-MM-DD from `from` to `to` inclusive (lexicographic ==
+// chronological for this format). Guard caps runaway ranges.
+function enumerateDates(from: string, to: string): string[] {
+  const out: string[] = [];
+  let cur = from;
+  let guard = 0;
+  while (cur <= to && guard < 2000) {
+    out.push(cur);
+    cur = addDaysToYmd(cur, 1);
+    guard++;
+  }
+  return out;
 }
 
 function Legend({ className, label }: { className: string; label: string }) {

@@ -44,8 +44,8 @@ export function DashboardHeader({ userEmail }: { userEmail: string }) {
         </PendingLink>
       </div>
 
-      {/* Row 3: Friends (left) + Notifications (far right). */}
-      <div className="flex items-center justify-between gap-2">
+      {/* Row 3: Friends + Notifications grouped together on the right. */}
+      <div className="flex items-center justify-end gap-2">
         <PendingLink href="/friends" className={navClasses}>
           Friends
         </PendingLink>
