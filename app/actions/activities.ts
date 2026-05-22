@@ -280,13 +280,16 @@ export async function completeInstance(instanceId: string) {
   if (!user) redirect("/login");
 
   await logCompletion(supabase, user.id, { instanceIds: [instanceId] });
-  // PERF: do NOT invalidate the backfill cache here. Completing an
-  // instance doesn't change which FUTURE instances should exist, so
-  // there's nothing for backfill to redo. Invalidating forced a full
-  // backfill (activities + future-instances queries + generation) on
-  // the revalidation that follows EVERY complete — a multi-second
-  // mobile stall. Backfill still runs on its normal throttle.
-  revalidatePath("/");
+  // PERF: this action ONLY persists — it does NOT revalidatePath. The
+  // day view hides the completed row optimistically (instant, no
+  // main-thread-blocking re-render), and other surfaces (grid / week /
+  // month) call router.refresh() from the modal after this resolves.
+  // Forcing a full-page revalidation here was the "multiple seconds /
+  // dropped taps / scroll glitch" cause on mobile: every tap re-ran
+  // HomePage's queries + reconciled the 271-section day list. Dynamic
+  // routes always re-fetch on navigation, so nothing goes stale beyond
+  // the current render. (Also no invalidateBackfillCache — completing
+  // doesn't change future instance generation.)
 }
 
 // ---------------------------------------------------------------------------
@@ -794,9 +797,9 @@ export async function missInstance(instanceId: string) {
     .update({ status: "missed" })
     .eq("id", instanceId);
 
-  // PERF: no backfill invalidation — marking missed doesn't change
-  // future instance generation. (Same reasoning as completeInstance.)
-  revalidatePath("/");
+  // PERF: persist only, no revalidatePath — same instant-tap reasoning
+  // as completeInstance. Day view hides the row optimistically; the
+  // modal (grid/week/month) calls router.refresh() afterward.
 }
 
 // Kept as an alias for any older imports while we transition. UI no

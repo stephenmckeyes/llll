@@ -14,6 +14,7 @@
 // Closes on: outside click, Escape, or the explicit ×.
 // ---------------------------------------------------------------------------
 
+import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useState, useTransition } from "react";
 
 import {
@@ -71,6 +72,7 @@ export function ActivityModal({
    *  none — chips fall back to gray. */
   tagMap: TagMap;
 }) {
+  const router = useRouter();
   const [mode, setMode] = useState<Mode>("details");
   const [historyOpen, setHistoryOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -111,6 +113,12 @@ export function ActivityModal({
     }
     startTransition(async () => {
       await completeInstance(instance.id);
+      // The action no longer revalidates (so the Day view stays instant).
+      // The modal is the entry point for the Grid / Week / Month views,
+      // whose cells DON'T optimistically update — so refresh here to pull
+      // the new status into those surfaces. router.refresh() is a
+      // background transition; the modal has already closed.
+      router.refresh();
     });
   }
 
@@ -127,6 +135,7 @@ export function ActivityModal({
     }
     startTransition(async () => {
       await missInstance(instance.id);
+      router.refresh();
     });
   }
 

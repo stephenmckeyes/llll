@@ -10,7 +10,7 @@
 // own onClick, no event-bubbling games required.
 // ---------------------------------------------------------------------------
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 
 import {
   completeInstance,
@@ -63,7 +63,11 @@ export function InstanceRow({
   /** Name → color lookup for the tag chips below the activity name. */
   tagMap: TagMap;
 }) {
-  const [isPending, startTransition] = useTransition();
+  // We keep startTransition (marks the server-action call as a
+  // non-blocking transition) but no longer read isPending — the buttons
+  // are NOT disabled while the action is in flight, so rapid taps (e.g.
+  // +1 +1 +1) all register instead of being eaten by a disabled state.
+  const [, startTransition] = useTransition();
   const activity = instance.activity;
   const isFrequency = activity.rhythm.type === "frequency";
   const scheduledTimes = activity.scheduled_times ?? [];
@@ -101,7 +105,20 @@ export function InstanceRow({
       : isMultiTime
         ? scheduledTimes.length
         : 0;
-  const accumulatingProgress = instance.completionCount;
+  // Optimistic completion count for accumulating (+1) rows. Each +1 tap
+  // bumps this immediately so the X/Y badge reflects the tap WITHOUT a
+  // server round-trip (completeInstance no longer revalidates the page).
+  // Resets to 0 whenever the server sends a fresh completionCount — the
+  // snapshot pattern (React 19 lints the equivalent useEffect form).
+  const [optimisticDelta, setOptimisticDelta] = useState(0);
+  const [lastServerCount, setLastServerCount] = useState(
+    instance.completionCount
+  );
+  if (lastServerCount !== instance.completionCount) {
+    setLastServerCount(instance.completionCount);
+    setOptimisticDelta(0);
+  }
+  const accumulatingProgress = instance.completionCount + optimisticDelta;
 
   // Past-due-pending = "Unlabeled" warning, shown for EVERY rhythm
   // type (per user spec). Previously only "Once" (single) rhythms
@@ -134,10 +151,11 @@ export function InstanceRow({
       );
       if (!ok) return;
     }
-    // Optimistic hide only when the click finishes the activity:
-    //   - Non-accumulating: one click = done → hide immediately
-    //   - Accumulating: only the last +1 (reaching target) hides
-    // Hiding mid-accumulation would be confusing.
+    // Optimistic feedback fires INSTANTLY, before the server call:
+    //   - Non-accumulating: one click = done → hide the row immediately.
+    //   - Accumulating, last +1 (reaching target): hide the row.
+    //   - Accumulating, mid-progress +1: bump the local count so the
+    //     X/Y badge ticks up right away (no server round-trip wait).
     const willFinish =
       !isAccumulating ||
       accumulatingProgress + 1 >= accumulatingTarget;
@@ -150,6 +168,8 @@ export function InstanceRow({
       if (isCurrentlyUnlabeled) {
         dispatchInstanceResolved({ wasUnlabeled: true });
       }
+    } else {
+      setOptimisticDelta((d) => d + 1);
     }
     startTransition(async () => {
       await completeInstance(instance.id);
@@ -248,20 +268,23 @@ export function InstanceRow({
         />
       )}
 
-      {/* Complete + Missed as TRUE siblings, not nested. */}
+      {/* Complete + Missed as TRUE siblings, not nested.
+          NOT disabled while pending: the row hides optimistically (or
+          the +1 count bumps) the instant you tap, so there's no need to
+          lock the button — and locking it was eating rapid taps. Bigger
+          tap target (min-h-11 = 44px, the iOS/Material minimum) so taps
+          land reliably on a phone. */}
       <button
         type="button"
-        disabled={isPending}
         onClick={handleComplete}
-        className="shrink-0 touch-manipulation rounded-md bg-zinc-900 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-zinc-700 active:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
+        className="min-h-11 shrink-0 touch-manipulation rounded-md bg-zinc-900 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-zinc-700 active:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
       >
-        {isPending ? "…" : isAccumulating ? "+1" : "Complete"}
+        {isAccumulating ? "+1" : "Complete"}
       </button>
       <button
         type="button"
-        disabled={isPending}
         onClick={handleMissed}
-        className="shrink-0 touch-manipulation rounded-md border border-zinc-300 px-3 py-2 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-100 active:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+        className="min-h-11 shrink-0 touch-manipulation rounded-md border border-zinc-300 px-3 py-2 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-100 active:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
       >
         Missed
       </button>
