@@ -456,7 +456,7 @@ function SignedOutLanding() {
       <header className="space-y-2">
         <h1 className="text-4xl font-semibold tracking-tight">Mission</h1>
         <p className="text-base text-zinc-600 dark:text-zinc-400">
-          Track what you actually do — planned or not.
+          Accomplish your mission.
         </p>
       </header>
       <section className="flex flex-col gap-3 sm:flex-row">

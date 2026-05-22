@@ -20,7 +20,7 @@ export default function SignUpPage() {
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Sign up</h1>
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Start tracking what you actually do.
+          Accomplish your mission.
         </p>
       </header>
 
