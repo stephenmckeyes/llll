@@ -106,38 +106,42 @@ export function DayList({
   const [dateInputValue, setDateInputValue] = useState(initialDate);
   const [openInstance, setOpenInstance] = useState<DayInstance | null>(null);
 
-  // Optimistic "I just clicked complete/missed" set. Drives instant UI
-  // feedback so the user doesn't sit watching the row for ~6 seconds
-  // while the server action + revalidation round-trips. We reset the
-  // set on every fresh `instances` prop change — once the server returns
-  // a list that no longer contains the pending instance, the optimistic
-  // hide is no longer needed (and would be stale if we kept it).
-  const [optimisticIds, setOptimisticIds] = useState<ReadonlySet<string>>(
-    new Set()
-  );
+  // "I just resolved this" map: instanceId → "completed" | "missed".
+  //
+  // We DON'T remove resolved rows from the list — we mark them in place
+  // (dimmed, with a status pill). Removing them caused the list to
+  // reflow under the user's finger during rapid down-the-list tapping:
+  // tap row A, A vanishes, B jumps into A's spot, the next tap lands on
+  // B instead of where the user aimed. Keeping the row's slot stable
+  // fixes that. The map resets on every fresh `instances` prop (a real
+  // navigation / refresh), at which point resolved rows have moved into
+  // the Completed/Missed dropdown server-side.
+  const [resolved, setResolved] = useState<
+    ReadonlyMap<string, "completed" | "missed">
+  >(new Map());
   const instancesKey = instances.map((i) => `${i.id}:${i.completionCount}`).join(",");
   const [lastKey, setLastKey] = useState(instancesKey);
   if (lastKey !== instancesKey) {
     setLastKey(instancesKey);
-    setOptimisticIds(new Set());
+    setResolved(new Map());
   }
 
-  const dispatchOptimistic = useCallback((id: string) => {
-    setOptimisticIds((prev) => {
-      const next = new Set(prev);
-      next.add(id);
-      return next;
-    });
-  }, []);
+  const markResolved = useCallback(
+    (id: string, status: "completed" | "missed") => {
+      setResolved((prev) => {
+        const next = new Map(prev);
+        next.set(id, status);
+        return next;
+      });
+    },
+    []
+  );
 
-  // Group instances by date for fast lookup, filtering archived AND
-  // optimistically-dispatched rows.
+  // Group instances by date for fast lookup. Archived activities are
+  // filtered out; resolved rows STAY (rendered as done in place).
   const live = useMemo(
-    () =>
-      instances.filter(
-        (i) => !i.activity.archived_at && !optimisticIds.has(i.id)
-      ),
-    [instances, optimisticIds]
+    () => instances.filter((i) => !i.activity.archived_at),
+    [instances]
   );
 
   // Build the day sections in chronological order.
@@ -297,7 +301,11 @@ export function DayList({
           list — which is what was making rows un-tappable on mobile. */}
       <div
         ref={containerRef}
-        className="h-[60vh] min-h-[20rem] overflow-y-auto overscroll-contain pr-2 sm:h-[68vh]"
+        // Vertical scroll only. `overflow-x-hidden` clips any sideways
+        // overflow and `touch-pan-y` tells the browser to honor only
+        // up/down panning gestures — so a slightly-diagonal swipe never
+        // scrolls the list left/right.
+        className="h-[60vh] min-h-[20rem] touch-pan-y overflow-y-auto overflow-x-hidden overscroll-contain pr-2 sm:h-[68vh]"
       >
         <div className="flex flex-col gap-4">
           {days.map((d) => (
@@ -310,7 +318,8 @@ export function DayList({
               missed={missedByDate[d.dateStr] ?? []}
               todayStr={todayStr}
               onOpenInstance={setOpenInstance}
-              onDispatchOptimistic={dispatchOptimistic}
+              resolved={resolved}
+              onResolve={markResolved}
               tagMap={tagMap}
             />
           ))}
@@ -339,7 +348,8 @@ function DaySection({
   missed,
   todayStr,
   onOpenInstance,
-  onDispatchOptimistic,
+  resolved,
+  onResolve,
   tagMap,
 }: {
   date: Date;
@@ -349,7 +359,8 @@ function DaySection({
   missed: DayMarkedItem[];
   todayStr: string;
   onOpenInstance: (inst: DayInstance) => void;
-  onDispatchOptimistic: (id: string) => void;
+  resolved: ReadonlyMap<string, "completed" | "missed">;
+  onResolve: (id: string, status: "completed" | "missed") => void;
   tagMap: TagMap;
 }) {
   const isToday = dateStr === todayStr;
@@ -408,7 +419,8 @@ function DaySection({
               instance={inst}
               todayStr={todayStr}
               onOpen={() => onOpenInstance(inst)}
-              onDispatchOptimistic={onDispatchOptimistic}
+              resolution={resolved.get(inst.id) ?? null}
+              onResolve={onResolve}
               tagMap={tagMap}
             />
           ))}

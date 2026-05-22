@@ -43,23 +43,27 @@ export function InstanceRow({
   instance,
   todayStr,
   onOpen,
-  onDispatchOptimistic,
+  onResolve,
+  resolution,
   tagMap,
 }: {
   instance: DayInstance;
   todayStr: string;
   onOpen: () => void;
   /**
-   * Optimistic-hide callback — fires BEFORE the server action so the
-   * row disappears from the list instantly. The parent DayList tracks
-   * the set of optimistic IDs and clears them whenever a fresh
-   * `instances` prop arrives (server-revalidated truth).
+   * Mark-in-place callback. Fires when the user completes or misses
+   * this occurrence. The parent (DayList) records the resolution and
+   * keeps the row in its SLOT (dimmed, with a status pill) rather than
+   * removing it — so rapid down-the-list tapping doesn't reflow the
+   * list out from under the user's finger. Resolved rows clear on the
+   * next real navigation/refresh.
    *
-   * Frequency rhythms don't optimistic-hide on a single +1 because the
-   * row needs to stay visible until X reaches the target — see
-   * handleComplete below.
+   * Accumulating (+1) rows only "resolve" on the FINAL +1 that reaches
+   * the target; earlier +1s just bump the count in place.
    */
-  onDispatchOptimistic: (id: string) => void;
+  onResolve: (id: string, status: "completed" | "missed") => void;
+  /** This occurrence's current resolution (null = still actionable). */
+  resolution: "completed" | "missed" | null;
   /** Name → color lookup for the tag chips below the activity name. */
   tagMap: TagMap;
 }) {
@@ -158,19 +162,20 @@ export function InstanceRow({
       if (!ok) return;
     }
     // Optimistic feedback fires INSTANTLY, before the server call:
-    //   - Non-accumulating: one click = done → hide the row immediately.
-    //   - Accumulating, last +1 (reaching target): hide the row.
+    //   - Non-accumulating: one click = done → mark the row resolved
+    //     in place (it stays in its slot, dimmed, so the list doesn't
+    //     reflow under rapid tapping).
+    //   - Accumulating, last +1 (reaching target): mark resolved.
     //   - Accumulating, mid-progress +1: bump the local count so the
     //     X/Y badge ticks up right away (no server round-trip wait).
     const willFinish =
       !isAccumulating ||
       accumulatingProgress + 1 >= accumulatingTarget;
     if (willFinish) {
-      onDispatchOptimistic(instance.id);
-      // Tell the Unlabeled chip to drop its count immediately when an
-      // actually-unlabeled instance gets resolved. Skipping for
-      // mid-accumulation +1s and for future-scheduled rows (those
-      // weren't unlabeled to begin with).
+      onResolve(instance.id, "completed");
+      // Drop the Unlabeled chip immediately when an actually-unlabeled
+      // instance gets resolved. Skipped for mid-accumulation +1s and
+      // future-scheduled rows (those weren't unlabeled to begin with).
       if (isCurrentlyUnlabeled) {
         dispatchInstanceResolved({ wasUnlabeled: true });
       }
@@ -189,7 +194,7 @@ export function InstanceRow({
       );
       if (!ok) return;
     }
-    onDispatchOptimistic(instance.id);
+    onResolve(instance.id, "missed");
     if (isCurrentlyUnlabeled) {
       dispatchInstanceResolved({ wasUnlabeled: true });
     }
@@ -199,7 +204,11 @@ export function InstanceRow({
   }
 
   return (
-    <li className="flex w-full min-w-0 items-center justify-between gap-2 rounded-md border border-zinc-200 bg-white p-3 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900">
+    <li
+      className={`flex w-full min-w-0 items-center justify-between gap-2 rounded-md border border-zinc-200 bg-white p-3 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900 ${
+        resolution ? "opacity-60" : ""
+      }`}
+    >
       {/* Body — clickable area that opens the modal. */}
       <button
         type="button"
@@ -258,42 +267,57 @@ export function InstanceRow({
         </div>
       </button>
 
-      {/* Accumulating progress badge. Shown for frequency rhythms AND
-          for any rhythm with multiple scheduled_times — both surface
-          a "+1 of N" workflow rather than one-and-done. Click the
-          badge to set the count exactly (handy for end-of-day mass-
-          fill or undoing an over-click). */}
-      {isAccumulating && (
-        <EditableProgressBadge
-          instanceId={instance.id}
-          current={accumulatingProgress}
-          target={accumulatingTarget}
-          scheduledFor={instance.scheduled_for}
-          todayStr={todayStr}
-          className={FREQUENCY_BADGE_CLASSES}
-        />
-      )}
+      {resolution ? (
+        // Resolved IN PLACE — the row keeps its slot so the list doesn't
+        // reflow under rapid tapping. A status pill replaces the action
+        // buttons; the row clears on the next navigation/refresh.
+        <span
+          className={`min-h-11 inline-flex shrink-0 items-center rounded-md px-3 py-2 text-xs font-semibold ${
+            resolution === "completed"
+              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+              : "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
+          }`}
+        >
+          {resolution === "completed" ? "✓ Done" : "✗ Missed"}
+        </span>
+      ) : (
+        <>
+          {/* Accumulating progress badge. Shown for frequency rhythms
+              AND for any rhythm with multiple scheduled_times — both
+              surface a "+1 of N" workflow rather than one-and-done.
+              Click the badge to set the count exactly. */}
+          {isAccumulating && (
+            <EditableProgressBadge
+              instanceId={instance.id}
+              current={accumulatingProgress}
+              target={accumulatingTarget}
+              scheduledFor={instance.scheduled_for}
+              todayStr={todayStr}
+              className={FREQUENCY_BADGE_CLASSES}
+            />
+          )}
 
-      {/* Complete + Missed as TRUE siblings, not nested.
-          NOT disabled while pending: the row hides optimistically (or
-          the +1 count bumps) the instant you tap, so there's no need to
-          lock the button — and locking it was eating rapid taps. Bigger
-          tap target (min-h-11 = 44px, the iOS/Material minimum) so taps
-          land reliably on a phone. */}
-      <button
-        type="button"
-        onClick={handleComplete}
-        className="min-h-11 shrink-0 touch-manipulation rounded-md bg-zinc-900 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-zinc-700 active:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
-      >
-        {isAccumulating ? "+1" : "Complete"}
-      </button>
-      <button
-        type="button"
-        onClick={handleMissed}
-        className="min-h-11 shrink-0 touch-manipulation rounded-md border border-zinc-300 px-3 py-2 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-100 active:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
-      >
-        Missed
-      </button>
+          {/* Complete + Missed as TRUE siblings, not nested. NOT
+              disabled while pending: the row marks done in place the
+              instant you tap (or the +1 count bumps), so there's no need
+              to lock the button — and locking it was eating rapid taps.
+              min-h-11 = 44px tap target. */}
+          <button
+            type="button"
+            onClick={handleComplete}
+            className="min-h-11 shrink-0 touch-manipulation rounded-md bg-zinc-900 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-zinc-700 active:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
+          >
+            {isAccumulating ? "+1" : "Complete"}
+          </button>
+          <button
+            type="button"
+            onClick={handleMissed}
+            className="min-h-11 shrink-0 touch-manipulation rounded-md border border-zinc-300 px-3 py-2 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-100 active:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+          >
+            Missed
+          </button>
+        </>
+      )}
     </li>
   );
 }

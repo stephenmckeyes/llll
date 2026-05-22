@@ -482,10 +482,10 @@ function WeekTable({
   return (
     <table className="w-full table-fixed border-separate border-spacing-0 text-xs">
       <colgroup>
-        <col className="w-[6.5rem] sm:w-[8rem]" />
-        <col className="w-[2rem] sm:w-[4.5rem]" />
+        <col className="w-[6rem] sm:w-[8rem]" />
+        <col className="w-[3rem] sm:w-[4.5rem]" />
         <col />
-        <col className="w-[4rem] sm:w-[5.5rem]" />
+        <col className="w-[3.5rem] sm:w-[5.5rem]" />
       </colgroup>
       <thead>
         <tr>
@@ -607,10 +607,10 @@ function MonthTable({
   return (
     <table className="w-full table-fixed border-separate border-spacing-0 text-xs">
       <colgroup>
-        <col className="w-[6.5rem] sm:w-[8rem]" />
-        <col className="w-[2rem] sm:w-[4.5rem]" />
+        <col className="w-[6rem] sm:w-[8rem]" />
+        <col className="w-[3rem] sm:w-[4.5rem]" />
         <col />
-        <col className="w-[4rem] sm:w-[5.5rem]" />
+        <col className="w-[3.5rem] sm:w-[5.5rem]" />
       </colgroup>
       <thead>
         <tr>
@@ -748,10 +748,10 @@ function TotalTable({
   return (
     <table className="w-full table-fixed border-separate border-spacing-0 text-xs">
       <colgroup>
-        <col className="w-[6.5rem] sm:w-[8rem]" />
-        <col className="w-[2rem] sm:w-[4.5rem]" />
+        <col className="w-[6rem] sm:w-[8rem]" />
+        <col className="w-[3rem] sm:w-[4.5rem]" />
         <col />
-        <col className="w-[4rem] sm:w-[5.5rem]" />
+        <col className="w-[3.5rem] sm:w-[5.5rem]" />
       </colgroup>
       <thead>
         <tr>
@@ -1043,8 +1043,8 @@ function TypeCell({ row, tagMap }: { row: GridRow; tagMap: TagMap }) {
   // an extra click. (Mobile users can long-press for the same effect
   // via the native :hover fallback.)
   return (
-    <td className="border-b border-zinc-100 px-2 py-0.5 align-top text-left text-xs text-zinc-500 dark:border-zinc-900">
-      <div>{row.rhythmCategory}</div>
+    <td className="overflow-hidden border-b border-zinc-100 px-1 py-0.5 align-top text-left text-xs text-zinc-500 dark:border-zinc-900 sm:px-2">
+      <div className="break-words">{row.rhythmCategory}</div>
       {row.activity.tags.length > 0 && (
         <div className="group/tags relative inline-block">
           <span className="cursor-pointer text-[10px] text-blue-600 underline-offset-2 hover:underline dark:text-blue-400">
