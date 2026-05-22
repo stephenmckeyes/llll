@@ -469,10 +469,10 @@ function WeekTable({
   return (
     <table className="w-full table-fixed border-separate border-spacing-0 text-xs">
       <colgroup>
-        <col className="w-[8rem]" />
-        <col className="w-[4.5rem]" />
+        <col className="w-[5.5rem] sm:w-[8rem]" />
+        <col className="w-[3rem] sm:w-[4.5rem]" />
         <col />
-        <col className="w-[5.5rem]" />
+        <col className="w-[4rem] sm:w-[5.5rem]" />
       </colgroup>
       <thead>
         <tr>
@@ -594,10 +594,10 @@ function MonthTable({
   return (
     <table className="w-full table-fixed border-separate border-spacing-0 text-xs">
       <colgroup>
-        <col className="w-[8rem]" />
-        <col className="w-[4.5rem]" />
+        <col className="w-[5.5rem] sm:w-[8rem]" />
+        <col className="w-[3rem] sm:w-[4.5rem]" />
         <col />
-        <col className="w-[5.5rem]" />
+        <col className="w-[4rem] sm:w-[5.5rem]" />
       </colgroup>
       <thead>
         <tr>
@@ -735,10 +735,10 @@ function TotalTable({
   return (
     <table className="w-full table-fixed border-separate border-spacing-0 text-xs">
       <colgroup>
-        <col className="w-[8rem]" />
-        <col className="w-[4.5rem]" />
+        <col className="w-[5.5rem] sm:w-[8rem]" />
+        <col className="w-[3rem] sm:w-[4.5rem]" />
         <col />
-        <col className="w-[5.5rem]" />
+        <col className="w-[4rem] sm:w-[5.5rem]" />
       </colgroup>
       <thead>
         <tr>
