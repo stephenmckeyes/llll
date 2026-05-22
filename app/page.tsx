@@ -755,13 +755,16 @@ async function WeekView({
   }
   for (const list of Object.values(byDate)) {
     list.sort((a, b) => {
+      // Primary: time of day (08:00 before 10:00 before 13:00). Activities
+      // with NO set time sort last ("99:99" sentinel). Then pending before
+      // done, then priority, then name.
+      const ta = a.activities?.scheduled_times?.[0] ?? "99:99";
+      const tb = b.activities?.scheduled_times?.[0] ?? "99:99";
+      if (ta !== tb) return ta.localeCompare(tb);
       if (a.status !== b.status) return a.status === "pending" ? -1 : 1;
       const pa = a.activities?.priority ?? 2;
       const pb = b.activities?.priority ?? 2;
       if (pa !== pb) return pa - pb;
-      const ta = a.activities?.scheduled_times?.[0] ?? "99:99";
-      const tb = b.activities?.scheduled_times?.[0] ?? "99:99";
-      if (ta !== tb) return ta.localeCompare(tb);
       return (a.activities?.name ?? "").localeCompare(b.activities?.name ?? "");
     });
   }

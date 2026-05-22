@@ -119,9 +119,9 @@ export function ActivityForm({
   // view's Type column). For Daily specifically the server converts
   // multi-time to a frequency rhythm with count = times.length so the
   // existing X/Y progress UI on the Day list still works.
-  const [scheduledTimes, setScheduledTimes] = useState<string[]>([
-    DEFAULT_TIME,
-  ]);
+  // Time of day is optional — start with none. An activity with no set
+  // time sorts to the end of the day on the Day + Week views.
+  const [scheduledTimes, setScheduledTimes] = useState<string[]>([]);
   const [startDate, setStartDate] = useState<string>(TODAY_ISO);
   const [endDate, setEndDate] = useState<string>("");
   const [reminders, setReminders] = useState<Reminder[]>([]);
@@ -169,9 +169,8 @@ export function ActivityForm({
     setScheduledTimes((prev) => [...prev, DEFAULT_TIME]);
   }
   function removeScheduledTime(i: number) {
-    setScheduledTimes((prev) =>
-      prev.length === 1 ? prev : prev.filter((_, idx) => idx !== i)
-    );
+    // Optional now — removing the last time is allowed (no set time).
+    setScheduledTimes((prev) => prev.filter((_, idx) => idx !== i));
   }
 
   // ---- Weekday checkbox handler -----------------------------------------
@@ -492,11 +491,18 @@ export function ActivityForm({
             <>
               Times of day{" "}
               <span className="font-normal text-zinc-500">
-                ({scheduledTimes.length} per day)
+                {scheduledTimes.length > 0
+                  ? `(${scheduledTimes.length} per day)`
+                  : "(optional)"}
               </span>
             </>
           }
         >
+          {scheduledTimes.length === 0 && (
+            <p className="text-xs text-zinc-500">
+              No set time — this sorts to the end of the day.
+            </p>
+          )}
           <ul className="flex flex-col gap-2">
             {scheduledTimes.map((t, i) => (
               <li key={i} className="flex items-center gap-2">
@@ -505,14 +511,12 @@ export function ActivityForm({
                   name="scheduledTime"
                   value={t}
                   onChange={(e) => updateScheduledTime(i, e.target.value)}
-                  required
                   className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
                 />
                 <button
                   type="button"
                   onClick={() => removeScheduledTime(i)}
-                  disabled={scheduledTimes.length === 1}
-                  className="rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-30 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
+                  className="rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
                 >
                   Remove
                 </button>

@@ -126,9 +126,9 @@ export function ActivityFormFields({
     setScheduledTimes((prev) => [...prev, "12:00"]);
   }
   function removeScheduledTime(i: number) {
-    setScheduledTimes((prev) =>
-      prev.length === 1 ? prev : prev.filter((_, idx) => idx !== i)
-    );
+    // Time of day is optional now — removing the last row is allowed
+    // (an activity with no set time sorts to the end of the day).
+    setScheduledTimes((prev) => prev.filter((_, idx) => idx !== i));
   }
 
   const intervalDays = Math.max(1, parseInt(intervalDaysStr, 10) || 1);
@@ -310,14 +310,21 @@ export function ActivityFormFields({
         </div>
       )}
 
-      {/* --- Times of day (unified multi-row list for every rhythm) - */}
+      {/* --- Times of day (optional, multi-row list for every rhythm) - */}
       <fieldset className="mt-4">
         <legend className="text-sm font-medium">
           Times of day{" "}
           <span className="font-normal text-zinc-500">
-            ({scheduledTimes.length} per day)
+            {scheduledTimes.length > 0
+              ? `(${scheduledTimes.length} per day)`
+              : "(optional)"}
           </span>
         </legend>
+        {scheduledTimes.length === 0 && (
+          <p className="mt-1 text-xs text-zinc-500">
+            No set time — this sorts to the end of the day.
+          </p>
+        )}
         <ul className="mt-1 flex flex-col gap-2">
           {scheduledTimes.map((t, i) => (
             <li key={i} className="flex items-center gap-2">
@@ -326,14 +333,12 @@ export function ActivityFormFields({
                 name="scheduledTime"
                 value={t}
                 onChange={(e) => updateScheduledTime(i, e.target.value)}
-                required
                 className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
               />
               <button
                 type="button"
                 onClick={() => removeScheduledTime(i)}
-                disabled={scheduledTimes.length === 1}
-                className="rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-30 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
+                className="rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
               >
                 Remove
               </button>
@@ -443,10 +448,10 @@ function initRhythmKindFromActivity(a: ActivityFormInitial): {
   scheduledTimes: string[];
 } {
   const r = a.rhythm;
-  // The unified "Times of day" list. Every rhythm uses it; default is
-  // a single 12:00 entry if the activity has no scheduled times.
-  const scheduledTimes =
-    a.scheduled_times.length > 0 ? a.scheduled_times : ["12:00"];
+  // The unified "Times of day" list. Optional — an activity may have no
+  // set time at all (it then sorts to the end of the day). We surface the
+  // activity's saved times verbatim (empty stays empty).
+  const scheduledTimes = a.scheduled_times;
   const defaults = {
     kind: "single" as RhythmKind,
     weekdays: [] as DayOfWeek[],
