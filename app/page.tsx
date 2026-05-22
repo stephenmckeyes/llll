@@ -44,11 +44,10 @@ import {
 } from "./_components/day-list";
 import { GridSection } from "./_components/grid-section";
 import { type IncompleteInfo } from "./_components/incomplete-button";
-import { PendingLink } from "./_components/pending-link";
+import { DashboardHeader } from "./_components/dashboard-header";
 import { SectionTabs } from "./_components/section-tabs";
 import { TagDotRow } from "./_components/tag-chip";
 import { TabPending } from "./_components/tab-pending";
-import { TimeChip } from "./_components/time-chip";
 
 type ViewKind = "day" | "week" | "month" | "year" | "grid";
 type GridRange = "week" | "month" | "total" | "custom";
@@ -228,57 +227,11 @@ export default async function HomePage({
           end up touching. Before this, the unscrolled state showed a
           32px gap that the scrolled state didn't, which looked like
           the layout "compressed" on scroll. Now both states match. */}
-      {/* Header. On mobile (<sm) the title and the action buttons stack
-          vertically and the buttons wrap, so nothing overflows the
-          viewport (the old `shrink-0` row forced horizontal scroll to
-          reach Settings on a phone). On sm+ it's the original
-          title-left / buttons-right row. */}
-      <header className="mb-6 flex flex-col gap-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0">
-            <h1 className="text-3xl font-semibold tracking-tight">Mission</h1>
-            <p className="flex flex-wrap items-center gap-x-2 text-xs text-zinc-500">
-              <span className="truncate">{user.email}</span>
-              <span aria-hidden>·</span>
-              <TimeChip />
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <PendingLink
-              href="/activities/new"
-              className="inline-flex items-center rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
-            >
-              + Add Activity
-            </PendingLink>
-            <PendingLink
-              href="/friends"
-              className="inline-flex items-center rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-            >
-              Friends
-            </PendingLink>
-            <PendingLink
-              href="/notifications"
-              aria-label="Notifications"
-              className="inline-flex items-center rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-            >
-              Notifications
-            </PendingLink>
-            {/* "Total View" (the old Archive page, now showing every
-                activity) lives as a third section tab in line with
-                Calendar / Grid — see SectionTabs. */}
-            {/* Per user spec: Settings replaces Sign out at the top.
-                The sign-out button now lives at the bottom of /settings,
-                so it's not the first thing the user sees but is still
-                one click away. */}
-            <PendingLink
-              href="/settings"
-              className="inline-flex items-center rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-            >
-              Settings
-            </PendingLink>
-          </div>
-        </div>
-
+      {/* Header — shared with Total View via DashboardHeader. mb-3 (down
+          from mb-6) tightens the gap to the section tabs below per user
+          request. */}
+      <header className="mb-3">
+        <DashboardHeader userEmail={user.email ?? ""} />
       </header>
 
       {/* ViewSwitcher and each view's date navigator stay pinned at the

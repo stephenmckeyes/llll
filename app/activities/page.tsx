@@ -13,6 +13,7 @@
 import { requireOnboardedUser } from "@/lib/auth/require-onboarded-user";
 import { buildTagMap, computeTagUsage, type TagMap } from "@/lib/domain/tags";
 
+import { DashboardHeader } from "@/app/_components/dashboard-header";
 import { SectionTabs } from "@/app/_components/section-tabs";
 
 import type { ActivityRow } from "./activity-detail-modal";
@@ -34,7 +35,7 @@ function todayInTimeZone(tz: string): string {
 export default async function ActivitiesPage() {
   // requireOnboardedUser handles both the unauthed → /login bounce and
   // the not-yet-onboarded → /onboarding bounce in one call.
-  const { supabase, profile } = await requireOnboardedUser();
+  const { supabase, user, profile } = await requireOnboardedUser();
 
   const [{ data }, { data: tagRows }] = await Promise.all([
     supabase
@@ -60,16 +61,14 @@ export default async function ActivitiesPage() {
   const todayStr = todayInTimeZone(profile.timezone ?? "UTC");
 
   return (
-    <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-6 p-6">
+    <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-4 p-6">
+      <DashboardHeader userEmail={user.email ?? ""} />
+
       <SectionTabs active="total" date={todayStr} />
 
-      <header>
-        <h1 className="text-3xl font-semibold tracking-tight">Total View</h1>
-        <p className="text-sm text-zinc-500">
-          {active.length} active · {archived.length} archived · {all.length}{" "}
-          total
-        </p>
-      </header>
+      <p className="text-sm text-zinc-500">
+        {active.length} active · {archived.length} archived · {all.length} total
+      </p>
 
       <TotalView activities={all} tagMap={tagMap} />
     </main>
