@@ -113,7 +113,16 @@ function DayList({
   byId: ById;
   todayStr: string;
 }) {
-  const days = useMemo(() => groupByDate(instances), [instances]);
+  // Order each day by time of day (no-time last), mirroring the personal
+  // Day view (see compareForDay in day-list / the week sort in page.tsx).
+  const days = useMemo(
+    () =>
+      groupByDate(instances).map((d) => ({
+        date: d.date,
+        items: sortByTime(d.items, byId),
+      })),
+    [instances, byId]
+  );
 
   if (days.length === 0) return <EmptyCalendar />;
 
@@ -184,7 +193,8 @@ function WeekGrid({
   const days = Array.from({ length: 7 }, (_, i) => {
     const date = addDays(weekStart, i);
     const dateStr = format(date, "yyyy-MM-dd");
-    return { date, dateStr, items: byDate.get(dateStr) ?? [] };
+    // Time-of-day order (no-time last), matching the personal Week view.
+    return { date, dateStr, items: sortByTime(byDate.get(dateStr) ?? [], byId) };
   });
 
   return (
@@ -484,6 +494,23 @@ function EmptyCalendar() {
       Nothing on the calendar — no active rhythms with shared progress.
     </p>
   );
+}
+
+// Sort a day's occurrences by the activity's first time of day (08:00
+// before 10:00 …), activities with NO set time last, then priority, then
+// name. Mirrors the personal Day/Week ordering.
+function sortByTime(items: SharedInstance[], byId: ById): SharedInstance[] {
+  return [...items].sort((a, b) => {
+    const aa = byId.get(a.activityId);
+    const bb = byId.get(b.activityId);
+    const ta = aa?.scheduledTimes[0] ?? "99:99";
+    const tb = bb?.scheduledTimes[0] ?? "99:99";
+    if (ta !== tb) return ta.localeCompare(tb);
+    const pa = aa?.priority ?? 2;
+    const pb = bb?.priority ?? 2;
+    if (pa !== pb) return pa - pb;
+    return (aa?.name ?? "").localeCompare(bb?.name ?? "");
+  });
 }
 
 function groupByDate(
