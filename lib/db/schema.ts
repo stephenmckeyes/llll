@@ -172,6 +172,9 @@ export const activities = pgTable(
     // streak_scope is 'independent'. NULL mode → fall back to the global.
     streakMode: text("streak_mode"),
     streakGoal: smallint("streak_goal"),
+    // Show this activity in the Grid view (migration 0016). Everything is
+    // still tracked; this only gates grid DISPLAY. Default false.
+    trackOnGrid: boolean("track_on_grid").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

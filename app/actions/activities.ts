@@ -61,6 +61,9 @@ export async function createActivity(
   // priority is only meaningful (and shown) for "single"; default = medium.
   const priority = clampInt(formData.get("priority"), 1, 3, 2);
 
+  // Grid display flag (migration 0016). Default false ("don't track on grid").
+  const trackOnGrid = String(formData.get("trackOnGrid")) === "true";
+
   // ---- 2. Reconstruct + validate the rhythm -------------------------------
 
   const rhythmType = String(formData.get("rhythmType") ?? "single");
@@ -218,6 +221,7 @@ export async function createActivity(
         default_skill_tags: tags,
         scheduled_times: scheduledTimes,
         reminders: remindersValidated.data,
+        track_on_grid: trackOnGrid,
       })
       .select("id")
       .single();
@@ -345,6 +349,7 @@ export async function createDraftActivity(
     default_skill_tags: tags,
     scheduled_times: scheduledTimes,
     reminders,
+    track_on_grid: String(formData.get("trackOnGrid")) === "true",
     // The whole point: parked in the archive, generating no instances.
     archived_at: new Date().toISOString(),
   });
@@ -749,6 +754,28 @@ export async function archiveActivity(activityId: string) {
   // Archived activities are excluded from backfill — drop the cache so the
   // next page-load doesn't keep extending an activity the user just hid.
   invalidateBackfillCache(user.id);
+  revalidatePath("/");
+  revalidatePath("/activities");
+}
+
+// ---------------------------------------------------------------------------
+// setTrackOnGrid — toggle whether an activity shows in the Grid view
+// (migration 0016). Doesn't touch tracking itself, just grid display.
+// ---------------------------------------------------------------------------
+
+export async function setTrackOnGrid(activityId: string, value: boolean) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  await supabase
+    .from("activities")
+    .update({ track_on_grid: value })
+    .eq("id", activityId)
+    .eq("user_id", user.id);
+
   revalidatePath("/");
   revalidatePath("/activities");
 }

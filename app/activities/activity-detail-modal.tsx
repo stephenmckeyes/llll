@@ -23,6 +23,7 @@ import { useEffect, useState, useTransition } from "react";
 import {
   archiveActivity,
   deleteActivity,
+  setTrackOnGrid,
 } from "@/app/actions/activities";
 import { EditRhythmBody } from "@/app/_components/activity-modal";
 import { ActivityHistoryModal } from "@/app/_components/activity-history-modal";
@@ -54,6 +55,7 @@ export type ActivityRow = ActivityFormInitial & {
   id: string;
   archived_at: string | null;
   created_at: string;
+  track_on_grid: boolean;
 };
 
 type Mode = "details" | "edit-rhythm";
@@ -72,9 +74,19 @@ export function ActivityDetailModal({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [unarchiveOpen, setUnarchiveOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const [onGrid, setOnGrid] = useState(activity.track_on_grid);
 
   const isSingle = activity.rhythm.type === "single";
   const archived = activity.archived_at !== null;
+
+  function toggleGrid() {
+    const next = !onGrid;
+    setOnGrid(next); // optimistic
+    startTransition(async () => {
+      await setTrackOnGrid(activity.id, next);
+      router.refresh();
+    });
+  }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -172,6 +184,32 @@ export function ActivityDetailModal({
                   {PRIORITY_LABEL[activity.priority] ?? "Medium"}
                 </DetailRow>
               </dl>
+
+              {/* Grid display toggle — everything is tracked regardless. */}
+              <div className="mt-4 flex items-center justify-between gap-3 rounded-md border border-zinc-200 px-3 py-2 dark:border-zinc-800">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">Show on Grid</p>
+                  <p className="text-xs text-zinc-500">
+                    Tracked either way — this only controls grid display.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={toggleGrid}
+                  disabled={isPending}
+                  role="switch"
+                  aria-checked={onGrid}
+                  className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+                    onGrid ? "bg-emerald-500" : "bg-zinc-300 dark:bg-zinc-700"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                      onGrid ? "translate-x-5" : "translate-x-0.5"
+                    }`}
+                  />
+                </button>
+              </div>
 
               {activity.notes && (
                 <div className="mt-5">

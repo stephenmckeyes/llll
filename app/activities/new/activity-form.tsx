@@ -72,6 +72,10 @@ export function ActivityForm({
   const [draftPending, startDraft] = useTransition();
   const [draftError, setDraftError] = useState<string | null>(null);
 
+  // Grid display flag (default off). Everything is tracked regardless — this
+  // only controls whether the activity appears in the Grid view.
+  const [trackOnGrid, setTrackOnGrid] = useState(false);
+
   function handleSaveForLater() {
     const form = formRef.current;
     if (!form) return;
@@ -218,6 +222,44 @@ export function ActivityForm({
       }}
       className="flex w-full max-w-full min-w-0 flex-col gap-6"
     >
+      {/* --- 0. Track on Grid? (default: no) -------------------------- */}
+      <input
+        type="hidden"
+        name="trackOnGrid"
+        value={trackOnGrid ? "true" : "false"}
+      />
+      <fieldset className="flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+        <legend className="px-1 text-sm font-medium">Grid</legend>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setTrackOnGrid(false)}
+            className={`flex-1 touch-manipulation rounded-md border px-3 py-2 text-center text-sm font-medium transition-colors ${
+              !trackOnGrid
+                ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            }`}
+          >
+            Don&rsquo;t track on grid
+          </button>
+          <button
+            type="button"
+            onClick={() => setTrackOnGrid(true)}
+            className={`flex-1 touch-manipulation rounded-md border px-3 py-2 text-center text-sm font-medium transition-colors ${
+              trackOnGrid
+                ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            }`}
+          >
+            Track on grid
+          </button>
+        </div>
+        <p className="text-xs text-zinc-500">
+          Everything is tracked either way — this only controls whether the
+          activity appears in the Grid view.
+        </p>
+      </fieldset>
+
       {/* --- 1. Activity (name) ---------------------------------------- */}
       <FieldLabel label="Activity">
         <input

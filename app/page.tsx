@@ -1218,7 +1218,7 @@ async function GridView({
     supabase
       .from("activities")
       .select(
-        "id, name, notes, rhythm, priority, scheduled_times, default_skill_tags, start_date, end_date, archived_at, reminders, streak_mode, streak_goal"
+        "id, name, notes, rhythm, priority, scheduled_times, default_skill_tags, start_date, end_date, archived_at, reminders, streak_mode, streak_goal, track_on_grid"
       )
       .eq("user_id", userId)
       .is("archived_at", null)
@@ -1244,8 +1244,13 @@ async function GridView({
     reminders: Array<{ amount: number; unit: string }>;
     streak_mode: string | null;
     streak_goal: number | null;
+    track_on_grid: boolean;
   };
-  const activities = (activitiesRaw ?? []) as ActivityRow[];
+  // Grid only DISPLAYS activities the user opted into (track_on_grid).
+  // Everything is still tracked elsewhere; this is a display filter.
+  const activities = (
+    (activitiesRaw ?? []) as ActivityRow[]
+  ).filter((a) => a.track_on_grid);
 
   // Streak display config (Settings → Streaks). scope 'same' → globalMode
   // for every activity; 'independent' → each activity's own mode (falling

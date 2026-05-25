@@ -135,18 +135,38 @@ export function TotalView({
 
 function buildGroups(rows: ActivityRow[], groupBy: GroupBy): Group[] {
   if (groupBy === "status") {
-    const active = rows.filter((a) => a.archived_at === null);
-    const archived = rows.filter((a) => a.archived_at !== null);
+    // Four buckets: active/archived × on-grid/off-grid.
     const out: Group[] = [];
-    // Active first (the live list), then Archived.
-    if (active.length > 0 || archived.length === 0)
-      out.push({ key: "active", label: "Active", items: sortByName(active) });
-    if (archived.length > 0)
-      out.push({
-        key: "archived",
-        label: "Archived",
-        items: sortByName(archived),
-      });
+    const bucket = (
+      key: string,
+      label: string,
+      pred: (a: ActivityRow) => boolean
+    ) => {
+      const items = rows.filter(pred);
+      if (items.length > 0) out.push({ key, label, items: sortByName(items) });
+    };
+    bucket(
+      "active-on",
+      "Active · On grid",
+      (a) => a.archived_at === null && a.track_on_grid
+    );
+    bucket(
+      "active-off",
+      "Active · Off grid",
+      (a) => a.archived_at === null && !a.track_on_grid
+    );
+    bucket(
+      "archived-on",
+      "Archived · On grid",
+      (a) => a.archived_at !== null && a.track_on_grid
+    );
+    bucket(
+      "archived-off",
+      "Archived · Off grid",
+      (a) => a.archived_at !== null && !a.track_on_grid
+    );
+    if (out.length === 0)
+      out.push({ key: "active-off", label: "Active · Off grid", items: [] });
     return out;
   }
 
@@ -221,6 +241,11 @@ function ActivityCard({
           {archived && (
             <span className="shrink-0 rounded bg-zinc-200 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
               Archived
+            </span>
+          )}
+          {activity.track_on_grid && (
+            <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+              On grid
             </span>
           )}
         </div>
