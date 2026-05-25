@@ -6,24 +6,45 @@
 // Messages come from the server (getConversation). Sending appends an
 // optimistic bubble and refreshes; a light 15s poll (+ refresh on focus)
 // pulls in the friend's new messages without a websocket. Quoted activities
-// render as a small block above the message body.
+// render as a small block above the message body — and when the quoted
+// activity is one the friend has shared with you, the block is tappable and
+// opens that activity's full read-only detail (so you know which one it is).
 // ---------------------------------------------------------------------------
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 
 import { sendMessage, type Message } from "@/app/actions/messages";
+import type { SharedActivity } from "@/app/actions/sharing";
+import type { TagMap } from "@/lib/domain/tags";
+
+import { CopyShareModal } from "../../copy-share-modal";
+import { SharedActivityModal } from "../shared-activity-modal";
+
+export type WatchMap = Record<
+  string,
+  { notifyEach: boolean; notifyDaily: boolean; notifyWeekly: boolean }
+>;
+
+const NO_WATCH = { notifyEach: false, notifyDaily: false, notifyWeekly: false };
 
 export function ChatThread({
   friendId,
   friendName,
   currentUserId,
   messages,
+  sharedById,
+  watchMap,
+  tagMap,
 }: {
   friendId: string;
   friendName: string;
   currentUserId: string;
   messages: Message[];
+  /** Activities the friend shared with you, by id — for opening a quote. */
+  sharedById: Record<string, SharedActivity>;
+  watchMap: WatchMap;
+  tagMap: TagMap;
 }) {
   const router = useRouter();
   const [body, setBody] = useState("");
@@ -34,8 +55,12 @@ export function ChatThread({
   const [, startTransition] = useTransition();
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Clear optimistic bubbles once the server thread reflects them. The
-  // message-id list is the snapshot key (React-19-friendly, no effect).
+  // Quote → detail / copy modals.
+  const [openShareId, setOpenShareId] = useState<string | null>(null);
+  const [copying, setCopying] = useState<SharedActivity | null>(null);
+  const openShare = openShareId ? sharedById[openShareId] ?? null : null;
+
+  // Clear optimistic bubbles once the server thread reflects them.
   const idsKey = messages.map((m) => m.id).join(",");
   const [lastIdsKey, setLastIdsKey] = useState(idsKey);
   if (lastIdsKey !== idsKey) {
@@ -82,24 +107,31 @@ export function ChatThread({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div
-        ref={scrollRef}
-        className="flex-1 overflow-y-auto py-4"
-      >
+      <div ref={scrollRef} className="flex-1 overflow-y-auto py-4">
         {empty ? (
           <p className="mt-8 text-center text-sm text-zinc-500">
             No messages yet. Say hi to {friendName}.
           </p>
         ) : (
           <ul className="flex flex-col gap-2">
-            {messages.map((m) => (
-              <MessageBubble
-                key={m.id}
-                mine={m.senderId === currentUserId}
-                body={m.body}
-                quotedName={m.quotedActivityName}
-              />
-            ))}
+            {messages.map((m) => {
+              const canOpenQuote =
+                m.quotedActivityId !== null &&
+                Boolean(sharedById[m.quotedActivityId]);
+              return (
+                <MessageBubble
+                  key={m.id}
+                  mine={m.senderId === currentUserId}
+                  body={m.body}
+                  quotedName={m.quotedActivityName}
+                  onQuoteOpen={
+                    canOpenQuote
+                      ? () => setOpenShareId(m.quotedActivityId)
+                      : undefined
+                  }
+                />
+              );
+            })}
             {pending.map((m) => (
               <MessageBubble key={m.tempId} mine body={m.body} sending />
             ))}
@@ -121,7 +153,6 @@ export function ChatThread({
           value={body}
           onChange={(e) => setBody(e.target.value)}
           onKeyDown={(e) => {
-            // Enter sends; Shift+Enter newlines.
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               send();
@@ -141,6 +172,24 @@ export function ChatThread({
           Send
         </button>
       </div>
+
+      {openShare && (
+        <SharedActivityModal
+          share={openShare}
+          friendId={friendId}
+          tagMap={tagMap}
+          watch={watchMap[openShare.activityId] ?? NO_WATCH}
+          onCopy={(s) => setCopying(s)}
+          onClose={() => setOpenShareId(null)}
+        />
+      )}
+      {copying && (
+        <CopyShareModal
+          shared={copying}
+          tagMap={tagMap}
+          onClose={() => setCopying(null)}
+        />
+      )}
     </div>
   );
 }
@@ -149,13 +198,29 @@ function MessageBubble({
   mine,
   body,
   quotedName,
+  onQuoteOpen,
   sending = false,
 }: {
   mine: boolean;
   body: string;
   quotedName?: string | null;
+  /** When set, the quote block is tappable and opens the activity detail. */
+  onQuoteOpen?: () => void;
   sending?: boolean;
 }) {
+  const quoteCls = `mb-1 block w-full rounded-md border-l-2 px-2 py-1 text-left text-xs ${
+    mine
+      ? "border-white/40 bg-white/10"
+      : "border-zinc-400 bg-black/5 dark:border-zinc-500 dark:bg-white/5"
+  }`;
+  const quoteInner = (
+    <>
+      <span className="opacity-70">Re: </span>
+      <span className="font-medium">{quotedName}</span>
+      {onQuoteOpen && <span className="opacity-70"> ›</span>}
+    </>
+  );
+
   return (
     <li className={`flex ${mine ? "justify-end" : "justify-start"}`}>
       <div
@@ -165,18 +230,19 @@ function MessageBubble({
             : "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
         } ${sending ? "opacity-60" : ""}`}
       >
-        {quotedName && (
-          <div
-            className={`mb-1 rounded-md border-l-2 px-2 py-1 text-xs ${
-              mine
-                ? "border-white/40 bg-white/10"
-                : "border-zinc-400 bg-black/5 dark:border-zinc-500 dark:bg-white/5"
-            }`}
-          >
-            <span className="opacity-70">Re: </span>
-            <span className="font-medium">{quotedName}</span>
-          </div>
-        )}
+        {quotedName &&
+          (onQuoteOpen ? (
+            <button
+              type="button"
+              onClick={onQuoteOpen}
+              className={`${quoteCls} cursor-pointer hover:opacity-80`}
+              title="View activity details"
+            >
+              {quoteInner}
+            </button>
+          ) : (
+            <div className={quoteCls}>{quoteInner}</div>
+          ))}
         {body && <p className="whitespace-pre-wrap break-words">{body}</p>}
       </div>
     </li>
