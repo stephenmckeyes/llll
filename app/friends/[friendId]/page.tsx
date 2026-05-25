@@ -13,12 +13,13 @@ import {
   getSharedInstancesWithMe,
   getSharedWithMe,
 } from "@/app/actions/sharing";
+import { getWatches } from "@/app/actions/watches";
 import { requireOnboardedUser } from "@/lib/auth/require-onboarded-user";
 import { buildTagMap, computeTagUsage } from "@/lib/domain/tags";
 
 import { PendingLink } from "@/app/_components/pending-link";
 
-import { FriendView } from "./friend-view";
+import { FriendView, type WatchMap } from "./friend-view";
 
 function todayInTimeZone(tz: string): string {
   try {
@@ -45,10 +46,17 @@ function addDaysToYmd(ymd: string, days: number): string {
 
 export default async function FriendViewPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ friendId: string }>;
+  searchParams: Promise<{ view?: string; highlight?: string }>;
 }) {
   const { friendId } = await params;
+  const { view: viewParam, highlight } = await searchParams;
+  const initialView =
+    viewParam === "calendar" || viewParam === "grid" || viewParam === "total"
+      ? viewParam
+      : "total";
   const { supabase, profile } = await requireOnboardedUser();
 
   // Confirm an ACCEPTED friendship (and get the display name). Anyone who
@@ -67,19 +75,34 @@ export default async function FriendViewPage({
   const from = addDaysToYmd(todayStr, -35);
   const to = addDaysToYmd(todayStr, 35);
 
-  const [allShares, allInstances, { data: tagRows }, { data: activityTagRows }] =
-    await Promise.all([
-      getSharedWithMe(),
-      getSharedInstancesWithMe(from, to),
-      supabase.from("tags").select("id, name, color"),
-      supabase
-        .from("activities")
-        .select("default_skill_tags")
-        .is("archived_at", null),
-    ]);
+  const [
+    allShares,
+    allInstances,
+    watches,
+    { data: tagRows },
+    { data: activityTagRows },
+  ] = await Promise.all([
+    getSharedWithMe(),
+    getSharedInstancesWithMe(from, to),
+    getWatches(),
+    supabase.from("tags").select("id, name, color"),
+    supabase
+      .from("activities")
+      .select("default_skill_tags")
+      .is("archived_at", null),
+  ]);
 
   const shares = allShares.filter((s) => s.ownerId === friendId);
   const instances = allInstances.filter((i) => i.ownerId === friendId);
+
+  const watchMap: WatchMap = {};
+  for (const w of watches) {
+    watchMap[w.activityId] = {
+      notifyEach: w.notifyEach,
+      notifyDaily: w.notifyDaily,
+      notifyWeekly: w.notifyWeekly,
+    };
+  }
 
   // Tag palette is the CURRENT user's (the Copy form creates your own
   // activity, so it picks from your tags — mirrors /activities/new).
@@ -111,6 +134,9 @@ export default async function FriendViewPage({
         instances={instances}
         todayStr={todayStr}
         tagMap={tagMap}
+        watchMap={watchMap}
+        initialView={initialView}
+        highlightId={highlight ?? null}
       />
     </main>
   );

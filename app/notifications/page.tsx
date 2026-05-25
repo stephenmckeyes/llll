@@ -6,14 +6,18 @@
 //      reminder delivery ships). Each links to the day it was due.
 // ---------------------------------------------------------------------------
 
+import { startOfWeek, format } from "date-fns";
 import Link from "next/link";
 
 import { getSocialOverview, type SocialEntry } from "@/app/actions/friends";
-import { getSharedWithMe } from "@/app/actions/sharing";
+import { getSharedInstancesWithMe, getSharedWithMe } from "@/app/actions/sharing";
+import { getWatches } from "@/app/actions/watches";
 import { requireOnboardedUser } from "@/lib/auth/require-onboarded-user";
 
 import { PendingLink } from "@/app/_components/pending-link";
 
+import { buildFriendActivityNotifications } from "./friend-activity";
+import { FriendActivityNotifications } from "./friend-activity-notifications";
 import { RequestActions } from "./request-actions";
 import { SharedNotifications } from "./shared-notifications";
 
@@ -47,13 +51,37 @@ export default async function NotificationsPage() {
   const { supabase, user, profile } = await requireOnboardedUser();
   const todayStr = todayInTimeZone(profile.timezone ?? "UTC");
 
-  const [entries, shares] = await Promise.all([
+  // Window for watch reminders: 7 days back covers the "each" feed and the
+  // current week-so-far (which starts at most 6 days ago).
+  const weekStart = format(
+    startOfWeek(new Date(`${todayStr}T00:00:00`), { weekStartsOn: 1 }),
+    "yyyy-MM-dd"
+  );
+  const from = (() => {
+    const d = new Date(`${todayStr}T00:00:00`);
+    d.setDate(d.getDate() - 7);
+    return format(d, "yyyy-MM-dd");
+  })();
+
+  const [entries, shares, watches, sharedInstances] = await Promise.all([
     getSocialOverview(),
     getSharedWithMe(),
+    getWatches(),
+    getSharedInstancesWithMe(from, todayStr),
   ]);
   const incoming = entries.filter(
     (e) => e.status === "pending" && e.direction === "incoming"
   );
+
+  // Live "Friend activity" reminders from the activities the user watches.
+  const sharedById = new Map(shares.map((s) => [s.activityId, s]));
+  const friendNotes = buildFriendActivityNotifications({
+    watches,
+    sharedById,
+    instances: sharedInstances,
+    todayStr,
+    weekStart,
+  });
 
   // Reminders = past-due pending instances on active activities. Two-step
   // query (active activity ids, then their overdue pending instances) for
@@ -135,6 +163,9 @@ export default async function NotificationsPage() {
 
       {/* 1b. Shared with you */}
       <SharedNotifications shares={shares} />
+
+      {/* 1c. Friend activity (watched rhythms) */}
+      <FriendActivityNotifications notes={friendNotes} />
 
       {/* 2. Reminders */}
       <section className="flex flex-col gap-3">

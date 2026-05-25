@@ -326,3 +326,34 @@ export const activityShares = pgTable(
     index("activity_shares_owner_idx").on(t.ownerId),
   ]
 );
+
+// ===========================================================================
+// activity_watches (migration 0013) — "watch" a friend's shared rhythm for
+// progress nudges. One row per (watcher, activity). Cadences are independent
+// booleans. Reminders are computed live in the Notifications tab from the
+// friend's shared occurrences — this table only records what's being
+// watched. See lib/db/migrations/0013_activity_watches.sql.
+// ===========================================================================
+
+export const activityWatches = pgTable(
+  "activity_watches",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    watcherId: uuid("watcher_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    activityId: uuid("activity_id")
+      .notNull()
+      .references(() => activities.id, { onDelete: "cascade" }),
+    notifyEach: boolean("notify_each").notNull().default(false),
+    notifyDaily: boolean("notify_daily").notNull().default(false),
+    notifyWeekly: boolean("notify_weekly").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("activity_watches_unique").on(t.watcherId, t.activityId),
+    index("activity_watches_watcher_idx").on(t.watcherId),
+  ]
+);

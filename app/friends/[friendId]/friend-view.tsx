@@ -23,8 +23,21 @@ import { TagChipList } from "@/app/_components/tag-chip";
 import { CopyShareModal } from "../copy-share-modal";
 import { FriendCalendar } from "./friend-calendar";
 import { FriendGrid } from "./friend-grid";
+import { RemindersButton } from "./reminders-button";
 
 type ViewKind = "total" | "calendar" | "grid";
+
+/** activityId → which reminder cadences the viewer has enabled. */
+export type WatchMap = Record<
+  string,
+  { notifyEach: boolean; notifyDaily: boolean; notifyWeekly: boolean }
+>;
+
+const NO_WATCH = {
+  notifyEach: false,
+  notifyDaily: false,
+  notifyWeekly: false,
+};
 
 export function FriendView({
   friendId,
@@ -33,6 +46,9 @@ export function FriendView({
   instances,
   todayStr,
   tagMap,
+  watchMap,
+  initialView = "total",
+  highlightId = null,
 }: {
   friendId: string;
   friendName: string;
@@ -40,8 +56,13 @@ export function FriendView({
   instances: SharedInstance[];
   todayStr: string;
   tagMap: TagMap;
+  watchMap: WatchMap;
+  /** Tab to open on load (from a deep link). */
+  initialView?: ViewKind;
+  /** Activity to flash in the grid (from a reminder notification link). */
+  highlightId?: string | null;
 }) {
-  const [view, setView] = useState<ViewKind>("total");
+  const [view, setView] = useState<ViewKind>(initialView);
   const [copying, setCopying] = useState<SharedActivity | null>(null);
 
   if (shares.length === 0) {
@@ -84,6 +105,7 @@ export function FriendView({
         <TotalReadOnly
           shares={shares}
           tagMap={tagMap}
+          watchMap={watchMap}
           onCopy={(s) => setCopying(s)}
         />
       )}
@@ -102,6 +124,7 @@ export function FriendView({
           instances={instances}
           todayStr={todayStr}
           tagMap={tagMap}
+          highlightId={highlightId}
         />
       )}
 
@@ -128,10 +151,12 @@ type ShareGroup = { key: string; label: string; items: SharedActivity[] };
 function TotalReadOnly({
   shares,
   tagMap,
+  watchMap,
   onCopy,
 }: {
   shares: SharedActivity[];
   tagMap: TagMap;
+  watchMap: WatchMap;
   onCopy: (s: SharedActivity) => void;
 }) {
   const [groupBy, setGroupBy] = useState<GroupBy>("tag");
@@ -189,6 +214,7 @@ function TotalReadOnly({
                 key={s.shareId}
                 share={s}
                 tagMap={tagMap}
+                watch={watchMap[s.activityId] ?? NO_WATCH}
                 onCopy={onCopy}
               />
             ))}
@@ -276,10 +302,12 @@ function Group({
 function ShareCard({
   share,
   tagMap,
+  watch,
   onCopy,
 }: {
   share: SharedActivity;
   tagMap: TagMap;
+  watch: { notifyEach: boolean; notifyDaily: boolean; notifyWeekly: boolean };
   onCopy: (s: SharedActivity) => void;
 }) {
   const archived = share.archivedAt !== null;
@@ -313,13 +341,25 @@ function ShareCard({
           </div>
         )}
       </div>
-      <button
-        type="button"
-        onClick={() => onCopy(share)}
-        className="shrink-0 touch-manipulation rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
-      >
-        Copy to my schedule
-      </button>
+      <div className="flex shrink-0 flex-wrap gap-2">
+        {/* Reminders only make sense when the owner shares progress (the
+            watch RLS enforces it too); archived/template-only shares have
+            no progress to nudge about. */}
+        {!archived && share.shareProgress && (
+          <RemindersButton
+            activityId={share.activityId}
+            activityName={share.name}
+            initial={watch}
+          />
+        )}
+        <button
+          type="button"
+          onClick={() => onCopy(share)}
+          className="touch-manipulation rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
+        >
+          Copy to my schedule
+        </button>
+      </div>
     </li>
   );
 }

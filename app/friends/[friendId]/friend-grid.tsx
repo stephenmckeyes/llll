@@ -17,7 +17,7 @@ import {
   startOfMonth,
   startOfWeek,
 } from "date-fns";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { SharedActivity, SharedInstance } from "@/app/actions/sharing";
 import { rhythmCategoryLabel } from "@/lib/domain/rhythm-summary";
@@ -44,15 +44,30 @@ export function FriendGrid({
   instances,
   todayStr,
   tagMap,
+  highlightId = null,
 }: {
   friendId: string;
   shares: SharedActivity[];
   instances: SharedInstance[];
   todayStr: string;
   tagMap: TagMap;
+  /** Activity to flash briefly (arrived via a reminder notification link). */
+  highlightId?: string | null;
 }) {
-  const [range, setRange] = useState<Range>("week");
+  // When deep-linked to highlight an activity, open on Total so the row is
+  // guaranteed to be present regardless of the current week/month.
+  const [range, setRange] = useState<Range>(highlightId ? "total" : "week");
   const [refDate, setRefDate] = useState<string>(todayStr);
+
+  // The highlight flashes "for an instant" then fades. Initial state already
+  // carries the id from the deep link, so the effect only schedules the
+  // clear (setState lives in the timeout callback, not the effect body).
+  const [highlight, setHighlight] = useState<string | null>(highlightId);
+  useEffect(() => {
+    if (!highlightId) return;
+    const t = setTimeout(() => setHighlight(null), 2500);
+    return () => clearTimeout(t);
+  }, [highlightId]);
   // Custom range bounds (default: last 30 days). Only used when range==="custom".
   const [customFrom, setCustomFrom] = useState<string>(
     format(addDays(parseYmd(todayStr), -30), "yyyy-MM-dd")
@@ -204,6 +219,7 @@ export function FriendGrid({
         userId={`friend:${friendId}`}
         tagMap={tagMap}
         readOnly
+        highlightActivityId={highlight}
       />
     </div>
   );

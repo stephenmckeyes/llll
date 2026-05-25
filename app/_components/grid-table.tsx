@@ -151,6 +151,7 @@ export function GridTable({
   userId,
   tagMap,
   readOnly = false,
+  highlightActivityId = null,
 }: {
   mode: GridMode;
   rows: GridRow[];
@@ -169,6 +170,9 @@ export function GridTable({
    *  mutation modal — clicks are inert. Sort + row hide still work since
    *  they're view-only. Default false keeps the dashboard unchanged. */
   readOnly?: boolean;
+  /** When set, the row for this activity gets a brief highlight tint
+   *  (used when arriving from a friend-reminder notification link). */
+  highlightActivityId?: string | null;
 }) {
   const [openInstance, setOpenInstance] = useState<DayInstance | null>(null);
   // In read-only mode opening the modal is a no-op, so cell clicks never
@@ -333,6 +337,7 @@ export function GridTable({
           onOpenInstance={handleOpenInstance}
           tagMap={tagMap}
           headerControls={headerControls}
+          highlightActivityId={highlightActivityId}
         />
       ) : mode === "month" ? (
         <MonthTable
@@ -344,6 +349,7 @@ export function GridTable({
           onOpenInstance={handleOpenInstance}
           tagMap={tagMap}
           headerControls={headerControls}
+          highlightActivityId={highlightActivityId}
         />
       ) : (
         <TotalTable
@@ -355,6 +361,7 @@ export function GridTable({
           onOpenInstance={handleOpenInstance}
           tagMap={tagMap}
           headerControls={headerControls}
+          highlightActivityId={highlightActivityId}
         />
       )}
 
@@ -463,6 +470,7 @@ function WeekTable({
   onOpenInstance,
   tagMap,
   headerControls,
+  highlightActivityId,
 }: {
   rows: GridRow[];
   dateCols: DateCol[];
@@ -478,6 +486,7 @@ function WeekTable({
     cycleSort: (column: GridSortColumn) => void;
     onContextMenu: (column: GridSortColumn, e: React.MouseEvent) => void;
   };
+  highlightActivityId: string | null;
 }) {
   // Cells fill the entire Activity-cells column horizontally via 1fr.
   // No hard cap — the column's auto width drives cell size. With
@@ -535,7 +544,10 @@ function WeekTable({
         {rows.map((row) => {
           const isOff = off.has(row.activity.id);
           return (
-            <tr key={row.activity.id}>
+            <tr
+              key={row.activity.id}
+              className={rowHighlightClass(row.activity.id, highlightActivityId)}
+            >
               <NameCell
                 row={row}
                 isOff={isOff}
@@ -587,6 +599,7 @@ function MonthTable({
   onOpenInstance,
   tagMap,
   headerControls,
+  highlightActivityId,
 }: {
   rows: GridRow[];
   dateCols: DateCol[];
@@ -602,6 +615,7 @@ function MonthTable({
     cycleSort: (column: GridSortColumn) => void;
     onContextMenu: (column: GridSortColumn, e: React.MouseEvent) => void;
   };
+  highlightActivityId: string | null;
 }) {
   const padBefore = dateCols.length > 0 ? mondayPad(dateCols[0].date) : 0;
 
@@ -653,7 +667,10 @@ function MonthTable({
         {rows.map((row) => {
           const isOff = off.has(row.activity.id);
           return (
-            <tr key={row.activity.id}>
+            <tr
+              key={row.activity.id}
+              className={rowHighlightClass(row.activity.id, highlightActivityId)}
+            >
               <NameCell
                 row={row}
                 isOff={isOff}
@@ -724,6 +741,7 @@ function TotalTable({
   onOpenInstance,
   tagMap,
   headerControls,
+  highlightActivityId,
 }: {
   rows: GridRow[];
   dateCols: DateCol[];
@@ -739,6 +757,7 @@ function TotalTable({
     cycleSort: (column: GridSortColumn) => void;
     onContextMenu: (column: GridSortColumn, e: React.MouseEvent) => void;
   };
+  highlightActivityId: string | null;
 }) {
   const padBefore = dateCols.length > 0 ? mondayPad(dateCols[0].date) : 0;
   const totalWithStart = padBefore + dateCols.length;
@@ -789,7 +808,10 @@ function TotalTable({
         {rows.map((row) => {
           const isOff = off.has(row.activity.id);
           return (
-            <tr key={row.activity.id}>
+            <tr
+              key={row.activity.id}
+              className={rowHighlightClass(row.activity.id, highlightActivityId)}
+            >
               <NameCell
                 row={row}
                 isOff={isOff}
@@ -1288,6 +1310,18 @@ function pctClass(pct: number | null): string {
   if (pct >= 80) return "font-semibold text-emerald-700 dark:text-emerald-300";
   if (pct >= 50) return "text-amber-700 dark:text-amber-300";
   return "text-red-700 dark:text-red-300";
+}
+
+// Brief row tint when arriving from a friend-reminder link. The caller
+// clears the highlight id after a moment; the duration-700 transition makes
+// it fade back out (the "highlight for an instant" effect).
+function rowHighlightClass(
+  id: string,
+  highlight: string | null | undefined
+): string {
+  return id === highlight
+    ? "bg-amber-100 transition-colors duration-700 dark:bg-amber-950/40"
+    : "transition-colors duration-700";
 }
 
 function mondayPad(date: Date): number {
