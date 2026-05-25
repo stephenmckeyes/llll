@@ -25,7 +25,7 @@ import { CopyShareModal } from "../copy-share-modal";
 import { FriendCalendar } from "./friend-calendar";
 import { FriendGrid } from "./friend-grid";
 import { RemindersButton } from "./reminders-button";
-import { ReplyButton } from "./reply-button";
+import type { Occurrence } from "./shared-data";
 import { SharedActivityModal } from "./shared-activity-modal";
 
 type ViewKind = "total" | "calendar" | "grid";
@@ -74,16 +74,21 @@ export function FriendView({
 }) {
   const [view, setView] = useState<ViewKind>(initialView);
   const [copying, setCopying] = useState<SharedActivity | null>(null);
-  // Which shared activity's read-only detail modal is open (by activity id).
-  const [openActivityId, setOpenActivityId] = useState<string | null>(null);
+  // The open detail: which activity + which specific occurrence (or null for
+  // a rhythm-level open from the Total list).
+  const [detail, setDetail] = useState<{
+    activityId: string;
+    occurrence: Occurrence | null;
+  } | null>(null);
 
   const sharesById = useMemo(
     () => new Map(shares.map((s) => [s.activityId, s])),
     [shares]
   );
-  const openShare = openActivityId
-    ? sharesById.get(openActivityId) ?? null
-    : null;
+  const openShare = detail ? sharesById.get(detail.activityId) ?? null : null;
+
+  const onOpenActivity = (activityId: string, occurrence: Occurrence | null) =>
+    setDetail({ activityId, occurrence });
 
   if (shares.length === 0) {
     return (
@@ -127,7 +132,7 @@ export function FriendView({
           tagMap={tagMap}
           watchMap={watchMap}
           onCopy={(s) => setCopying(s)}
-          onOpenActivity={setOpenActivityId}
+          onOpenActivity={onOpenActivity}
         />
       )}
       {view === "calendar" && (
@@ -136,7 +141,7 @@ export function FriendView({
           instances={instances}
           todayStr={todayStr}
           tagMap={tagMap}
-          onOpenActivity={setOpenActivityId}
+          onOpenActivity={onOpenActivity}
         />
       )}
       {view === "grid" && (
@@ -147,21 +152,22 @@ export function FriendView({
           todayStr={todayStr}
           tagMap={tagMap}
           highlightId={highlightId}
-          onOpenActivity={setOpenActivityId}
+          onOpenActivity={onOpenActivity}
           streakMode={streakMode}
           streakGoal={streakGoal}
           showStats={showStats}
         />
       )}
 
-      {openShare && (
+      {openShare && detail && (
         <SharedActivityModal
           share={openShare}
           friendId={friendId}
           tagMap={tagMap}
           watch={watchMap[openShare.activityId] ?? NO_WATCH}
+          occurrence={detail.occurrence}
           onCopy={(s) => setCopying(s)}
-          onClose={() => setOpenActivityId(null)}
+          onClose={() => setDetail(null)}
         />
       )}
 
@@ -196,7 +202,7 @@ function TotalReadOnly({
   tagMap: TagMap;
   watchMap: WatchMap;
   onCopy: (s: SharedActivity) => void;
-  onOpenActivity: (activityId: string) => void;
+  onOpenActivity: (activityId: string, occurrence: Occurrence | null) => void;
 }) {
   const [groupBy, setGroupBy] = useState<GroupBy>("tag");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
@@ -350,15 +356,17 @@ function ShareCard({
   tagMap: TagMap;
   watch: { notifyEach: boolean; notifyDaily: boolean; notifyWeekly: boolean };
   onCopy: (s: SharedActivity) => void;
-  onOpenActivity: (activityId: string) => void;
+  onOpenActivity: (activityId: string, occurrence: Occurrence | null) => void;
 }) {
   const archived = share.archivedAt !== null;
   return (
     <li className="flex flex-col gap-3 rounded-md border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-950 sm:flex-row sm:items-start sm:justify-between">
-      {/* Tap the info area to open the read-only detail (with notes). */}
+      {/* Tap the info area to open the read-only detail (with notes). Reply
+          to a SPECIFIC occurrence lives in the Calendar/Grid; the Total card
+          opens the rhythm-level detail (no occurrence → no Reply). */}
       <button
         type="button"
-        onClick={() => onOpenActivity(share.activityId)}
+        onClick={() => onOpenActivity(share.activityId, null)}
         className="min-w-0 cursor-pointer text-left"
       >
         <div className="flex flex-wrap items-center gap-2">
@@ -389,12 +397,8 @@ function ShareCard({
         )}
       </button>
       <div className="flex shrink-0 flex-wrap gap-2">
-        {/* Reply quotes this activity into your chat with the owner. */}
-        <ReplyButton
-          friendId={share.ownerId}
-          activityId={share.activityId}
-          activityName={share.name}
-        />
+        {/* Reply lives on a specific occurrence (Calendar/Grid), not the
+            whole rhythm — so the Total card has no Reply button. */}
         {/* Reminders only make sense when the owner shares progress (the
             watch RLS enforces it too); archived/template-only shares have
             no progress to nudge about. */}

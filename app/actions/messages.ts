@@ -25,6 +25,8 @@ export type Message = {
   body: string;
   quotedActivityId: string | null;
   quotedActivityName: string | null;
+  quotedScheduledFor: string | null;
+  quotedStatus: string | null;
   createdAt: string;
   readAt: string | null;
 };
@@ -32,7 +34,13 @@ export type Message = {
 export async function sendMessage(
   recipientId: string,
   body: string,
-  quote?: { activityId?: string | null; activityName?: string | null }
+  quote?: {
+    activityId?: string | null;
+    activityName?: string | null;
+    /** When quoting a specific occurrence: its date + a status label. */
+    scheduledFor?: string | null;
+    statusLabel?: string | null;
+  }
 ): Promise<{ error: string } | { ok: true }> {
   const supabase = await createClient();
   const {
@@ -51,12 +59,17 @@ export async function sendMessage(
     return { error: "You can't message yourself." };
   }
 
+  const scheduledFor = quote?.scheduledFor ?? null;
+  const statusLabel = quote?.statusLabel?.trim() || null;
+
   const { error } = await supabase.from("messages").insert({
     sender_id: user.id,
     recipient_id: recipientId,
     body: text,
     quoted_activity_id: quote?.activityId ?? null,
     quoted_activity_name: quotedName,
+    quoted_scheduled_for: scheduledFor,
+    quoted_status: statusLabel,
   });
   // 23503 = FK violation (e.g. quoted activity vanished) — retry without the
   // quote id so the message still sends.
@@ -68,6 +81,8 @@ export async function sendMessage(
         body: text,
         quoted_activity_id: null,
         quoted_activity_name: quotedName,
+        quoted_scheduled_for: scheduledFor,
+        quoted_status: statusLabel,
       });
       if (e2) return { error: e2.message };
     } else {
@@ -90,7 +105,7 @@ export async function getConversation(friendId: string): Promise<Message[]> {
   const { data } = await supabase
     .from("messages")
     .select(
-      "id, sender_id, recipient_id, body, quoted_activity_id, quoted_activity_name, created_at, read_at"
+      "id, sender_id, recipient_id, body, quoted_activity_id, quoted_activity_name, quoted_scheduled_for, quoted_status, created_at, read_at"
     )
     .or(
       `and(sender_id.eq.${user.id},recipient_id.eq.${friendId}),and(sender_id.eq.${friendId},recipient_id.eq.${user.id})`
@@ -104,6 +119,8 @@ export async function getConversation(friendId: string): Promise<Message[]> {
     body: string;
     quoted_activity_id: string | null;
     quoted_activity_name: string | null;
+    quoted_scheduled_for: string | null;
+    quoted_status: string | null;
     created_at: string;
     read_at: string | null;
   }>;
@@ -128,6 +145,8 @@ export async function getConversation(friendId: string): Promise<Message[]> {
     body: r.body,
     quotedActivityId: r.quoted_activity_id,
     quotedActivityName: r.quoted_activity_name,
+    quotedScheduledFor: r.quoted_scheduled_for,
+    quotedStatus: r.quoted_status,
     createdAt: r.created_at,
     readAt: r.read_at,
   }));

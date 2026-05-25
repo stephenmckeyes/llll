@@ -21,6 +21,7 @@ import { useBodyScrollLock } from "@/lib/ui/body-scroll-lock";
 
 import { TagChipList } from "@/app/_components/tag-chip";
 
+import type { Occurrence } from "./shared-data";
 import { RemindersButton } from "./reminders-button";
 import { ReplyButton } from "./reply-button";
 
@@ -35,6 +36,7 @@ export function SharedActivityModal({
   friendId,
   tagMap,
   watch,
+  occurrence,
   onCopy,
   onClose,
 }: {
@@ -42,6 +44,10 @@ export function SharedActivityModal({
   friendId: string;
   tagMap: TagMap;
   watch: { notifyEach: boolean; notifyDaily: boolean; notifyWeekly: boolean };
+  /** The specific occurrence clicked (date + status), or null for a
+   *  rhythm-level open (e.g. from the Total list). Reply quotes the
+   *  occurrence when present. */
+  occurrence: Occurrence | null;
   onCopy: (s: SharedActivity) => void;
   onClose: () => void;
 }) {
@@ -95,6 +101,21 @@ export function SharedActivityModal({
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4">
+          {/* The specific occurrence the user opened (date + state). */}
+          {occurrence && (
+            <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="min-w-0">
+                <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                  This occurrence
+                </p>
+                <p className="truncate text-sm font-medium">
+                  {formatDmy(occurrence.scheduledFor)}
+                </p>
+              </div>
+              <StatusBadge label={occurrence.statusLabel} />
+            </div>
+          )}
+
           <dl className="flex flex-col gap-2 text-sm">
             <DetailRow label="Rhythm">
               {summarizeRhythm(share.rhythm, share.scheduledTimes)}
@@ -135,13 +156,17 @@ export function SharedActivityModal({
           )}
         </div>
 
-        {/* Action bar — Reply / Reminders / Copy. View-only otherwise. */}
+        {/* Action bar — Reply (quotes THIS occurrence) / Reminders / Copy. */}
         <div className="flex flex-wrap gap-2 border-t border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
-          <ReplyButton
-            friendId={friendId}
-            activityId={share.activityId}
-            activityName={share.name}
-          />
+          {occurrence && (
+            <ReplyButton
+              friendId={friendId}
+              activityId={share.activityId}
+              activityName={share.name}
+              scheduledFor={occurrence.scheduledFor}
+              statusLabel={occurrence.statusLabel}
+            />
+          )}
           {!archived && share.shareProgress && (
             <RemindersButton
               activityId={share.activityId}
@@ -180,4 +205,32 @@ function DetailRow({
       <dd className="min-w-0 flex-1 break-words">{children}</dd>
     </div>
   );
+}
+
+function StatusBadge({ label }: { label: string }) {
+  const cls =
+    label === "Completed"
+      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+      : label === "Missed"
+        ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
+        : label === "Unlabeled"
+          ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+          : "bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400";
+  return (
+    <span
+      className={`shrink-0 rounded-md px-3 py-1.5 text-xs font-semibold ${cls}`}
+    >
+      {label}
+    </span>
+  );
+}
+
+function formatDmy(yyyyMmDd: string): string {
+  const [y, m, d] = yyyyMmDd.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }

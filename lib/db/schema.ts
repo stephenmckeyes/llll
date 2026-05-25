@@ -396,6 +396,10 @@ export const messages = pgTable(
       { onDelete: "set null" }
     ),
     quotedActivityName: text("quoted_activity_name"),
+    // Occurrence-level quote (migration 0017): the dated instance + a label
+    // snapshot of its state at reply time. NULL for rhythm-level quotes.
+    quotedScheduledFor: date("quoted_scheduled_for"),
+    quotedStatus: text("quoted_status"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

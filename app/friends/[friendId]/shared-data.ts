@@ -8,6 +8,21 @@
 import type { SharedActivity, SharedInstance } from "@/app/actions/sharing";
 import type { DayInstance, DayMarkedItem } from "@/app/_components/day-list";
 
+// A specific dated occurrence the user clicked / replied to (the date plus a
+// human label for its state). Drives the occurrence detail + the chat quote.
+export type Occurrence = { scheduledFor: string; statusLabel: string };
+
+export function occurrenceStatusLabel(
+  status: string,
+  scheduledFor: string,
+  todayStr: string
+): string {
+  if (status === "completed") return "Completed";
+  if (status === "missed") return "Missed";
+  if (scheduledFor < todayStr) return "Unlabeled";
+  return "Scheduled";
+}
+
 // Assemble a DayInstance from a shared occurrence + its parent shared
 // activity. Per-occurrence overrides aren't shared, so they're null; tags
 // fall back to the activity's current set; reminders are irrelevant to a

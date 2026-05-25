@@ -23,7 +23,11 @@ import type { SharedActivity, SharedInstance } from "@/app/actions/sharing";
 import { DayList as DashboardDayList } from "@/app/_components/day-list";
 import type { TagMap } from "@/lib/domain/tags";
 
-import { buildFriendDayData } from "./shared-data";
+import {
+  buildFriendDayData,
+  occurrenceStatusLabel,
+  type Occurrence,
+} from "./shared-data";
 
 type Sub = "day" | "week" | "month" | "year";
 
@@ -38,8 +42,8 @@ export function FriendCalendar({
   instances: SharedInstance[];
   todayStr: string;
   tagMap: TagMap;
-  /** Open the read-only detail for an activity (clicking a day/week item). */
-  onOpenActivity: (activityId: string) => void;
+  /** Open the read-only detail for a specific occurrence (date + status). */
+  onOpenActivity: (activityId: string, occurrence: Occurrence | null) => void;
 }) {
   const [sub, setSub] = useState<Sub>("day");
   const [refDate, setRefDate] = useState<string>(todayStr);
@@ -92,7 +96,16 @@ export function FriendCalendar({
           incompleteInfo={{ count: 0, oldestDate: null }}
           tagMap={tagMap}
           readOnly
-          onReadOnlyOpen={(inst) => onOpenActivity(inst.activity.id)}
+          onReadOnlyOpen={(inst) =>
+            onOpenActivity(inst.activity.id, {
+              scheduledFor: inst.scheduled_for,
+              statusLabel: occurrenceStatusLabel(
+                inst.status,
+                inst.scheduled_for,
+                todayStr
+              ),
+            })
+          }
         />
       )}
       {sub === "week" && (
@@ -143,7 +156,7 @@ function WeekGrid({
   todayStr: string;
   refDate: string;
   setRefDate: (s: string) => void;
-  onOpenActivity: (activityId: string) => void;
+  onOpenActivity: (activityId: string, occurrence: Occurrence | null) => void;
 }) {
   const ref = parseYmd(refDate);
   const weekStart = startOfWeek(ref, { weekStartsOn: 1 });
@@ -203,7 +216,16 @@ function WeekGrid({
                     <li key={inst.instanceId}>
                       <button
                         type="button"
-                        onClick={() => onOpenActivity(inst.activityId)}
+                        onClick={() =>
+                          onOpenActivity(inst.activityId, {
+                            scheduledFor: inst.scheduledFor,
+                            statusLabel: occurrenceStatusLabel(
+                              inst.status,
+                              inst.scheduledFor,
+                              todayStr
+                            ),
+                          })
+                        }
                         title={act?.name ?? "Activity"}
                         className={`block w-full truncate rounded px-1 py-0.5 text-left text-[9px] leading-tight ${
                           done

@@ -15,10 +15,15 @@ export function ReplyButton({
   friendId,
   activityId,
   activityName,
+  scheduledFor = null,
+  statusLabel = null,
 }: {
   friendId: string;
   activityId: string;
   activityName: string;
+  /** When replying to a specific occurrence: its date + status label. */
+  scheduledFor?: string | null;
+  statusLabel?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -35,6 +40,8 @@ export function ReplyButton({
           friendId={friendId}
           activityName={activityName}
           activityId={activityId}
+          scheduledFor={scheduledFor}
+          statusLabel={statusLabel}
           onClose={() => setOpen(false)}
         />
       )}
@@ -46,11 +53,15 @@ function ReplyModal({
   friendId,
   activityId,
   activityName,
+  scheduledFor,
+  statusLabel,
   onClose,
 }: {
   friendId: string;
   activityId: string;
   activityName: string;
+  scheduledFor: string | null;
+  statusLabel: string | null;
   onClose: () => void;
 }) {
   const [body, setBody] = useState("");
@@ -66,6 +77,8 @@ function ReplyModal({
       const res = await sendMessage(friendId, body, {
         activityId,
         activityName,
+        scheduledFor,
+        statusLabel,
       });
       if ("error" in res) setError(res.error);
       else setSent(true);
@@ -102,6 +115,13 @@ function ReplyModal({
           <div className="rounded-md border-l-2 border-zinc-400 bg-zinc-50 px-3 py-2 text-xs dark:border-zinc-500 dark:bg-zinc-900">
             <span className="opacity-70">Re: </span>
             <span className="font-medium">{activityName}</span>
+            {scheduledFor && (
+              <span className="opacity-70">
+                {" "}
+                — {scheduledFor}
+                {statusLabel ? ` · ${statusLabel}` : ""}
+              </span>
+            )}
           </div>
 
           {sent ? (

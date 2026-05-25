@@ -35,7 +35,11 @@ import {
   type GridRow,
 } from "@/app/_components/grid-table";
 
-import { toDayInstance } from "./shared-data";
+import {
+  occurrenceStatusLabel,
+  toDayInstance,
+  type Occurrence,
+} from "./shared-data";
 
 type Range = "week" | "month" | "total" | "custom";
 
@@ -58,8 +62,8 @@ export function FriendGrid({
   tagMap: TagMap;
   /** Activity to flash briefly (arrived via a reminder notification link). */
   highlightId?: string | null;
-  /** Open the read-only detail for an activity (clicking a cell). */
-  onOpenActivity: (activityId: string) => void;
+  /** Open the read-only detail for a specific occurrence (clicking a cell). */
+  onOpenActivity: (activityId: string, occurrence: Occurrence | null) => void;
   /** Viewer's global streak display preference, applied to friend rows. */
   streakMode: StreakMode;
   streakGoal: number | null;
@@ -251,7 +255,16 @@ export function FriendGrid({
         tagMap={tagMap}
         readOnly
         highlightActivityId={highlight}
-        onReadOnlyOpen={(inst) => onOpenActivity(inst.activity.id)}
+        onReadOnlyOpen={(inst) =>
+          onOpenActivity(inst.activity.id, {
+            scheduledFor: inst.scheduled_for,
+            statusLabel: occurrenceStatusLabel(
+              inst.status,
+              inst.scheduled_for,
+              todayStr
+            ),
+          })
+        }
         showStats={showStats}
       />
     </div>

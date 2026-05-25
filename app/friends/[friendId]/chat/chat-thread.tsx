@@ -19,6 +19,7 @@ import type { SharedActivity } from "@/app/actions/sharing";
 import type { TagMap } from "@/lib/domain/tags";
 
 import { CopyShareModal } from "../../copy-share-modal";
+import type { Occurrence } from "../shared-data";
 import { SharedActivityModal } from "../shared-activity-modal";
 
 export type WatchMap = Record<
@@ -55,10 +56,14 @@ export function ChatThread({
   const [, startTransition] = useTransition();
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Quote → detail / copy modals.
-  const [openShareId, setOpenShareId] = useState<string | null>(null);
+  // Quote → detail / copy modals. openQuote carries the activity id + the
+  // specific occurrence (date/status) the message quoted.
+  const [openQuote, setOpenQuote] = useState<{
+    activityId: string;
+    occurrence: Occurrence | null;
+  } | null>(null);
   const [copying, setCopying] = useState<SharedActivity | null>(null);
-  const openShare = openShareId ? sharedById[openShareId] ?? null : null;
+  const openShare = openQuote ? sharedById[openQuote.activityId] ?? null : null;
 
   // Clear optimistic bubbles once the server thread reflects them.
   const idsKey = messages.map((m) => m.id).join(",");
@@ -115,18 +120,29 @@ export function ChatThread({
         ) : (
           <ul className="flex flex-col gap-2">
             {messages.map((m) => {
+              const activityId = m.quotedActivityId;
               const canOpenQuote =
-                m.quotedActivityId !== null &&
-                Boolean(sharedById[m.quotedActivityId]);
+                activityId !== null && Boolean(sharedById[activityId]);
               return (
                 <MessageBubble
                   key={m.id}
                   mine={m.senderId === currentUserId}
                   body={m.body}
                   quotedName={m.quotedActivityName}
+                  quotedDate={m.quotedScheduledFor}
+                  quotedStatus={m.quotedStatus}
                   onQuoteOpen={
                     canOpenQuote
-                      ? () => setOpenShareId(m.quotedActivityId)
+                      ? () =>
+                          setOpenQuote({
+                            activityId,
+                            occurrence: m.quotedScheduledFor
+                              ? {
+                                  scheduledFor: m.quotedScheduledFor,
+                                  statusLabel: m.quotedStatus ?? "",
+                                }
+                              : null,
+                          })
                       : undefined
                   }
                 />
@@ -173,14 +189,15 @@ export function ChatThread({
         </button>
       </div>
 
-      {openShare && (
+      {openShare && openQuote && (
         <SharedActivityModal
           share={openShare}
           friendId={friendId}
           tagMap={tagMap}
           watch={watchMap[openShare.activityId] ?? NO_WATCH}
+          occurrence={openQuote.occurrence}
           onCopy={(s) => setCopying(s)}
-          onClose={() => setOpenShareId(null)}
+          onClose={() => setOpenQuote(null)}
         />
       )}
       {copying && (
@@ -198,13 +215,17 @@ function MessageBubble({
   mine,
   body,
   quotedName,
+  quotedDate,
+  quotedStatus,
   onQuoteOpen,
   sending = false,
 }: {
   mine: boolean;
   body: string;
   quotedName?: string | null;
-  /** When set, the quote block is tappable and opens the activity detail. */
+  quotedDate?: string | null;
+  quotedStatus?: string | null;
+  /** When set, the quote block is tappable and opens the occurrence detail. */
   onQuoteOpen?: () => void;
   sending?: boolean;
 }) {
@@ -217,6 +238,13 @@ function MessageBubble({
     <>
       <span className="opacity-70">Re: </span>
       <span className="font-medium">{quotedName}</span>
+      {quotedDate && (
+        <span className="opacity-70">
+          {" "}
+          — {quotedDate}
+          {quotedStatus ? ` · ${quotedStatus}` : ""}
+        </span>
+      )}
       {onQuoteOpen && <span className="opacity-70"> ›</span>}
     </>
   );
