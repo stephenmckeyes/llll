@@ -32,11 +32,14 @@ export function FriendCalendar({
   instances,
   todayStr,
   tagMap,
+  onOpenActivity,
 }: {
   shares: SharedActivity[];
   instances: SharedInstance[];
   todayStr: string;
   tagMap: TagMap;
+  /** Open the read-only detail for an activity (clicking a day/week item). */
+  onOpenActivity: (activityId: string) => void;
 }) {
   const [sub, setSub] = useState<Sub>("day");
   const [refDate, setRefDate] = useState<string>(todayStr);
@@ -89,6 +92,7 @@ export function FriendCalendar({
           incompleteInfo={{ count: 0, oldestDate: null }}
           tagMap={tagMap}
           readOnly
+          onReadOnlyOpen={(inst) => onOpenActivity(inst.activity.id)}
         />
       )}
       {sub === "week" && (
@@ -98,6 +102,7 @@ export function FriendCalendar({
           todayStr={todayStr}
           refDate={refDate}
           setRefDate={setRefDate}
+          onOpenActivity={onOpenActivity}
         />
       )}
       {sub === "month" && (
@@ -131,12 +136,14 @@ function WeekGrid({
   todayStr,
   refDate,
   setRefDate,
+  onOpenActivity,
 }: {
   instances: SharedInstance[];
   byId: ById;
   todayStr: string;
   refDate: string;
   setRefDate: (s: string) => void;
+  onOpenActivity: (activityId: string) => void;
 }) {
   const ref = parseYmd(refDate);
   const weekStart = startOfWeek(ref, { weekStartsOn: 1 });
@@ -193,18 +200,21 @@ function WeekGrid({
                   const act = byId.get(inst.activityId);
                   const done = inst.status === "completed";
                   return (
-                    <li
-                      key={inst.instanceId}
-                      title={act?.name ?? "Activity"}
-                      className={`truncate rounded px-1 py-0.5 text-[9px] leading-tight ${
-                        done
-                          ? "bg-zinc-100 text-zinc-400 line-through dark:bg-zinc-900 dark:text-zinc-600"
-                          : inst.status === "missed"
-                            ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
-                            : "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
-                      }`}
-                    >
-                      {act?.name ?? "Activity"}
+                    <li key={inst.instanceId}>
+                      <button
+                        type="button"
+                        onClick={() => onOpenActivity(inst.activityId)}
+                        title={act?.name ?? "Activity"}
+                        className={`block w-full truncate rounded px-1 py-0.5 text-left text-[9px] leading-tight ${
+                          done
+                            ? "bg-zinc-100 text-zinc-400 line-through dark:bg-zinc-900 dark:text-zinc-600"
+                            : inst.status === "missed"
+                              ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
+                              : "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
+                        }`}
+                      >
+                        {act?.name ?? "Activity"}
+                      </button>
                     </li>
                   );
                 })}

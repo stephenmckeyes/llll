@@ -25,6 +25,7 @@ import { FriendCalendar } from "./friend-calendar";
 import { FriendGrid } from "./friend-grid";
 import { RemindersButton } from "./reminders-button";
 import { ReplyButton } from "./reply-button";
+import { SharedActivityModal } from "./shared-activity-modal";
 
 type ViewKind = "total" | "calendar" | "grid";
 
@@ -65,6 +66,16 @@ export function FriendView({
 }) {
   const [view, setView] = useState<ViewKind>(initialView);
   const [copying, setCopying] = useState<SharedActivity | null>(null);
+  // Which shared activity's read-only detail modal is open (by activity id).
+  const [openActivityId, setOpenActivityId] = useState<string | null>(null);
+
+  const sharesById = useMemo(
+    () => new Map(shares.map((s) => [s.activityId, s])),
+    [shares]
+  );
+  const openShare = openActivityId
+    ? sharesById.get(openActivityId) ?? null
+    : null;
 
   if (shares.length === 0) {
     return (
@@ -108,6 +119,7 @@ export function FriendView({
           tagMap={tagMap}
           watchMap={watchMap}
           onCopy={(s) => setCopying(s)}
+          onOpenActivity={setOpenActivityId}
         />
       )}
       {view === "calendar" && (
@@ -116,6 +128,7 @@ export function FriendView({
           instances={instances}
           todayStr={todayStr}
           tagMap={tagMap}
+          onOpenActivity={setOpenActivityId}
         />
       )}
       {view === "grid" && (
@@ -126,6 +139,18 @@ export function FriendView({
           todayStr={todayStr}
           tagMap={tagMap}
           highlightId={highlightId}
+          onOpenActivity={setOpenActivityId}
+        />
+      )}
+
+      {openShare && (
+        <SharedActivityModal
+          share={openShare}
+          friendId={friendId}
+          tagMap={tagMap}
+          watch={watchMap[openShare.activityId] ?? NO_WATCH}
+          onCopy={(s) => setCopying(s)}
+          onClose={() => setOpenActivityId(null)}
         />
       )}
 
@@ -154,11 +179,13 @@ function TotalReadOnly({
   tagMap,
   watchMap,
   onCopy,
+  onOpenActivity,
 }: {
   shares: SharedActivity[];
   tagMap: TagMap;
   watchMap: WatchMap;
   onCopy: (s: SharedActivity) => void;
+  onOpenActivity: (activityId: string) => void;
 }) {
   const [groupBy, setGroupBy] = useState<GroupBy>("tag");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
@@ -217,6 +244,7 @@ function TotalReadOnly({
                 tagMap={tagMap}
                 watch={watchMap[s.activityId] ?? NO_WATCH}
                 onCopy={onCopy}
+                onOpenActivity={onOpenActivity}
               />
             ))}
           </Group>
@@ -305,16 +333,23 @@ function ShareCard({
   tagMap,
   watch,
   onCopy,
+  onOpenActivity,
 }: {
   share: SharedActivity;
   tagMap: TagMap;
   watch: { notifyEach: boolean; notifyDaily: boolean; notifyWeekly: boolean };
   onCopy: (s: SharedActivity) => void;
+  onOpenActivity: (activityId: string) => void;
 }) {
   const archived = share.archivedAt !== null;
   return (
     <li className="flex flex-col gap-3 rounded-md border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-950 sm:flex-row sm:items-start sm:justify-between">
-      <div className="min-w-0">
+      {/* Tap the info area to open the read-only detail (with notes). */}
+      <button
+        type="button"
+        onClick={() => onOpenActivity(share.activityId)}
+        className="min-w-0 cursor-pointer text-left"
+      >
         <div className="flex flex-wrap items-center gap-2">
           <span
             className={`truncate font-medium ${
@@ -341,7 +376,7 @@ function ShareCard({
             />
           </div>
         )}
-      </div>
+      </button>
       <div className="flex shrink-0 flex-wrap gap-2">
         {/* Reply quotes this activity into your chat with the owner. */}
         <ReplyButton

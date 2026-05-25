@@ -252,15 +252,13 @@ export function InstanceRow({
         resolution ? "opacity-60" : ""
       }`}
     >
-      {/* Body — opens the modal. Inert in the read-only friend view. */}
+      {/* Body — opens the activity. In the dashboard that's the mutation
+          modal; in the read-only friend view it opens a read-only detail
+          (both flow through onOpen). */}
       <button
         type="button"
-        onClick={readOnly ? undefined : onOpen}
-        className={`flex min-w-0 flex-1 touch-manipulation items-start gap-2.5 text-left focus:outline-none ${
-          readOnly
-            ? "cursor-default"
-            : "cursor-pointer focus-visible:ring-2 focus-visible:ring-zinc-900 dark:focus-visible:ring-zinc-50"
-        }`}
+        onClick={onOpen}
+        className="flex min-w-0 flex-1 cursor-pointer touch-manipulation items-start gap-2.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900 dark:focus-visible:ring-zinc-50"
       >
         <span
           aria-hidden

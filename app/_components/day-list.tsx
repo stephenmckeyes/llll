@@ -99,6 +99,7 @@ export function DayList({
   incompleteInfo,
   tagMap,
   readOnly = false,
+  onReadOnlyOpen,
 }: {
   initialDate: string;
   completedByDate: Record<string, DayMarkedItem[]>;
@@ -111,6 +112,10 @@ export function DayList({
    *  Complete/Missed/Unlabel/+Add and no mutation modals — rows show a
    *  static status. Default false keeps the dashboard unchanged. */
   readOnly?: boolean;
+  /** In read-only mode, tapping a row calls this (instead of opening the
+   *  owner-only mutation modal) so the friend view can show its own
+   *  read-only detail. */
+  onReadOnlyOpen?: (inst: DayInstance) => void;
 }) {
   const router = useRouter();
   const [, startUnlabelTransition] = useTransition();
@@ -364,7 +369,9 @@ export function DayList({
               completed={completedByDate[d.dateStr] ?? []}
               missed={missedByDate[d.dateStr] ?? []}
               todayStr={todayStr}
-              onOpenInstance={readOnly ? () => {} : setOpenInstance}
+              onOpenInstance={
+                readOnly ? onReadOnlyOpen ?? (() => {}) : setOpenInstance
+              }
               resolved={resolved}
               onResolve={markResolved}
               onUnresolve={clearResolved}
@@ -572,15 +579,13 @@ function MarkedTable({
           <li key={it.id} className="flex items-stretch gap-1">
             <button
               type="button"
-              onClick={readOnly ? undefined : () => onOpen(it.instance)}
+              onClick={() => onOpen(it.instance)}
               title={
-                readOnly ? undefined : "Click to open — you can revert or edit"
-              }
-              className={`flex min-w-0 flex-1 items-start gap-2 rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-left text-xs transition-colors dark:border-zinc-800 dark:bg-zinc-950 ${
                 readOnly
-                  ? "cursor-default"
-                  : "hover:bg-zinc-50 dark:hover:bg-zinc-900"
-              }`}
+                  ? "Tap to view details"
+                  : "Click to open — you can revert or edit"
+              }
+              className="flex min-w-0 flex-1 items-start gap-2 rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-left text-xs transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900"
             >
               <span
                 aria-hidden

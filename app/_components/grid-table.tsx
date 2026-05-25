@@ -152,6 +152,7 @@ export function GridTable({
   tagMap,
   readOnly = false,
   highlightActivityId = null,
+  onReadOnlyOpen,
 }: {
   mode: GridMode;
   rows: GridRow[];
@@ -173,11 +174,17 @@ export function GridTable({
   /** When set, the row for this activity gets a brief highlight tint
    *  (used when arriving from a friend-reminder notification link). */
   highlightActivityId?: string | null;
+  /** In read-only mode, clicking a cell/single calls this (instead of the
+   *  owner-only mutation modal) so the friend view can open its own
+   *  read-only detail. */
+  onReadOnlyOpen?: (inst: DayInstance) => void;
 }) {
   const [openInstance, setOpenInstance] = useState<DayInstance | null>(null);
-  // In read-only mode opening the modal is a no-op, so cell clicks never
-  // surface the (owner-only) Complete/Edit/Drop actions.
-  const handleOpenInstance = readOnly ? () => {} : setOpenInstance;
+  // In read-only mode, route cell clicks to the friend view's read-only
+  // detail (or a no-op) — never the owner-only Complete/Edit/Drop modal.
+  const handleOpenInstance = readOnly
+    ? onReadOnlyOpen ?? (() => {})
+    : setOpenInstance;
   const { off, toggle } = useRowOffSet(userId);
 
   // ---- Click-to-sort state ----------------------------------------------

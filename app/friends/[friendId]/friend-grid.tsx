@@ -45,6 +45,7 @@ export function FriendGrid({
   todayStr,
   tagMap,
   highlightId = null,
+  onOpenActivity,
 }: {
   friendId: string;
   shares: SharedActivity[];
@@ -53,6 +54,8 @@ export function FriendGrid({
   tagMap: TagMap;
   /** Activity to flash briefly (arrived via a reminder notification link). */
   highlightId?: string | null;
+  /** Open the read-only detail for an activity (clicking a cell). */
+  onOpenActivity: (activityId: string) => void;
 }) {
   // When deep-linked to highlight an activity, open on Total so the row is
   // guaranteed to be present regardless of the current week/month.
@@ -220,6 +223,7 @@ export function FriendGrid({
         tagMap={tagMap}
         readOnly
         highlightActivityId={highlight}
+        onReadOnlyOpen={(inst) => onOpenActivity(inst.activity.id)}
       />
     </div>
   );
