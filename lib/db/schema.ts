@@ -81,6 +81,14 @@ export const profiles = pgTable("profiles", {
   // auth.users to clients.
   username: text("username"),
   email: text("email"),
+  // Streak display config (migration 0015). scope: 'same' | 'independent'.
+  // mode: 'none' | 'perfect_weeks' | 'perfect_months' | 'countdown' |
+  // 'total'. stats toggles the x/y + % line. goal is the global countdown
+  // target.
+  streakScope: text("streak_scope").notNull().default("same"),
+  streakMode: text("streak_mode").notNull().default("none"),
+  streakStats: boolean("streak_stats").notNull().default(true),
+  streakGoal: smallint("streak_goal"),
 });
 
 // ===========================================================================
@@ -160,6 +168,10 @@ export const activities = pgTable(
     visibility: visibility("visibility").notNull().default("private"),
     abandonedReason: text("abandoned_reason"),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
+    // Per-activity streak display (migration 0015), used when the user's
+    // streak_scope is 'independent'. NULL mode → fall back to the global.
+    streakMode: text("streak_mode"),
+    streakGoal: smallint("streak_goal"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

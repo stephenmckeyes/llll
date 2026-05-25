@@ -21,6 +21,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import type { SharedActivity, SharedInstance } from "@/app/actions/sharing";
 import { rhythmCategoryLabel } from "@/lib/domain/rhythm-summary";
+import { computeStreakValue, type StreakMode } from "@/lib/domain/streak";
 import type { TagMap } from "@/lib/domain/tags";
 
 import type { DayInstance } from "@/app/_components/day-list";
@@ -46,6 +47,9 @@ export function FriendGrid({
   tagMap,
   highlightId = null,
   onOpenActivity,
+  streakMode,
+  streakGoal,
+  showStats,
 }: {
   friendId: string;
   shares: SharedActivity[];
@@ -56,6 +60,10 @@ export function FriendGrid({
   highlightId?: string | null;
   /** Open the read-only detail for an activity (clicking a cell). */
   onOpenActivity: (activityId: string) => void;
+  /** Viewer's global streak display preference, applied to friend rows. */
+  streakMode: StreakMode;
+  streakGoal: number | null;
+  showStats: boolean;
 }) {
   // When deep-linked to highlight an activity, open on Total so the row is
   // guaranteed to be present regardless of the current week/month.
@@ -80,8 +88,28 @@ export function FriendGrid({
 
   const built = useMemo(
     () =>
-      buildGrid(shares, instances, range, refDate, todayStr, customFrom, customTo),
-    [shares, instances, range, refDate, todayStr, customFrom, customTo]
+      buildGrid(
+        shares,
+        instances,
+        range,
+        refDate,
+        todayStr,
+        customFrom,
+        customTo,
+        streakMode,
+        streakGoal
+      ),
+    [
+      shares,
+      instances,
+      range,
+      refDate,
+      todayStr,
+      customFrom,
+      customTo,
+      streakMode,
+      streakGoal,
+    ]
   );
 
   const allTagNames = useMemo(() => {
@@ -224,6 +252,7 @@ export function FriendGrid({
         readOnly
         highlightActivityId={highlight}
         onReadOnlyOpen={(inst) => onOpenActivity(inst.activity.id)}
+        showStats={showStats}
       />
     </div>
   );
@@ -242,7 +271,9 @@ function buildGrid(
   refDate: string,
   todayStr: string,
   customFrom: string,
-  customTo: string
+  customTo: string,
+  streakMode: StreakMode,
+  streakGoal: number | null
 ): {
   mode: GridMode;
   dateCols: DateCol[];
@@ -384,6 +415,13 @@ function buildGrid(
     const onTheHook = done + missed + unlabeled;
     const pct = onTheHook === 0 ? null : Math.round((done / onTheHook) * 100);
 
+    // Viewer's streak mode applied to the friend's occurrences. Note this
+    // is computed over the fetched window, so total/countdown reflect the
+    // visible range rather than all-time.
+    const history = Array.from(byDate.values()).map((i) => ({
+      scheduled_for: i.scheduledFor,
+      status: i.status,
+    }));
     rows.push({
       activity: {
         id: share.activityId,
@@ -398,7 +436,9 @@ function buildGrid(
       unlabeled,
       onTheHook,
       totalInPeriod,
-      streak: computeStreak(byDate, todayStr),
+      streak: computeStreakValue(streakMode, history, todayStr),
+      streakMode,
+      streakGoal,
     });
   }
 
@@ -421,23 +461,6 @@ function buildGrid(
 
 function cell(state: GridCellState, dateStr: string): GridCell {
   return { state, dateStr, instance: null };
-}
-
-// Simple read-only streak: walk this activity's past-or-today occurrences
-// newest-first, counting leading completions.
-function computeStreak(
-  byDate: Map<string, SharedInstance>,
-  todayStr: string
-): number {
-  const past = Array.from(byDate.values())
-    .filter((i) => i.scheduledFor <= todayStr)
-    .sort((a, b) => b.scheduledFor.localeCompare(a.scheduledFor));
-  let streak = 0;
-  for (const inst of past) {
-    if (inst.status === "completed") streak++;
-    else break;
-  }
-  return streak;
 }
 
 function parseYmd(ymd: string): Date {

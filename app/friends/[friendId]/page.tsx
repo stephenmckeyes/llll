@@ -15,6 +15,7 @@ import {
 } from "@/app/actions/sharing";
 import { getWatches } from "@/app/actions/watches";
 import { requireOnboardedUser } from "@/lib/auth/require-onboarded-user";
+import { isStreakMode, type StreakMode } from "@/lib/domain/streak";
 import { buildTagMap, computeTagUsage } from "@/lib/domain/tags";
 
 import { PendingLink } from "@/app/_components/pending-link";
@@ -57,7 +58,7 @@ export default async function FriendViewPage({
     viewParam === "calendar" || viewParam === "grid" || viewParam === "total"
       ? viewParam
       : "total";
-  const { supabase, profile } = await requireOnboardedUser();
+  const { supabase, user, profile } = await requireOnboardedUser();
 
   // Confirm an ACCEPTED friendship (and get the display name). Anyone who
   // isn't an accepted friend gets bounced — the RPCs would return nothing
@@ -81,6 +82,7 @@ export default async function FriendViewPage({
     watches,
     { data: tagRows },
     { data: activityTagRows },
+    { data: streakProfile },
   ] = await Promise.all([
     getSharedWithMe(),
     getSharedInstancesWithMe(from, to),
@@ -90,7 +92,25 @@ export default async function FriendViewPage({
       .from("activities")
       .select("default_skill_tags")
       .is("archived_at", null),
+    supabase
+      .from("profiles")
+      .select("streak_mode, streak_stats, streak_goal")
+      .eq("id", user.id)
+      .maybeSingle(),
   ]);
+
+  // Friend views apply the VIEWER's global streak preference (you can't set
+  // per-activity modes on someone else's activities).
+  const vp = (streakProfile ?? {}) as {
+    streak_mode?: string;
+    streak_stats?: boolean;
+    streak_goal?: number | null;
+  };
+  const viewerStreakMode: StreakMode = isStreakMode(vp.streak_mode)
+    ? vp.streak_mode
+    : "none";
+  const viewerStreakGoal = vp.streak_goal ?? null;
+  const viewerShowStats = vp.streak_stats ?? true;
 
   const shares = allShares.filter((s) => s.ownerId === friendId);
   const instances = allInstances.filter((i) => i.ownerId === friendId);
@@ -137,6 +157,9 @@ export default async function FriendViewPage({
         watchMap={watchMap}
         initialView={initialView}
         highlightId={highlight ?? null}
+        streakMode={viewerStreakMode}
+        streakGoal={viewerStreakGoal}
+        showStats={viewerShowStats}
       />
     </main>
   );

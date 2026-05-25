@@ -26,7 +26,11 @@ import { redirect } from "next/navigation";
 
 import { ensureInstancesBackfilled } from "@/lib/domain/backfill";
 import { rhythmCategoryLabel } from "@/lib/domain/rhythm-summary";
-import { computeStreak } from "@/lib/domain/streak";
+import {
+  computeStreakValue,
+  isStreakMode,
+  type StreakMode,
+} from "@/lib/domain/streak";
 import {
   buildTagMap,
   computeTagUsage,
@@ -1209,15 +1213,22 @@ async function GridView({
 
   // ---- 1. Fetch ALL non-archived activities (need start_date BEFORE we
   // compute Total's range, since Total spans from the earliest activity
-  // start to today) -------------------------------------------------------
-  const { data: activitiesRaw } = await supabase
-    .from("activities")
-    .select(
-      "id, name, notes, rhythm, priority, scheduled_times, default_skill_tags, start_date, end_date, archived_at, reminders"
-    )
-    .eq("user_id", userId)
-    .is("archived_at", null)
-    .order("name");
+  // start to today) + the user's streak display settings ------------------
+  const [{ data: activitiesRaw }, { data: streakProfile }] = await Promise.all([
+    supabase
+      .from("activities")
+      .select(
+        "id, name, notes, rhythm, priority, scheduled_times, default_skill_tags, start_date, end_date, archived_at, reminders, streak_mode, streak_goal"
+      )
+      .eq("user_id", userId)
+      .is("archived_at", null)
+      .order("name"),
+    supabase
+      .from("profiles")
+      .select("streak_scope, streak_mode, streak_stats, streak_goal")
+      .eq("id", userId)
+      .maybeSingle(),
+  ]);
 
   type ActivityRow = {
     id: string;
@@ -1231,8 +1242,26 @@ async function GridView({
     end_date: string | null;
     archived_at: string | null;
     reminders: Array<{ amount: number; unit: string }>;
+    streak_mode: string | null;
+    streak_goal: number | null;
   };
   const activities = (activitiesRaw ?? []) as ActivityRow[];
+
+  // Streak display config (Settings → Streaks). scope 'same' → globalMode
+  // for every activity; 'independent' → each activity's own mode (falling
+  // back to globalMode when unset).
+  const sp = (streakProfile ?? {}) as {
+    streak_scope?: string;
+    streak_mode?: string;
+    streak_stats?: boolean;
+    streak_goal?: number | null;
+  };
+  const streakScope = sp.streak_scope === "independent" ? "independent" : "same";
+  const globalStreakMode: StreakMode = isStreakMode(sp.streak_mode)
+    ? sp.streak_mode
+    : "none";
+  const globalStreakGoal = sp.streak_goal ?? null;
+  const showStats = sp.streak_stats ?? true;
 
   // ---- 2. Range bounds ---------------------------------------------------
   // Total = first rhythmic activity's start_date → today. NOT a fixed
@@ -1494,11 +1523,23 @@ async function GridView({
 
     const onTheHook = done + missed + unlabeled;
     const pct = onTheHook === 0 ? null : Math.round((done / onTheHook) * 100);
-    const streak = computeStreak(
-      streakByActivity.get(act.id) ?? [],
-      act.rhythm,
-      todayStr
-    );
+
+    // Effective streak mode for this activity (Settings → Streaks), and the
+    // value to display for it.
+    const effectiveMode: StreakMode =
+      streakScope === "independent"
+        ? isStreakMode(act.streak_mode)
+          ? act.streak_mode
+          : globalStreakMode
+        : globalStreakMode;
+    const streakGoal =
+      effectiveMode === "countdown"
+        ? streakScope === "independent"
+          ? act.streak_goal ?? globalStreakGoal
+          : globalStreakGoal
+        : null;
+    const history = streakByActivity.get(act.id) ?? [];
+    const streak = computeStreakValue(effectiveMode, history, todayStr);
 
     return {
       activity: {
@@ -1518,6 +1559,8 @@ async function GridView({
       onTheHook,
       totalInPeriod,
       streak,
+      streakMode: effectiveMode,
+      streakGoal,
     };
   });
 
@@ -1620,6 +1663,7 @@ async function GridView({
         singles={singlesForBanner}
         userId={userId}
         tagMap={tagMap}
+        showStats={showStats}
       />
     </div>
   );
@@ -1656,6 +1700,8 @@ type GridTableRow = {
   onTheHook: number;
   totalInPeriod: number;
   streak: number;
+  streakMode: StreakMode;
+  streakGoal: number | null;
 };
 
 function makeNonInstanceCell(

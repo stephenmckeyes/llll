@@ -16,6 +16,7 @@ import { useMemo, useState } from "react";
 
 import type { SharedActivity, SharedInstance } from "@/app/actions/sharing";
 import { rhythmCategoryLabel, summarizeRhythm } from "@/lib/domain/rhythm-summary";
+import type { StreakMode } from "@/lib/domain/streak";
 import type { TagMap } from "@/lib/domain/tags";
 
 import { TagChipList } from "@/app/_components/tag-chip";
@@ -51,6 +52,9 @@ export function FriendView({
   watchMap,
   initialView = "total",
   highlightId = null,
+  streakMode,
+  streakGoal,
+  showStats,
 }: {
   friendId: string;
   friendName: string;
@@ -63,6 +67,10 @@ export function FriendView({
   initialView?: ViewKind;
   /** Activity to flash in the grid (from a reminder notification link). */
   highlightId?: string | null;
+  /** Viewer's global streak display preference (applied to the friend grid). */
+  streakMode: StreakMode;
+  streakGoal: number | null;
+  showStats: boolean;
 }) {
   const [view, setView] = useState<ViewKind>(initialView);
   const [copying, setCopying] = useState<SharedActivity | null>(null);
@@ -140,6 +148,9 @@ export function FriendView({
           tagMap={tagMap}
           highlightId={highlightId}
           onOpenActivity={setOpenActivityId}
+          streakMode={streakMode}
+          streakGoal={streakGoal}
+          showStats={showStats}
         />
       )}
 

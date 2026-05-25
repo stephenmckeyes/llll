@@ -38,6 +38,7 @@ import {
 } from "react";
 
 import { summarizeRhythm } from "@/lib/domain/rhythm-summary";
+import type { StreakMode } from "@/lib/domain/streak";
 import { tagDotClasses, type TagMap } from "@/lib/domain/tags";
 
 import { ActivityModal } from "./activity-modal";
@@ -80,9 +81,15 @@ export type GridRow = {
    *  column "Most scheduled in period" / "Least scheduled in period"
    *  sort stages. */
   totalInPeriod: number;
-  /** Consecutive completed instances ending at the latest past-or-current
-   *  scheduled occurrence. 0 means the current run is broken. */
+  /** The streak/accumulation VALUE for this activity's display mode:
+   *  perfect-weeks count, perfect-months count, or lifetime completed
+   *  count (for total + countdown). Also used as the success-column sort
+   *  key's streak stage. */
   streak: number;
+  /** How to render `streak` in the Success column (Settings → Streaks). */
+  streakMode: StreakMode;
+  /** Countdown target (only meaningful when streakMode === "countdown"). */
+  streakGoal: number | null;
 };
 
 export type DateCol = { date: Date; dateStr: string };
@@ -153,6 +160,7 @@ export function GridTable({
   readOnly = false,
   highlightActivityId = null,
   onReadOnlyOpen,
+  showStats = true,
 }: {
   mode: GridMode;
   rows: GridRow[];
@@ -164,6 +172,9 @@ export function GridTable({
   /** Every one-time activity instance in range, expanded under the banner. */
   singles: DayInstance[];
   userId: string;
+  /** Show the x/y + % statistics line in the Success column (Settings →
+   *  Streaks). Default true. */
+  showStats?: boolean;
   /** Name → color lookup; threaded into the per-row Tags popover and
    *  the ActivityModal opened from a clicked cell. */
   tagMap: TagMap;
@@ -345,6 +356,7 @@ export function GridTable({
           tagMap={tagMap}
           headerControls={headerControls}
           highlightActivityId={highlightActivityId}
+          showStats={showStats}
         />
       ) : mode === "month" ? (
         <MonthTable
@@ -357,6 +369,7 @@ export function GridTable({
           tagMap={tagMap}
           headerControls={headerControls}
           highlightActivityId={highlightActivityId}
+          showStats={showStats}
         />
       ) : (
         <TotalTable
@@ -369,6 +382,7 @@ export function GridTable({
           tagMap={tagMap}
           headerControls={headerControls}
           highlightActivityId={highlightActivityId}
+          showStats={showStats}
         />
       )}
 
@@ -478,6 +492,7 @@ function WeekTable({
   tagMap,
   headerControls,
   highlightActivityId,
+  showStats,
 }: {
   rows: GridRow[];
   dateCols: DateCol[];
@@ -494,6 +509,7 @@ function WeekTable({
     onContextMenu: (column: GridSortColumn, e: React.MouseEvent) => void;
   };
   highlightActivityId: string | null;
+  showStats: boolean;
 }) {
   // Cells fill the entire Activity-cells column horizontally via 1fr.
   // No hard cap — the column's auto width drives cell size. With
@@ -581,7 +597,7 @@ function WeekTable({
                       ))}
                     </div>
                   </td>
-                  <SuccessCell row={row} />
+                  <SuccessCell row={row} showStats={showStats} />
                 </>
               )}
             </tr>
@@ -607,6 +623,7 @@ function MonthTable({
   tagMap,
   headerControls,
   highlightActivityId,
+  showStats,
 }: {
   rows: GridRow[];
   dateCols: DateCol[];
@@ -623,6 +640,7 @@ function MonthTable({
     onContextMenu: (column: GridSortColumn, e: React.MouseEvent) => void;
   };
   highlightActivityId: string | null;
+  showStats: boolean;
 }) {
   const padBefore = dateCols.length > 0 ? mondayPad(dateCols[0].date) : 0;
 
@@ -715,7 +733,7 @@ function MonthTable({
                       ))}
                     </div>
                   </td>
-                  <SuccessCell row={row} />
+                  <SuccessCell row={row} showStats={showStats} />
                 </>
               )}
             </tr>
@@ -749,6 +767,7 @@ function TotalTable({
   tagMap,
   headerControls,
   highlightActivityId,
+  showStats,
 }: {
   rows: GridRow[];
   dateCols: DateCol[];
@@ -765,6 +784,7 @@ function TotalTable({
     onContextMenu: (column: GridSortColumn, e: React.MouseEvent) => void;
   };
   highlightActivityId: string | null;
+  showStats: boolean;
 }) {
   const padBefore = dateCols.length > 0 ? mondayPad(dateCols[0].date) : 0;
   const totalWithStart = padBefore + dateCols.length;
@@ -866,7 +886,7 @@ function TotalTable({
                       ))}
                     </div>
                   </td>
-                  <SuccessCell row={row} />
+                  <SuccessCell row={row} showStats={showStats} />
                 </>
               )}
             </tr>
@@ -1104,30 +1124,62 @@ function TypeCell({ row, tagMap }: { row: GridRow; tagMap: TagMap }) {
   );
 }
 
-function SuccessCell({ row }: { row: GridRow }) {
-  // Two stacked lines: X/Y | Z% on top, streak below.
-  const streakColorCls =
-    row.streak > 0
-      ? "text-orange-500 dark:text-orange-400"
-      : "text-zinc-400";
+function SuccessCell({
+  row,
+  showStats,
+}: {
+  row: GridRow;
+  showStats: boolean;
+}) {
+  // Optional stats line (x/y | %) + an optional streak/accumulation line
+  // driven by the activity's streak mode (Settings → Streaks).
+  const streakLine = formatStreak(row.streakMode, row.streak, row.streakGoal);
+  const showAny = showStats || streakLine !== null;
   return (
-    <td
-      className="border-b border-zinc-100 px-2 py-0.5 align-top text-center text-xs tabular-nums dark:border-zinc-900"
-    >
-      <div className={pctClass(row.pct)}>
-        {row.pct === null ? (
-          "—"
-        ) : (
-          <span>
-            {row.done}/{row.onTheHook} | {row.pct}%
-          </span>
-        )}
-      </div>
-      <div className={`${streakColorCls} text-[11px]`}>
-        🔥{row.streak}
-      </div>
+    <td className="border-b border-zinc-100 px-2 py-0.5 align-top text-center text-xs tabular-nums dark:border-zinc-900">
+      {!showAny && <span className="text-zinc-300 dark:text-zinc-700">—</span>}
+      {showStats && (
+        <div className={pctClass(row.pct)}>
+          {row.pct === null ? (
+            "—"
+          ) : (
+            <span>
+              {row.done}/{row.onTheHook} | {row.pct}%
+            </span>
+          )}
+        </div>
+      )}
+      {streakLine && (
+        <div className="text-[11px] text-orange-500 dark:text-orange-400">
+          {streakLine}
+        </div>
+      )}
     </td>
   );
+}
+
+// Render the streak/accumulation value for a mode, or null to show nothing.
+function formatStreak(
+  mode: StreakMode,
+  value: number,
+  goal: number | null
+): string | null {
+  switch (mode) {
+    case "perfect_weeks":
+      return `🔥${value}w`;
+    case "perfect_months":
+      return `🔥${value}mo`;
+    case "total":
+      return `Σ${value}`;
+    case "countdown": {
+      if (!goal || goal <= 0) return null;
+      const remaining = Math.max(0, goal - value);
+      return remaining === 0 ? "✓ goal" : `${remaining} to go`;
+    }
+    case "none":
+    default:
+      return null;
+  }
 }
 
 function UnlabeledBadge({ count }: { count: number }) {

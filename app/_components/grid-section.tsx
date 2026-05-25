@@ -59,6 +59,7 @@ export function GridSection({
   singles,
   userId,
   tagMap,
+  showStats,
 }: {
   range: GridRange;
   currentDate: string;
@@ -83,6 +84,7 @@ export function GridSection({
   singles: DayInstance[];
   userId: string;
   tagMap: TagMap;
+  showStats: boolean;
 }) {
   // Tag filter state. Stored as a HIDDEN set so the default
   // (everything visible) is the empty set — new tags added to
@@ -170,6 +172,7 @@ export function GridSection({
         singles={singles}
         userId={userId}
         tagMap={tagMap}
+        showStats={showStats}
       />
     </>
   );
