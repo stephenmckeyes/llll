@@ -357,3 +357,37 @@ export const activityWatches = pgTable(
     index("activity_watches_watcher_idx").on(t.watcherId),
   ]
 );
+
+// ===========================================================================
+// messages (migration 0014) — 1:1 direct messages between friends. A
+// conversation is all rows where {sender, recipient} = {me, friend}. A
+// message may quote an activity (FK nulled on delete + a denormalized name
+// snapshot). read_at drives unread badges + notifications.
+// ===========================================================================
+
+export const messages = pgTable(
+  "messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    senderId: uuid("sender_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    recipientId: uuid("recipient_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    body: text("body").notNull().default(""),
+    quotedActivityId: uuid("quoted_activity_id").references(
+      () => activities.id,
+      { onDelete: "set null" }
+    ),
+    quotedActivityName: text("quoted_activity_name"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    readAt: timestamp("read_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("messages_pair_idx").on(t.senderId, t.recipientId, t.createdAt),
+    index("messages_recipient_idx").on(t.recipientId, t.createdAt),
+  ]
+);

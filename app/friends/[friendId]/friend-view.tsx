@@ -24,6 +24,7 @@ import { CopyShareModal } from "../copy-share-modal";
 import { FriendCalendar } from "./friend-calendar";
 import { FriendGrid } from "./friend-grid";
 import { RemindersButton } from "./reminders-button";
+import { ReplyButton } from "./reply-button";
 
 type ViewKind = "total" | "calendar" | "grid";
 
@@ -342,6 +343,12 @@ function ShareCard({
         )}
       </div>
       <div className="flex shrink-0 flex-wrap gap-2">
+        {/* Reply quotes this activity into your chat with the owner. */}
+        <ReplyButton
+          friendId={share.ownerId}
+          activityId={share.activityId}
+          activityName={share.name}
+        />
         {/* Reminders only make sense when the owner shares progress (the
             watch RLS enforces it too); archived/template-only shares have
             no progress to nudge about. */}

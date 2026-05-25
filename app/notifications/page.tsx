@@ -10,6 +10,7 @@ import { startOfWeek, format } from "date-fns";
 import Link from "next/link";
 
 import { getSocialOverview, type SocialEntry } from "@/app/actions/friends";
+import { getUnreadCounts } from "@/app/actions/messages";
 import { getSharedInstancesWithMe, getSharedWithMe } from "@/app/actions/sharing";
 import { getWatches } from "@/app/actions/watches";
 import { requireOnboardedUser } from "@/lib/auth/require-onboarded-user";
@@ -63,15 +64,34 @@ export default async function NotificationsPage() {
     return format(d, "yyyy-MM-dd");
   })();
 
-  const [entries, shares, watches, sharedInstances] = await Promise.all([
-    getSocialOverview(),
-    getSharedWithMe(),
-    getWatches(),
-    getSharedInstancesWithMe(from, todayStr),
-  ]);
+  const [entries, shares, watches, sharedInstances, unread] =
+    await Promise.all([
+      getSocialOverview(),
+      getSharedWithMe(),
+      getWatches(),
+      getSharedInstancesWithMe(from, todayStr),
+      getUnreadCounts(),
+    ]);
   const incoming = entries.filter(
     (e) => e.status === "pending" && e.direction === "incoming"
   );
+
+  // Unread DMs grouped by sender → "X messaged you" notes. Names come from
+  // the social overview (we only ever get messages from accepted friends).
+  const nameById = new Map(
+    entries.map((e) => [
+      e.otherId,
+      e.otherDisplayName ||
+        (e.otherUsername ? `@${e.otherUsername}` : "A friend"),
+    ])
+  );
+  const messageNotes = Object.entries(unread)
+    .map(([senderId, count]) => ({
+      senderId,
+      count,
+      name: nameById.get(senderId) ?? "A friend",
+    }))
+    .sort((a, b) => b.count - a.count);
 
   // Live "Friend activity" reminders from the activities the user watches.
   const sharedById = new Map(shares.map((s) => [s.activityId, s]));
@@ -155,6 +175,37 @@ export default async function NotificationsPage() {
                   )}
                 </div>
                 <RequestActions friendshipId={r.friendshipId} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {/* 1a. Messages */}
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+          Messages ({messageNotes.length})
+        </h2>
+        {messageNotes.length === 0 ? (
+          <p className="rounded-md border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700">
+            No new messages.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {messageNotes.map((m) => (
+              <li key={m.senderId}>
+                <Link
+                  href={`/friends/${m.senderId}/chat`}
+                  className="flex items-center justify-between gap-3 rounded-md border border-zinc-200 bg-white px-4 py-3 text-sm transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900"
+                >
+                  <span className="min-w-0 truncate">
+                    <span className="font-medium">{m.name}</span> sent you{" "}
+                    {m.count} message{m.count === 1 ? "" : "s"}
+                  </span>
+                  <span className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-semibold text-white">
+                    {m.count > 99 ? "99+" : m.count}
+                  </span>
+                </Link>
               </li>
             ))}
           </ul>

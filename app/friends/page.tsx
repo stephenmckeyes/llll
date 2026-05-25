@@ -9,10 +9,12 @@
 import Link from "next/link";
 
 import { getSocialOverview, type SocialEntry } from "@/app/actions/friends";
+import { getUnreadCounts } from "@/app/actions/messages";
 import { requireOnboardedUser } from "@/lib/auth/require-onboarded-user";
 
 import { PendingLink } from "@/app/_components/pending-link";
 
+import { AskForHelpButton } from "./ask-for-help";
 import { FriendRowButton, FriendSearch } from "./friends-client";
 import { ShareRhythmsButton } from "./share-modal";
 
@@ -21,8 +23,16 @@ function nameOf(e: SocialEntry): string {
 }
 
 export default async function FriendsPage() {
-  await requireOnboardedUser();
-  const entries = await getSocialOverview();
+  const { supabase } = await requireOnboardedUser();
+  const [entries, unread, { data: activityRows }] = await Promise.all([
+    getSocialOverview(),
+    getUnreadCounts(),
+    supabase
+      .from("activities")
+      .select("id, name")
+      .is("archived_at", null)
+      .order("name", { ascending: true }),
+  ]);
 
   const friends = entries.filter((e) => e.status === "accepted");
   const outgoing = entries.filter(
@@ -31,6 +41,14 @@ export default async function FriendsPage() {
   const incomingCount = entries.filter(
     (e) => e.status === "pending" && e.direction === "incoming"
   ).length;
+
+  const myActivities = (
+    (activityRows ?? []) as Array<{ id: string; name: string }>
+  ).map((a) => ({ id: a.id, name: a.name }));
+  const friendOptions = friends.map((f) => ({
+    id: f.otherId,
+    name: nameOf(f),
+  }));
 
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-8 bg-white p-6 dark:bg-zinc-950">
@@ -43,6 +61,8 @@ export default async function FriendsPage() {
         </PendingLink>
         <h1 className="text-3xl font-semibold tracking-tight">Friends</h1>
       </header>
+
+      <AskForHelpButton friends={friendOptions} activities={myActivities} />
 
       {incomingCount > 0 && (
         <Link
@@ -90,7 +110,18 @@ export default async function FriendsPage() {
                     </p>
                   )}
                 </div>
-                <div className="flex shrink-0 gap-2">
+                <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                  <Link
+                    href={`/friends/${f.otherId}/chat`}
+                    className="relative inline-flex items-center rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+                  >
+                    Chat
+                    {(unread[f.otherId] ?? 0) > 0 && (
+                      <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
+                        {unread[f.otherId] > 99 ? "99+" : unread[f.otherId]}
+                      </span>
+                    )}
+                  </Link>
                   <Link
                     href={`/friends/${f.otherId}`}
                     className="inline-flex items-center rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
