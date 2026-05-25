@@ -98,6 +98,7 @@ export function DayList({
   todayStr,
   incompleteInfo,
   tagMap,
+  readOnly = false,
 }: {
   initialDate: string;
   completedByDate: Record<string, DayMarkedItem[]>;
@@ -106,6 +107,10 @@ export function DayList({
   todayStr: string;
   incompleteInfo: IncompleteInfo;
   tagMap: TagMap;
+  /** Read-only friend view: same infinite-scroll day list, but no
+   *  Complete/Missed/Unlabel/+Add and no mutation modals — rows show a
+   *  static status. Default false keeps the dashboard unchanged. */
+  readOnly?: boolean;
 }) {
   const router = useRouter();
   const [, startUnlabelTransition] = useTransition();
@@ -330,7 +335,9 @@ export function DayList({
           >
             Today
           </button>
-          <IncompleteButton info={incompleteInfo} />
+          {/* The Unlabeled chip links to the user's OWN day view, so it's
+              meaningless (and wrong) in a friend's read-only calendar. */}
+          {!readOnly && <IncompleteButton info={incompleteInfo} />}
         </div>
       </div>
 
@@ -357,19 +364,22 @@ export function DayList({
               completed={completedByDate[d.dateStr] ?? []}
               missed={missedByDate[d.dateStr] ?? []}
               todayStr={todayStr}
-              onOpenInstance={setOpenInstance}
+              onOpenInstance={readOnly ? () => {} : setOpenInstance}
               resolved={resolved}
               onResolve={markResolved}
               onUnresolve={clearResolved}
               onDropdownUnlabel={handleDropdownUnlabel}
               onAdd={setAddDay}
+              readOnly={readOnly}
               tagMap={tagMap}
             />
           ))}
         </div>
       </div>
 
-      {openInstance && (
+      {/* Mutation modals never mount in read-only mode (openInstance /
+          addDay can't be set there). */}
+      {!readOnly && openInstance && (
         <ActivityModal
           instance={openInstance}
           todayStr={todayStr}
@@ -378,7 +388,7 @@ export function DayList({
         />
       )}
 
-      {addDay && (
+      {!readOnly && addDay && (
         <NewActivityModal
           startDate={addDay}
           tagMap={tagMap}
@@ -404,6 +414,7 @@ function DaySection({
   onUnresolve,
   onDropdownUnlabel,
   onAdd,
+  readOnly,
   tagMap,
 }: {
   date: Date;
@@ -418,6 +429,7 @@ function DaySection({
   onUnresolve: (id: string) => void;
   onDropdownUnlabel: (id: string) => void;
   onAdd: (dateStr: string) => void;
+  readOnly: boolean;
   tagMap: TagMap;
 }) {
   const isToday = dateStr === todayStr;
@@ -457,12 +469,14 @@ function DaySection({
             items={completed}
             onOpen={onOpenInstance}
             onUnlabel={onDropdownUnlabel}
+            readOnly={readOnly}
           />
           <MarkedTable
             kind="missed"
             items={missed}
             onOpen={onOpenInstance}
             onUnlabel={onDropdownUnlabel}
+            readOnly={readOnly}
           />
         </div>
       </details>
@@ -481,6 +495,7 @@ function DaySection({
               resolution={resolved.get(inst.id) ?? null}
               onResolve={onResolve}
               onUnresolve={onUnresolve}
+              readOnly={readOnly}
               tagMap={tagMap}
             />
           ))}
@@ -488,15 +503,17 @@ function DaySection({
       )}
 
       {/* "+ Add activity" placeholder — closes out every day so the user
-          can drop a new activity straight onto that date. Opens
-          NewActivityModal pre-dated to this day. */}
-      <button
-        type="button"
-        onClick={() => onAdd(dateStr)}
-        className="flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-zinc-300 px-3 py-2 text-xs font-medium text-zinc-500 transition-colors hover:border-zinc-400 hover:bg-zinc-50 hover:text-zinc-700 dark:border-zinc-700 dark:hover:border-zinc-600 dark:hover:bg-zinc-900 dark:hover:text-zinc-300"
-      >
-        + Add activity
-      </button>
+          can drop a new activity straight onto that date. Hidden in the
+          read-only friend view (you can't add to a friend's schedule). */}
+      {!readOnly && (
+        <button
+          type="button"
+          onClick={() => onAdd(dateStr)}
+          className="flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-zinc-300 px-3 py-2 text-xs font-medium text-zinc-500 transition-colors hover:border-zinc-400 hover:bg-zinc-50 hover:text-zinc-700 dark:border-zinc-700 dark:hover:border-zinc-600 dark:hover:bg-zinc-900 dark:hover:text-zinc-300"
+        >
+          + Add activity
+        </button>
+      )}
     </section>
   );
 }
@@ -512,11 +529,13 @@ function MarkedTable({
   items,
   onOpen,
   onUnlabel,
+  readOnly,
 }: {
   kind: "completed" | "missed";
   items: DayMarkedItem[];
   onOpen: (inst: DayInstance) => void;
   onUnlabel: (id: string) => void;
+  readOnly: boolean;
 }) {
   const title = kind === "completed" ? "Completed" : "Missed";
   const headerCls =
@@ -553,9 +572,15 @@ function MarkedTable({
           <li key={it.id} className="flex items-stretch gap-1">
             <button
               type="button"
-              onClick={() => onOpen(it.instance)}
-              title="Click to open — you can revert or edit"
-              className="flex min-w-0 flex-1 items-start gap-2 rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-left text-xs transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900"
+              onClick={readOnly ? undefined : () => onOpen(it.instance)}
+              title={
+                readOnly ? undefined : "Click to open — you can revert or edit"
+              }
+              className={`flex min-w-0 flex-1 items-start gap-2 rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-left text-xs transition-colors dark:border-zinc-800 dark:bg-zinc-950 ${
+                readOnly
+                  ? "cursor-default"
+                  : "hover:bg-zinc-50 dark:hover:bg-zinc-900"
+              }`}
             >
               <span
                 aria-hidden
@@ -580,15 +605,17 @@ function MarkedTable({
             </button>
             {/* Quick revert — sends this occurrence back to pending (out
                 of the dropdown, back into the active list) without opening
-                the modal. */}
-            <button
-              type="button"
-              onClick={() => onUnlabel(it.id)}
-              title="Tapped by accident? Revert to pending."
-              className="shrink-0 touch-manipulation rounded-md border border-zinc-200 px-2 text-[11px] font-medium text-zinc-600 transition-colors hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-900"
-            >
-              Unlabel
-            </button>
+                the modal. Hidden in the read-only friend view. */}
+            {!readOnly && (
+              <button
+                type="button"
+                onClick={() => onUnlabel(it.id)}
+                title="Tapped by accident? Revert to pending."
+                className="shrink-0 touch-manipulation rounded-md border border-zinc-200 px-2 text-[11px] font-medium text-zinc-600 transition-colors hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-900"
+              >
+                Unlabel
+              </button>
+            )}
           </li>
         ))}
       </ul>

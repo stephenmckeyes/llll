@@ -29,6 +29,9 @@ renderers feature-matched by hand.
 If porting a change to the friend views **doesn't make sense or would cause
 problems** (e.g. it depends on a mutation, on URL-driven dashboard
 navigation, or on the user's own data), **stop and ask** instead of forcing
-it. Known intentional gaps today: friend Grid has no "Custom" range, and the
-friend Calendar's Day tab is a static chronological list rather than the
-dashboard's infinite-scroll day list.
+it.
+
+As of now the friend views are at full visual parity: Total (group/filter),
+Calendar (Day reuses the real `DayList` read-only; Week/Month/Year
+renderers), and Grid (reuses the real `GridTable` read-only with
+Week/Month/Total/Custom + tag filter). Keep them that way.

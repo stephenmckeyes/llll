@@ -20,7 +20,10 @@ import {
 import { useMemo, useState } from "react";
 
 import type { SharedActivity, SharedInstance } from "@/app/actions/sharing";
-import { rhythmCategoryLabel } from "@/lib/domain/rhythm-summary";
+import { DayList as DashboardDayList } from "@/app/_components/day-list";
+import type { TagMap } from "@/lib/domain/tags";
+
+import { buildFriendDayData } from "./shared-data";
 
 type Sub = "day" | "week" | "month" | "year";
 
@@ -28,10 +31,12 @@ export function FriendCalendar({
   shares,
   instances,
   todayStr,
+  tagMap,
 }: {
   shares: SharedActivity[];
   instances: SharedInstance[];
   todayStr: string;
+  tagMap: TagMap;
 }) {
   const [sub, setSub] = useState<Sub>("day");
   const [refDate, setRefDate] = useState<string>(todayStr);
@@ -39,6 +44,13 @@ export function FriendCalendar({
   const byId = useMemo(
     () => new Map(shares.map((s) => [s.activityId, s])),
     [shares]
+  );
+
+  // Day tab reuses the real dashboard DayList (read-only) so the friend
+  // gets the exact same infinite-scroll day view.
+  const dayData = useMemo(
+    () => buildFriendDayData(shares, instances),
+    [shares, instances]
   );
 
   return (
@@ -68,7 +80,16 @@ export function FriendCalendar({
       </nav>
 
       {sub === "day" && (
-        <DayList instances={instances} byId={byId} todayStr={todayStr} />
+        <DashboardDayList
+          initialDate={todayStr}
+          instances={dayData.instances}
+          completedByDate={dayData.completedByDate}
+          missedByDate={dayData.missedByDate}
+          todayStr={todayStr}
+          incompleteInfo={{ count: 0, oldestDate: null }}
+          tagMap={tagMap}
+          readOnly
+        />
       )}
       {sub === "week" && (
         <WeekGrid
@@ -99,73 +120,6 @@ export function FriendCalendar({
 }
 
 type ById = Map<string, SharedActivity>;
-
-// ---------------------------------------------------------------------------
-// Day — chronological list of every shared occurrence, grouped by date.
-// ---------------------------------------------------------------------------
-
-function DayList({
-  instances,
-  byId,
-  todayStr,
-}: {
-  instances: SharedInstance[];
-  byId: ById;
-  todayStr: string;
-}) {
-  // Order each day by time of day (no-time last), mirroring the personal
-  // Day view (see compareForDay in day-list / the week sort in page.tsx).
-  const days = useMemo(
-    () =>
-      groupByDate(instances).map((d) => ({
-        date: d.date,
-        items: sortByTime(d.items, byId),
-      })),
-    [instances, byId]
-  );
-
-  if (days.length === 0) return <EmptyCalendar />;
-
-  return (
-    <div className="flex flex-col gap-4">
-      {days.map(({ date, items }) => (
-        <section key={date} className="flex flex-col gap-2">
-          <h2 className="flex items-baseline gap-2 text-sm font-medium uppercase tracking-wide text-zinc-500">
-            <span>{formatMedium(date)}</span>
-            {date === todayStr && <TodayPill />}
-          </h2>
-          <ul className="flex flex-col gap-2">
-            {items.map((inst) => {
-              const act = byId.get(inst.activityId);
-              return (
-                <li
-                  key={inst.instanceId}
-                  className="flex items-center justify-between gap-2 rounded-md border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950"
-                >
-                  <div className="min-w-0">
-                    <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-                      {act
-                        ? rhythmCategoryLabel(act.rhythm, act.scheduledTimes)
-                        : ""}
-                    </p>
-                    <p className="truncate font-medium">
-                      {act?.name ?? "Activity"}
-                    </p>
-                  </div>
-                  <StatusPill
-                    status={inst.status}
-                    scheduledFor={inst.scheduledFor}
-                    todayStr={todayStr}
-                  />
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      ))}
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Week — 7 columns Mon..Sun, compact name banners per day.
@@ -449,53 +403,6 @@ function Nav({
   );
 }
 
-function StatusPill({
-  status,
-  scheduledFor,
-  todayStr,
-}: {
-  status: SharedInstance["status"];
-  scheduledFor: string;
-  todayStr: string;
-}) {
-  let label = "Pending";
-  let cls = "bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400";
-  if (status === "completed") {
-    label = "✓ Done";
-    cls =
-      "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300";
-  } else if (status === "missed") {
-    label = "✗ Missed";
-    cls = "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300";
-  } else if (scheduledFor < todayStr) {
-    label = "Unlabeled";
-    cls = "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300";
-  }
-  return (
-    <span
-      className={`shrink-0 rounded-md px-3 py-1.5 text-xs font-semibold ${cls}`}
-    >
-      {label}
-    </span>
-  );
-}
-
-function TodayPill() {
-  return (
-    <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-white dark:bg-zinc-50 dark:text-zinc-900">
-      Today
-    </span>
-  );
-}
-
-function EmptyCalendar() {
-  return (
-    <p className="rounded-md border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500 dark:border-zinc-700">
-      Nothing on the calendar — no active rhythms with shared progress.
-    </p>
-  );
-}
-
 // Sort a day's occurrences by the activity's first time of day (08:00
 // before 10:00 …), activities with NO set time last, then priority, then
 // name. Mirrors the personal Day/Week ordering.
@@ -513,20 +420,6 @@ function sortByTime(items: SharedInstance[], byId: ById): SharedInstance[] {
   });
 }
 
-function groupByDate(
-  instances: SharedInstance[]
-): Array<{ date: string; items: SharedInstance[] }> {
-  const map = new Map<string, SharedInstance[]>();
-  for (const i of instances) {
-    const arr = map.get(i.scheduledFor);
-    if (arr) arr.push(i);
-    else map.set(i.scheduledFor, [i]);
-  }
-  return Array.from(map.keys())
-    .sort((a, b) => a.localeCompare(b))
-    .map((date) => ({ date, items: map.get(date) ?? [] }));
-}
-
 function indexByDate(
   instances: SharedInstance[]
 ): Map<string, SharedInstance[]> {
@@ -537,15 +430,6 @@ function indexByDate(
     else m.set(i.scheduledFor, [i]);
   }
   return m;
-}
-
-function formatMedium(yyyyMmDd: string): string {
-  const [y, m, d] = yyyyMmDd.split("-").map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
 }
 
 function parseYmd(ymd: string): Date {

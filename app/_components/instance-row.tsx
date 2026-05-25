@@ -48,6 +48,7 @@ export function InstanceRow({
   onUnresolve,
   resolution,
   tagMap,
+  readOnly = false,
 }: {
   instance: DayInstance;
   todayStr: string;
@@ -76,6 +77,10 @@ export function InstanceRow({
   resolution: "completed" | "missed" | null;
   /** Name → color lookup for the tag chips below the activity name. */
   tagMap: TagMap;
+  /** Read-only (friend view): no Complete/Missed/Unlabel/+1 — just a
+   *  static status badge, and the row body isn't clickable. Default
+   *  false keeps the dashboard's behavior. */
+  readOnly?: boolean;
 }) {
   // We keep startTransition (marks the server-action call as a
   // non-blocking transition) but no longer read isPending — the buttons
@@ -229,17 +234,33 @@ export function InstanceRow({
     });
   }
 
+  // Friend (read-only) view: a static status badge replaces all action
+  // buttons.
+  const roStatus = readOnly
+    ? readOnlyStatus(
+        instance,
+        todayStr,
+        isAccumulating,
+        accumulatingProgress,
+        accumulatingTarget
+      )
+    : null;
+
   return (
     <li
       className={`flex w-full min-w-0 items-center justify-between gap-2 rounded-md border border-zinc-200 bg-white p-3 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900 ${
         resolution ? "opacity-60" : ""
       }`}
     >
-      {/* Body — clickable area that opens the modal. */}
+      {/* Body — opens the modal. Inert in the read-only friend view. */}
       <button
         type="button"
-        onClick={onOpen}
-        className="flex min-w-0 flex-1 cursor-pointer touch-manipulation items-start gap-2.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900 dark:focus-visible:ring-zinc-50"
+        onClick={readOnly ? undefined : onOpen}
+        className={`flex min-w-0 flex-1 touch-manipulation items-start gap-2.5 text-left focus:outline-none ${
+          readOnly
+            ? "cursor-default"
+            : "cursor-pointer focus-visible:ring-2 focus-visible:ring-zinc-900 dark:focus-visible:ring-zinc-50"
+        }`}
       >
         <span
           aria-hidden
@@ -293,7 +314,14 @@ export function InstanceRow({
         </div>
       </button>
 
-      {resolution ? (
+      {roStatus ? (
+        // Read-only friend view — static status, no actions.
+        <span
+          className={`min-h-11 inline-flex shrink-0 items-center rounded-md px-3 py-2 text-xs font-semibold ${roStatus.cls}`}
+        >
+          {roStatus.label}
+        </span>
+      ) : resolution ? (
         // Resolved IN PLACE — the row keeps its slot so the list doesn't
         // reflow under rapid tapping. A status pill replaces the action
         // buttons, alongside an "Unlabel" button so an accidental tap can
@@ -358,6 +386,41 @@ export function InstanceRow({
       )}
     </li>
   );
+}
+
+// Read-only status badge text + classes for the friend view (mirrors the
+// colors used on the friend calendar / grid).
+function readOnlyStatus(
+  instance: DayInstance,
+  todayStr: string,
+  isAccumulating: boolean,
+  progress: number,
+  target: number
+): { label: string; cls: string } {
+  if (instance.status === "completed")
+    return {
+      label: "✓ Done",
+      cls: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
+    };
+  if (instance.status === "missed")
+    return {
+      label: "✗ Missed",
+      cls: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300",
+    };
+  if (isAccumulating)
+    return {
+      label: `${progress}/${target}`,
+      cls: "bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400",
+    };
+  if (instance.scheduled_for < todayStr)
+    return {
+      label: "Unlabeled",
+      cls: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+    };
+  return {
+    label: "Pending",
+    cls: "bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400",
+  };
 }
 
 function formatTime(hhmm: string): string {

@@ -54,13 +54,15 @@ export function FriendView({
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Read-only section tabs — Total / Calendar / Grid. */}
+      {/* Read-only section tabs — laid out like the personal dashboard:
+          Calendar (left) · Grid (middle) · Total (right). Total is the
+          default selection when you open a friend's profile. */}
       <nav className="flex gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800">
         {(
           [
-            ["total", "Total"],
             ["calendar", "Calendar"],
             ["grid", "Grid"],
+            ["total", "Total"],
           ] as const
         ).map(([val, label]) => (
           <button
@@ -90,6 +92,7 @@ export function FriendView({
           shares={shares}
           instances={instances}
           todayStr={todayStr}
+          tagMap={tagMap}
         />
       )}
       {view === "grid" && (

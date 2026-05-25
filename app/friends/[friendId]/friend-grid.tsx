@@ -34,7 +34,9 @@ import {
   type GridRow,
 } from "@/app/_components/grid-table";
 
-type Range = "week" | "month" | "total";
+import { toDayInstance } from "./shared-data";
+
+type Range = "week" | "month" | "total" | "custom";
 
 export function FriendGrid({
   friendId,
@@ -51,11 +53,17 @@ export function FriendGrid({
 }) {
   const [range, setRange] = useState<Range>("week");
   const [refDate, setRefDate] = useState<string>(todayStr);
+  // Custom range bounds (default: last 30 days). Only used when range==="custom".
+  const [customFrom, setCustomFrom] = useState<string>(
+    format(addDays(parseYmd(todayStr), -30), "yyyy-MM-dd")
+  );
+  const [customTo, setCustomTo] = useState<string>(todayStr);
   const [hiddenTags, setHiddenTags] = useState<ReadonlySet<string>>(new Set());
 
   const built = useMemo(
-    () => buildGrid(shares, instances, range, refDate, todayStr),
-    [shares, instances, range, refDate, todayStr]
+    () =>
+      buildGrid(shares, instances, range, refDate, todayStr, customFrom, customTo),
+    [shares, instances, range, refDate, todayStr, customFrom, customTo]
   );
 
   const allTagNames = useMemo(() => {
@@ -82,13 +90,14 @@ export function FriendGrid({
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Range sub-tabs (Week / Month / Total) */}
+      {/* Range sub-tabs (Week / Month / Total / Custom) */}
       <nav className="flex gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800">
         {(
           [
             ["week", "Week"],
             ["month", "Month"],
             ["total", "Total"],
+            ["custom", "Custom"],
           ] as const
         ).map(([val, label]) => (
           <button
@@ -106,10 +115,11 @@ export function FriendGrid({
         ))}
       </nav>
 
-      {/* Navigator: prev / label / next / today + tag filter */}
+      {/* Navigator: prev / next / today for week+month; two date inputs for
+          custom; total has no nav. Plus the tag filter. */}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          {range !== "total" && (
+        <div className="flex flex-wrap items-center gap-2">
+          {(range === "week" || range === "month") && (
             <>
               <button
                 type="button"
@@ -136,9 +146,30 @@ export function FriendGrid({
               </button>
             </>
           )}
-          <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            {built.label}
-          </span>
+          {range === "custom" && (
+            <>
+              <input
+                type="date"
+                value={customFrom}
+                max={customTo}
+                onChange={(e) => setCustomFrom(e.target.value)}
+                className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              />
+              <span className="text-sm text-zinc-500">→</span>
+              <input
+                type="date"
+                value={customTo}
+                min={customFrom}
+                onChange={(e) => setCustomTo(e.target.value)}
+                className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              />
+            </>
+          )}
+          {range !== "custom" && (
+            <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              {built.label}
+            </span>
+          )}
         </div>
         <TagFilterPopover
           tagNames={allTagNames}
@@ -189,7 +220,9 @@ function buildGrid(
   instances: SharedInstance[],
   range: Range,
   refDate: string,
-  todayStr: string
+  todayStr: string,
+  customFrom: string,
+  customTo: string
 ): {
   mode: GridMode;
   dateCols: DateCol[];
@@ -217,6 +250,14 @@ function buildGrid(
     rangeEnd = endOfMonth(ref);
     label = format(ref, "MMMM yyyy");
     rangeLabel = "this month";
+  } else if (range === "custom") {
+    // Guard against an inverted range (from after to).
+    const a = parseYmd(customFrom);
+    const b = parseYmd(customTo);
+    rangeStart = a <= b ? a : b;
+    rangeEnd = a <= b ? b : a;
+    label = `${format(rangeStart, "MMM d")} – ${format(rangeEnd, "MMM d, yyyy")}`;
+    rangeLabel = "in this range";
   } else {
     // total: earliest shared occurrence → today
     const earliest =
@@ -345,7 +386,9 @@ function buildGrid(
   singles.sort((a, b) => a.scheduled_for.localeCompare(b.scheduled_for));
 
   return {
-    mode: range,
+    // Custom reuses the Total heatmap layout (scales to any width), same
+    // as the dashboard grid.
+    mode: range === "custom" ? "total" : range,
     dateCols,
     rows,
     singles,
@@ -375,36 +418,6 @@ function computeStreak(
     else break;
   }
   return streak;
-}
-
-function toDayInstance(inst: SharedInstance, share: SharedActivity): DayInstance {
-  const status =
-    inst.status === "completed" || inst.status === "missed"
-      ? inst.status
-      : "pending";
-  return {
-    id: inst.instanceId,
-    scheduled_for: inst.scheduledFor,
-    status,
-    completionCount: inst.completionCount,
-    tags: share.defaultSkillTags,
-    overrideName: null,
-    overrideNotes: null,
-    overridePriority: null,
-    activity: {
-      id: share.activityId,
-      name: share.name,
-      notes: share.notes,
-      rhythm: share.rhythm,
-      priority: share.priority,
-      scheduled_times: share.scheduledTimes,
-      default_skill_tags: share.defaultSkillTags,
-      start_date: share.startDate,
-      end_date: share.endDate,
-      archived_at: share.archivedAt,
-      reminders: [],
-    },
-  };
 }
 
 function parseYmd(ymd: string): Date {
