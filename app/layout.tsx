@@ -19,16 +19,16 @@ const geistMono = Geist_Mono({
 // same so every platform shows the identical, tidy preview.
 export const metadata: Metadata = {
   title: "Mission",
-  description: "An app for those on a mission.",
+  description: "The best tool for building personal identity and community.",
   openGraph: {
     title: "Mission",
-    description: "An app for those on a mission.",
+    description: "The best tool for building personal identity and community.",
     type: "website",
   },
   twitter: {
     card: "summary",
     title: "Mission",
-    description: "An app for those on a mission.",
+    description: "The best tool for building personal identity and community.",
   },
 };
 

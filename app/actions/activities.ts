@@ -731,6 +731,21 @@ export async function archiveActivity(activityId: string) {
     .update({ archived_at: new Date().toISOString() })
     .eq("id", activityId);
 
+  // Drop the future pending occurrences (today onward). Without this they'd
+  // linger and turn "overdue/unlabeled" during the archived gap, which would
+  // BREAK the streak — but dropping should PAUSE it. computeStreak walks the
+  // actual instance rows, so removing the gap rows lets the streak resume
+  // seamlessly when the activity is unarchived (the pre-archive completions
+  // connect straight to the post-unarchive ones). Past occurrences (already
+  // missed before the drop) stay — those correctly count against the streak.
+  const todayStr = new Date().toISOString().slice(0, 10);
+  await supabase
+    .from("activity_instances")
+    .delete()
+    .eq("activity_id", activityId)
+    .eq("status", "pending")
+    .gte("scheduled_for", todayStr);
+
   // Archived activities are excluded from backfill — drop the cache so the
   // next page-load doesn't keep extending an activity the user just hid.
   invalidateBackfillCache(user.id);
