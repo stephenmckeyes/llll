@@ -33,6 +33,7 @@ function blankActivity(startDate: string): ActivityFormInitial {
     start_date: startDate,
     end_date: null,
     reminders: [],
+    track_on_grid: false,
   };
 }
 

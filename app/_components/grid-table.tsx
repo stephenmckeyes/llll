@@ -161,6 +161,7 @@ export function GridTable({
   highlightActivityId = null,
   onReadOnlyOpen,
   showStats = true,
+  statsAccuracy = true,
 }: {
   mode: GridMode;
   rows: GridRow[];
@@ -172,9 +173,11 @@ export function GridTable({
   /** Every one-time activity instance in range, expanded under the banner. */
   singles: DayInstance[];
   userId: string;
-  /** Show the x/y + % statistics line in the Success column (Settings →
+  /** Show the "Total count" line in the Success column (Settings →
    *  Streaks). Default true. */
   showStats?: boolean;
+  /** When showStats is true: accuracy (X/Y · %) vs just the number. */
+  statsAccuracy?: boolean;
   /** Name → color lookup; threaded into the per-row Tags popover and
    *  the ActivityModal opened from a clicked cell. */
   tagMap: TagMap;
@@ -357,6 +360,7 @@ export function GridTable({
           headerControls={headerControls}
           highlightActivityId={highlightActivityId}
           showStats={showStats}
+          statsAccuracy={statsAccuracy}
         />
       ) : mode === "month" ? (
         <MonthTable
@@ -370,6 +374,7 @@ export function GridTable({
           headerControls={headerControls}
           highlightActivityId={highlightActivityId}
           showStats={showStats}
+          statsAccuracy={statsAccuracy}
         />
       ) : (
         <TotalTable
@@ -383,6 +388,7 @@ export function GridTable({
           headerControls={headerControls}
           highlightActivityId={highlightActivityId}
           showStats={showStats}
+          statsAccuracy={statsAccuracy}
         />
       )}
 
@@ -493,6 +499,7 @@ function WeekTable({
   headerControls,
   highlightActivityId,
   showStats,
+  statsAccuracy,
 }: {
   rows: GridRow[];
   dateCols: DateCol[];
@@ -510,6 +517,7 @@ function WeekTable({
   };
   highlightActivityId: string | null;
   showStats: boolean;
+  statsAccuracy: boolean;
 }) {
   // Cells fill the entire Activity-cells column horizontally via 1fr.
   // No hard cap — the column's auto width drives cell size. With
@@ -597,7 +605,11 @@ function WeekTable({
                       ))}
                     </div>
                   </td>
-                  <SuccessCell row={row} showStats={showStats} />
+                  <SuccessCell
+                    row={row}
+                    showStats={showStats}
+                    statsAccuracy={statsAccuracy}
+                  />
                 </>
               )}
             </tr>
@@ -624,6 +636,7 @@ function MonthTable({
   headerControls,
   highlightActivityId,
   showStats,
+  statsAccuracy,
 }: {
   rows: GridRow[];
   dateCols: DateCol[];
@@ -641,6 +654,7 @@ function MonthTable({
   };
   highlightActivityId: string | null;
   showStats: boolean;
+  statsAccuracy: boolean;
 }) {
   const padBefore = dateCols.length > 0 ? mondayPad(dateCols[0].date) : 0;
 
@@ -733,7 +747,11 @@ function MonthTable({
                       ))}
                     </div>
                   </td>
-                  <SuccessCell row={row} showStats={showStats} />
+                  <SuccessCell
+                    row={row}
+                    showStats={showStats}
+                    statsAccuracy={statsAccuracy}
+                  />
                 </>
               )}
             </tr>
@@ -768,6 +786,7 @@ function TotalTable({
   headerControls,
   highlightActivityId,
   showStats,
+  statsAccuracy,
 }: {
   rows: GridRow[];
   dateCols: DateCol[];
@@ -785,6 +804,7 @@ function TotalTable({
   };
   highlightActivityId: string | null;
   showStats: boolean;
+  statsAccuracy: boolean;
 }) {
   const padBefore = dateCols.length > 0 ? mondayPad(dateCols[0].date) : 0;
   const totalWithStart = padBefore + dateCols.length;
@@ -886,7 +906,11 @@ function TotalTable({
                       ))}
                     </div>
                   </td>
-                  <SuccessCell row={row} showStats={showStats} />
+                  <SuccessCell
+                    row={row}
+                    showStats={showStats}
+                    statsAccuracy={statsAccuracy}
+                  />
                 </>
               )}
             </tr>
@@ -1127,28 +1151,34 @@ function TypeCell({ row, tagMap }: { row: GridRow; tagMap: TagMap }) {
 function SuccessCell({
   row,
   showStats,
+  statsAccuracy,
 }: {
   row: GridRow;
   showStats: boolean;
+  statsAccuracy: boolean;
 }) {
-  // Optional stats line (x/y | %) + an optional streak/accumulation line
-  // driven by the activity's streak mode (Settings → Streaks).
+  // Optional "Total count" line (accuracy or just the number) + an optional
+  // streak/accumulation line driven by the activity's streak mode
+  // (Settings → Streaks).
   const streakLine = formatStreak(row.streakMode, row.streak, row.streakGoal);
   const showAny = showStats || streakLine !== null;
   return (
     <td className="border-b border-zinc-100 px-2 py-0.5 align-top text-center text-xs tabular-nums dark:border-zinc-900">
       {!showAny && <span className="text-zinc-300 dark:text-zinc-700">—</span>}
-      {showStats && (
-        <div className={pctClass(row.pct)}>
-          {row.pct === null ? (
-            "—"
-          ) : (
-            <span>
-              {row.done}/{row.onTheHook} | {row.pct}%
-            </span>
-          )}
-        </div>
-      )}
+      {showStats &&
+        (statsAccuracy ? (
+          <div className={pctClass(row.pct)}>
+            {row.pct === null ? (
+              "—"
+            ) : (
+              <span>
+                {row.done}/{row.onTheHook} | {row.pct}%
+              </span>
+            )}
+          </div>
+        ) : (
+          <div className="text-zinc-700 dark:text-zinc-300">{row.done}</div>
+        ))}
       {streakLine && (
         <div className="text-[11px] text-orange-500 dark:text-orange-400">
           {streakLine}

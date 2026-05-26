@@ -13,12 +13,12 @@ import {
 } from "@/app/actions/streaks";
 import type { StreakMode } from "@/lib/domain/streak";
 
+// "Total count" is no longer a streak mode — it has its own box below.
 const MODE_OPTIONS: ReadonlyArray<{ value: StreakMode; label: string }> = [
   { value: "none", label: "None" },
   { value: "perfect_weeks", label: "Perfect weeks" },
   { value: "perfect_months", label: "Perfect months" },
   { value: "countdown", label: "Countdown to goal" },
-  { value: "total", label: "Total count" },
 ];
 
 type ActivityCfg = { id: string; name: string; mode: StreakMode; goal: number | null };
@@ -32,22 +32,33 @@ export function StreaksForm({
   initialScope,
   initialMode,
   initialStats,
+  initialStatsAccuracy,
   initialGoal,
   activities,
 }: {
   initialScope: "same" | "independent";
   initialMode: StreakMode;
   initialStats: boolean;
+  initialStatsAccuracy: boolean;
   initialGoal: number | null;
   activities: ActivityCfg[];
 }) {
   const [scope, setScope] = useState<"same" | "independent">(initialScope);
-  const [mode, setMode] = useState<StreakMode>(initialMode);
+  // If the saved mode is the legacy "total", show "none" here — the Total
+  // count is its own box below now.
+  const [mode, setMode] = useState<StreakMode>(
+    initialMode === "total" ? "none" : initialMode
+  );
   const [goal, setGoal] = useState<string>(
     initialGoal != null ? String(initialGoal) : ""
   );
   const [stats, setStats] = useState(initialStats);
-  const [perActivity, setPerActivity] = useState<ActivityCfg[]>(activities);
+  const [statsAccuracy, setStatsAccuracy] = useState(initialStatsAccuracy);
+  const [perActivity, setPerActivity] = useState<ActivityCfg[]>(
+    // Same back-compat: hide legacy "total" mode from the per-activity
+    // selects (treat as none in the UI).
+    activities.map((a) => (a.mode === "total" ? { ...a, mode: "none" } : a))
+  );
 
   const [state, setState] = useState<StreakSettingsState>(null);
   const [isPending, startTransition] = useTransition();
@@ -66,6 +77,7 @@ export function StreaksForm({
         globalMode: mode,
         globalGoal: goal.trim() === "" ? null : Number(goal),
         stats,
+        statsAccuracy,
         perActivity: perActivity.map((a) => ({
           id: a.id,
           mode: a.mode,
@@ -78,19 +90,35 @@ export function StreaksForm({
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Statistics */}
-      <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={stats}
-          onChange={(e) => setStats(e.target.checked)}
-          className="h-4 w-4"
-        />
-        <span>
-          <span className="font-medium">Statistics</span> — show the x/y and %
-          on each activity.
-        </span>
-      </label>
+      {/* Total count (independent of the streak type) */}
+      <fieldset className="flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={stats}
+            onChange={(e) => setStats(e.target.checked)}
+            className="h-4 w-4"
+          />
+          <span>
+            <span className="font-medium">Total count</span> — how much you
+            completed in the period you&rsquo;re viewing.
+          </span>
+        </label>
+        {stats && (
+          <div className="ml-6 flex flex-col gap-1">
+            <Radio
+              checked={statsAccuracy}
+              onChange={() => setStatsAccuracy(true)}
+              label="Accuracy (X/Y and %)"
+            />
+            <Radio
+              checked={!statsAccuracy}
+              onChange={() => setStatsAccuracy(false)}
+              label="Just the total number"
+            />
+          </div>
+        )}
+      </fieldset>
 
       {/* Scope */}
       <fieldset className="flex flex-col gap-2">

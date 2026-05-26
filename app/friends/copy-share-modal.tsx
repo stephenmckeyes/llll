@@ -59,6 +59,7 @@ export function CopyShareModal({
     start_date: shared.startDate,
     end_date: shared.endDate,
     reminders: [],
+    track_on_grid: false,
   };
 
   function submit() {

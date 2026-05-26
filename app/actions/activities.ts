@@ -408,6 +408,69 @@ function buildDraftRhythm(
 }
 
 // ---------------------------------------------------------------------------
+// createQuickSingle — used by the day calendar's inline "+ Add activity"
+// field. Creates a one-off (rhythm: single) activity for the given date with
+// safe defaults (no time, no tags, no reminders, priority medium, not on
+// grid) so the user can capture a name in one keystroke and tap off / hit
+// Enter. The "i" button on that row opens the full NewActivityModal instead.
+// ---------------------------------------------------------------------------
+
+export async function createQuickSingle(
+  name: string,
+  dateStr: string
+): Promise<{ error: string } | { ok: true }> {
+  const trimmed = name.trim();
+  if (!trimmed) return { error: "Give the activity a name first." };
+  if (trimmed.length > 120) return { error: "Name is too long (max 120)." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    return { error: "Invalid date." };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: act, error: aerr } = await supabase
+    .from("activities")
+    .insert({
+      user_id: user.id,
+      name: trimmed,
+      notes: null,
+      rhythm: { type: "single" },
+      start_date: dateStr,
+      end_date: dateStr,
+      priority: 2,
+      default_skill_tags: [],
+      scheduled_times: [],
+      reminders: [],
+      track_on_grid: false,
+    })
+    .select("id")
+    .single();
+  if (aerr || !act) {
+    return { error: aerr?.message ?? "Could not save activity." };
+  }
+
+  const { error: ierr } = await supabase.from("activity_instances").insert({
+    activity_id: act.id,
+    scheduled_for: dateStr,
+    status: "pending" as const,
+    tags: [],
+  });
+  if (ierr) {
+    return {
+      error: `Activity saved, but generating the day failed: ${ierr.message}`,
+    };
+  }
+
+  invalidateBackfillCache(user.id);
+  revalidatePath("/");
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
 // completeInstance — wraps logCompletion() for the day-list tap on home.
 // ---------------------------------------------------------------------------
 
@@ -574,6 +637,7 @@ export async function updateActivityRhythm(
       default_skill_tags: tags,
       scheduled_times: scheduledTimes,
       reminders: remindersValidated.data,
+      track_on_grid: String(formData.get("trackOnGrid")) === "true",
     })
     .eq("id", activityId);
   if (uerr) return { error: uerr.message };

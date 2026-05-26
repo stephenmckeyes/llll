@@ -55,6 +55,7 @@ export function FriendView({
   streakMode,
   streakGoal,
   showStats,
+  statsAccuracy,
 }: {
   friendId: string;
   friendName: string;
@@ -71,6 +72,7 @@ export function FriendView({
   streakMode: StreakMode;
   streakGoal: number | null;
   showStats: boolean;
+  statsAccuracy: boolean;
 }) {
   const [view, setView] = useState<ViewKind>(initialView);
   const [copying, setCopying] = useState<SharedActivity | null>(null);
@@ -156,6 +158,7 @@ export function FriendView({
           streakMode={streakMode}
           streakGoal={streakGoal}
           showStats={showStats}
+          statsAccuracy={statsAccuracy}
         />
       )}
 

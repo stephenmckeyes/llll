@@ -75,6 +75,9 @@ export type ActivityFormInitial = {
   start_date: string;
   end_date: string | null;
   reminders: Array<{ amount: number; unit: string }>;
+  /** Show this activity in the Grid view (migration 0016). Everything is
+   *  still tracked; this only gates grid display. */
+  track_on_grid: boolean;
 };
 
 export function ActivityFormFields({
@@ -111,6 +114,9 @@ export function ActivityFormFields({
   const [reminders, setReminders] = useState<Reminder[]>(
     initialValues.reminders.map(normalizeReminder)
   );
+  const [trackOnGrid, setTrackOnGrid] = useState<boolean>(
+    initialValues.track_on_grid
+  );
 
   function toggleWeekday(day: DayOfWeek) {
     setWeekdays((prev) =>
@@ -139,6 +145,44 @@ export function ActivityFormFields({
       {/* Hidden inputs surface the field state to FormData. */}
       <input type="hidden" name="rhythmType" value={rhythmKind} />
       <input type="hidden" name="priority" value={priority} />
+      <input
+        type="hidden"
+        name="trackOnGrid"
+        value={trackOnGrid ? "true" : "false"}
+      />
+
+      {/* --- Track on Grid? (default: off) -------------------------- */}
+      <fieldset className="flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+        <legend className="px-1 text-sm font-medium">Grid</legend>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setTrackOnGrid(false)}
+            className={`flex-1 touch-manipulation rounded-md border px-3 py-2 text-center text-sm font-medium transition-colors ${
+              !trackOnGrid
+                ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            }`}
+          >
+            Don&rsquo;t track on grid
+          </button>
+          <button
+            type="button"
+            onClick={() => setTrackOnGrid(true)}
+            className={`flex-1 touch-manipulation rounded-md border px-3 py-2 text-center text-sm font-medium transition-colors ${
+              trackOnGrid
+                ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            }`}
+          >
+            Track on grid
+          </button>
+        </div>
+        <p className="text-xs text-zinc-500">
+          Everything is tracked either way — this only controls whether the
+          activity appears in the Grid view.
+        </p>
+      </fieldset>
 
       {/* --- Activity name ----------------------------------------- */}
       <label className="block">

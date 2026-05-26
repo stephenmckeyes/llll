@@ -56,6 +56,9 @@ export function toDayInstance(
       end_date: share.endDate,
       archived_at: share.archivedAt,
       reminders: [],
+      // Friend's track_on_grid isn't shared; doesn't matter for the
+      // read-only friend view.
+      track_on_grid: false,
     },
   };
 }

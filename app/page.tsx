@@ -610,7 +610,8 @@ async function DayView({
         start_date,
         end_date,
         archived_at,
-        reminders
+        reminders,
+        track_on_grid
       ),
       completion_instances (
         completion_id
@@ -1225,7 +1226,9 @@ async function GridView({
       .order("name"),
     supabase
       .from("profiles")
-      .select("streak_scope, streak_mode, streak_stats, streak_goal")
+      .select(
+        "streak_scope, streak_mode, streak_stats, streak_stats_accuracy, streak_goal"
+      )
       .eq("id", userId)
       .maybeSingle(),
   ]);
@@ -1259,6 +1262,7 @@ async function GridView({
     streak_scope?: string;
     streak_mode?: string;
     streak_stats?: boolean;
+    streak_stats_accuracy?: boolean;
     streak_goal?: number | null;
   };
   const streakScope = sp.streak_scope === "independent" ? "independent" : "same";
@@ -1267,6 +1271,7 @@ async function GridView({
     : "none";
   const globalStreakGoal = sp.streak_goal ?? null;
   const showStats = sp.streak_stats ?? true;
+  const statsAccuracy = sp.streak_stats_accuracy ?? true;
 
   // ---- 2. Range bounds ---------------------------------------------------
   // Total = first rhythmic activity's start_date → today. NOT a fixed
@@ -1669,6 +1674,7 @@ async function GridView({
         userId={userId}
         tagMap={tagMap}
         showStats={showStats}
+        statsAccuracy={statsAccuracy}
       />
     </div>
   );
@@ -1760,6 +1766,7 @@ function toDayInstance(
     end_date: string | null;
     archived_at: string | null;
     reminders: Array<{ amount: number; unit: string }>;
+    track_on_grid: boolean;
   }
 ): DayInstance {
   return {
@@ -1790,6 +1797,7 @@ function toDayInstance(
       end_date: act.end_date,
       archived_at: act.archived_at,
       reminders: act.reminders ?? [],
+      track_on_grid: act.track_on_grid,
     },
   };
 }

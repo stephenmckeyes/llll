@@ -60,6 +60,7 @@ export function GridSection({
   userId,
   tagMap,
   showStats,
+  statsAccuracy,
 }: {
   range: GridRange;
   currentDate: string;
@@ -85,6 +86,7 @@ export function GridSection({
   userId: string;
   tagMap: TagMap;
   showStats: boolean;
+  statsAccuracy: boolean;
 }) {
   // Tag filter state. Stored as a HIDDEN set so the default
   // (everything visible) is the empty set — new tags added to
@@ -173,6 +175,7 @@ export function GridSection({
         userId={userId}
         tagMap={tagMap}
         showStats={showStats}
+        statsAccuracy={statsAccuracy}
       />
     </>
   );

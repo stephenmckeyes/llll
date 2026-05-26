@@ -88,6 +88,11 @@ export const profiles = pgTable("profiles", {
   streakScope: text("streak_scope").notNull().default("same"),
   streakMode: text("streak_mode").notNull().default("none"),
   streakStats: boolean("streak_stats").notNull().default(true),
+  // When streak_stats is on: true → "X/Y · Z%" (accuracy), false → just
+  // the completed count "X". Migration 0018.
+  streakStatsAccuracy: boolean("streak_stats_accuracy")
+    .notNull()
+    .default(true),
   streakGoal: smallint("streak_goal"),
 });
 

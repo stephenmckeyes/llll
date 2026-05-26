@@ -1,7 +1,18 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
+
+// Lock the viewport: no pinch / double-tap zoom, no accidental rescaling on
+// input focus. Mission is laid out for one canonical scale; zooming into the
+// dashboard breaks the sticky-header math and produces the "weird
+// zoom/unzoom" feel on iOS.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+};
 
 const geistSans = Geist({
   variable: "--font-geist-sans",

@@ -36,6 +36,7 @@ import {
 
 import { ActivityModal } from "./activity-modal";
 import { IncompleteButton, type IncompleteInfo } from "./incomplete-button";
+import { InlineAddRow } from "./inline-add-row";
 import { InstanceRow } from "./instance-row";
 import { NewActivityModal } from "./new-activity-modal";
 
@@ -79,6 +80,10 @@ export type DayInstance = {
     end_date: string | null;
     archived_at: string | null;
     reminders: Array<{ amount: number; unit: string }>;
+    /** Show this activity on the Grid (Settings → Streaks unrelated;
+     *  see migration 0016). Needed so Edit Rhythm can prefill the
+     *  Track-on-Grid toggle. */
+    track_on_grid: boolean;
   };
 };
 
@@ -509,17 +514,13 @@ function DaySection({
         </div>
       )}
 
-      {/* "+ Add activity" placeholder — closes out every day so the user
-          can drop a new activity straight onto that date. Hidden in the
-          read-only friend view (you can't add to a friend's schedule). */}
+      {/* Inline "+ Add activity" — type a name directly and commit on
+          Enter / tap-off / ✓. The circled "i" button opens the full
+          NewActivityModal for everything the inline input can't capture
+          (time, tags, rhythm, priority, on-grid, etc.). Hidden in the
+          read-only friend view — you can't add to a friend's schedule. */}
       {!readOnly && (
-        <button
-          type="button"
-          onClick={() => onAdd(dateStr)}
-          className="flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-zinc-300 px-3 py-2 text-xs font-medium text-zinc-500 transition-colors hover:border-zinc-400 hover:bg-zinc-50 hover:text-zinc-700 dark:border-zinc-700 dark:hover:border-zinc-600 dark:hover:bg-zinc-900 dark:hover:text-zinc-300"
-        >
-          + Add activity
-        </button>
+        <InlineAddRow dateStr={dateStr} onOpenModal={() => onAdd(dateStr)} />
       )}
     </section>
   );

@@ -15,7 +15,9 @@ export default async function StreaksSettingsPage() {
   const [{ data: profile }, { data: activityRows }] = await Promise.all([
     supabase
       .from("profiles")
-      .select("streak_scope, streak_mode, streak_stats, streak_goal")
+      .select(
+        "streak_scope, streak_mode, streak_stats, streak_stats_accuracy, streak_goal"
+      )
       .eq("id", user.id)
       .maybeSingle(),
     supabase
@@ -30,6 +32,7 @@ export default async function StreaksSettingsPage() {
     streak_scope?: string;
     streak_mode?: string;
     streak_stats?: boolean;
+    streak_stats_accuracy?: boolean;
     streak_goal?: number | null;
   };
 
@@ -60,6 +63,7 @@ export default async function StreaksSettingsPage() {
         initialScope={p.streak_scope === "independent" ? "independent" : "same"}
         initialMode={isStreakMode(p.streak_mode) ? p.streak_mode : "none"}
         initialStats={p.streak_stats ?? true}
+        initialStatsAccuracy={p.streak_stats_accuracy ?? true}
         initialGoal={p.streak_goal ?? null}
         activities={activities}
       />

@@ -54,6 +54,7 @@ export function FriendGrid({
   streakMode,
   streakGoal,
   showStats,
+  statsAccuracy,
 }: {
   friendId: string;
   shares: SharedActivity[];
@@ -68,6 +69,7 @@ export function FriendGrid({
   streakMode: StreakMode;
   streakGoal: number | null;
   showStats: boolean;
+  statsAccuracy: boolean;
 }) {
   // When deep-linked to highlight an activity, open on Total so the row is
   // guaranteed to be present regardless of the current week/month.
@@ -266,6 +268,7 @@ export function FriendGrid({
           })
         }
         showStats={showStats}
+        statsAccuracy={statsAccuracy}
       />
     </div>
   );

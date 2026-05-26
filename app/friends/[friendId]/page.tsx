@@ -94,7 +94,9 @@ export default async function FriendViewPage({
       .is("archived_at", null),
     supabase
       .from("profiles")
-      .select("streak_mode, streak_stats, streak_goal")
+      .select(
+        "streak_mode, streak_stats, streak_stats_accuracy, streak_goal"
+      )
       .eq("id", user.id)
       .maybeSingle(),
   ]);
@@ -104,6 +106,7 @@ export default async function FriendViewPage({
   const vp = (streakProfile ?? {}) as {
     streak_mode?: string;
     streak_stats?: boolean;
+    streak_stats_accuracy?: boolean;
     streak_goal?: number | null;
   };
   const viewerStreakMode: StreakMode = isStreakMode(vp.streak_mode)
@@ -111,6 +114,7 @@ export default async function FriendViewPage({
     : "none";
   const viewerStreakGoal = vp.streak_goal ?? null;
   const viewerShowStats = vp.streak_stats ?? true;
+  const viewerStatsAccuracy = vp.streak_stats_accuracy ?? true;
 
   const shares = allShares.filter((s) => s.ownerId === friendId);
   const instances = allInstances.filter((i) => i.ownerId === friendId);
@@ -160,6 +164,7 @@ export default async function FriendViewPage({
         streakMode={viewerStreakMode}
         streakGoal={viewerStreakGoal}
         showStats={viewerShowStats}
+        statsAccuracy={viewerStatsAccuracy}
       />
     </main>
   );
