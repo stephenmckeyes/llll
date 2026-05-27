@@ -192,6 +192,12 @@ export type SharedInstance = {
   scheduledFor: string;
   status: "pending" | "completed" | "missed" | "skipped" | "shifted";
   completionCount: number;
+  /** One YYYY-MM-DD per live completion, in the OWNER's timezone so it
+   *  matches the day the owner sees on their own dashboard. Used by the
+   *  friend dropdown to place each completion on its own day for
+   *  frequency rhythms. Added in migration 0019. Falls back to an empty
+   *  array on older RPC deployments. */
+  completionDates: string[];
 };
 
 // getSharedInstancesWithMe — occurrences (+ completion state) of every
@@ -219,6 +225,7 @@ export async function getSharedInstancesWithMe(
     scheduled_for: string;
     status: string;
     completion_count: number;
+    completion_dates?: string[] | null;
   }>;
   return rows.map((r) => ({
     ownerId: r.owner_id,
@@ -227,6 +234,7 @@ export async function getSharedInstancesWithMe(
     scheduledFor: r.scheduled_for,
     status: r.status as SharedInstance["status"],
     completionCount: r.completion_count,
+    completionDates: r.completion_dates ?? [],
   }));
 }
 

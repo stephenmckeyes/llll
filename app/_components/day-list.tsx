@@ -27,12 +27,13 @@ import {
 } from "react";
 
 import { unlabelInstance } from "@/app/actions/activities";
+import {
+  frequencyDueDay,
+  frequencyPeriodEnd,
+} from "@/lib/domain/frequency-period";
 import { summarizeRhythm } from "@/lib/domain/rhythm-summary";
 import type { TagMap } from "@/lib/domain/tags";
-import {
-  normalizeFrequencyPeriod,
-  type Rhythm,
-} from "@/lib/validators/rhythm";
+import { type Rhythm } from "@/lib/validators/rhythm";
 
 import { ActivityModal } from "./activity-modal";
 import { IncompleteButton, type IncompleteInfo } from "./incomplete-button";
@@ -90,8 +91,22 @@ export type DayInstance = {
 // A row in the Completed/Missed dropdown. Holds the full DayInstance so
 // the row click can open the same ActivityModal a pending row would
 // open — no follow-up fetch needed.
+//
+// For non-frequency rhythms each entry is one whole instance (id ==
+// instance id). For frequency rhythms each LIVE COMPLETION becomes its
+// own row (id is a synthetic `${instanceId}:${completionId}` so React
+// can distinguish them) and the inline Unlabel button is hidden, because
+// unlabelInstance() nukes every completion on the instance — destructive
+// when the user only meant to undo one. The modal still opens normally
+// and exposes the granular goal/progress controls there.
 export type DayMarkedItem = {
+  /** Stable React key. May be a synthetic ID for per-completion entries. */
   id: string;
+  /** The real activity_instance ID — what unlabelInstance() takes. */
+  instanceId: string;
+  /** If true, the inline "Unlabel" button is omitted (see comment above).
+   *  Default false / undefined → button shown as before. */
+  hideInlineUnlabel?: boolean;
   instance: DayInstance;
 };
 
@@ -611,11 +626,14 @@ function MarkedTable({
             </button>
             {/* Quick revert — sends this occurrence back to pending (out
                 of the dropdown, back into the active list) without opening
-                the modal. Hidden in the read-only friend view. */}
-            {!readOnly && (
+                the modal. Hidden in the read-only friend view, and on
+                per-completion frequency rows where the all-or-nothing
+                instance reset would wipe the user's other completions
+                too (see DayMarkedItem.hideInlineUnlabel). */}
+            {!readOnly && !it.hideInlineUnlabel && (
               <button
                 type="button"
-                onClick={() => onUnlabel(it.id)}
+                onClick={() => onUnlabel(it.instanceId)}
                 title="Tapped by accident? Revert to pending."
                 className="shrink-0 touch-manipulation rounded-md border border-zinc-200 px-2 text-[11px] font-medium text-zinc-600 transition-colors hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-900"
               >
@@ -722,21 +740,30 @@ function visibleOnDay(
   }
   if (r.type !== "frequency") return inst.scheduled_for === dayStr;
 
-  // Frequency periods are anchored to scheduled_for and last for
-  // perCount * perUnit. Show the instance on any day inside that range.
-  const { perCount, perUnit } = normalizeFrequencyPeriod(r);
-  const scheduled = parseLocalDate(inst.scheduled_for);
-  const periodEnd = advanceLocalDate(scheduled, perCount, perUnit);
-  const day = parseLocalDate(dayStr);
-  return day >= scheduled && day < periodEnd;
-}
-
-function advanceLocalDate(d: Date, count: number, unit: string): Date {
-  const out = new Date(d);
-  if (unit === "days") out.setDate(out.getDate() + count);
-  else if (unit === "weeks") out.setDate(out.getDate() + count * 7);
-  else if (unit === "months") out.setMonth(out.getMonth() + count);
-  return out;
+  // Frequency periods are anchored to scheduled_for and span
+  // [scheduled_for, periodEnd). The user has the WHOLE period to hit
+  // the goal — so:
+  //   - While the period is still open (today < periodEnd) we render the
+  //     row on today + every still-future day in the period. Past
+  //     intermediate days inside the period drop away ("it displays on
+  //     every day until the day passes and it goes away").
+  //   - Once the period has closed (today >= periodEnd) and the instance
+  //     is STILL pending, the row lands on the period's last day — the
+  //     "due day" — as Unlabeled. Earlier days in that closed period
+  //     stay empty: marking it Unlabeled on, say, day 1 of a week-long
+  //     period would have nagged the user before the rhythm was
+  //     actually due.
+  const periodEnd = frequencyPeriodEnd(inst.scheduled_for, r);
+  const dueDay = frequencyDueDay(inst.scheduled_for, r);
+  if (todayStr >= periodEnd) {
+    // Period over → only the due day renders the still-pending row.
+    return dayStr === dueDay;
+  }
+  // Period open → today + every future day inside it. Anything strictly
+  // before today drops away.
+  if (dayStr < inst.scheduled_for) return false;
+  if (dayStr < todayStr) return false;
+  return dayStr <= dueDay;
 }
 
 function compareForDay(a: DayInstance, b: DayInstance): number {

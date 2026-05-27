@@ -7,6 +7,7 @@
 
 import type { SharedActivity, SharedInstance } from "@/app/actions/sharing";
 import type { DayInstance, DayMarkedItem } from "@/app/_components/day-list";
+import { frequencyDueDay } from "@/lib/domain/frequency-period";
 
 // A specific dated occurrence the user clicked / replied to (the date plus a
 // human label for its state). Drives the occurrence detail + the chat quote.
@@ -83,14 +84,52 @@ export function buildFriendDayData(
     const share = shareById.get(inst.activityId);
     if (!share) continue;
     const di = toDayInstance(inst, share);
+    const isFrequency = share.rhythm.type === "frequency";
+
+    if (isFrequency) {
+      // Mirror the personal day view: each live completion (timestamps
+      // bucketed by OWNER's TZ inside the RPC, migration 0019) gets its
+      // own dropdown row on the day it happened. A pending row with
+      // partial progress still goes into the active list — the
+      // visibleOnDay frequency rules in day-list.tsx hide it from past
+      // intermediate days and land it on the due day if the period
+      // closed without a verdict.
+      for (const day of inst.completionDates) {
+        (completedByDate[day] ??= []).push({
+          id: `${di.id}:${day}:${(completedByDate[day]?.length ?? 0)}`,
+          instanceId: di.id,
+          instance: di,
+          // Inline Unlabel is owner-only anyway (read-only friend
+          // surface hides it), but flag it for symmetry with the
+          // personal view's behavior.
+          hideInlineUnlabel: true,
+        });
+      }
+      if (di.status === "missed") {
+        const dueDay = frequencyDueDay(inst.scheduledFor, share.rhythm);
+        (missedByDate[dueDay] ??= []).push({
+          id: di.id,
+          instanceId: di.id,
+          instance: di,
+        });
+      } else if (di.status === "pending") {
+        pending.push(di);
+      }
+      // status === "completed" → no extra row needed; the per-completion
+      // entries already represent it.
+      continue;
+    }
+
     if (di.status === "completed") {
       (completedByDate[inst.scheduledFor] ??= []).push({
         id: di.id,
+        instanceId: di.id,
         instance: di,
       });
     } else if (di.status === "missed") {
       (missedByDate[inst.scheduledFor] ??= []).push({
         id: di.id,
+        instanceId: di.id,
         instance: di,
       });
     } else {

@@ -14,6 +14,11 @@ import { getUnreadCounts } from "@/app/actions/messages";
 import { getSharedInstancesWithMe, getSharedWithMe } from "@/app/actions/sharing";
 import { getWatches } from "@/app/actions/watches";
 import { requireOnboardedUser } from "@/lib/auth/require-onboarded-user";
+import {
+  isPastDuePending,
+  unlabeledLandingDay,
+} from "@/lib/domain/frequency-period";
+import type { Rhythm } from "@/lib/validators/rhythm";
 
 import { PendingLink } from "@/app/_components/pending-link";
 
@@ -106,22 +111,32 @@ export default async function NotificationsPage() {
   // Reminders = past-due pending instances on active activities. Two-step
   // query (active activity ids, then their overdue pending instances) for
   // the same reliability reason fetchIncompleteInfo uses on the dashboard.
-  const { data: activeIds } = await supabase
+  //
+  // Frequency rhythms are gated on the period FULLY ENDING — a still-open
+  // "1×/week" period should never trip the reminder, the user has the
+  // remaining days to hit it. The SQL filter does the cheap lower bound
+  // (scheduled_for < today); we JS-filter the frequency cases by
+  // isPastDuePending(). For frequency, the "due day" we link to is the
+  // period's last day, not scheduled_for — same as the dashboard chip,
+  // so the user lands on the day where the row actually shows up.
+  const { data: activeRows } = await supabase
     .from("activities")
-    .select("id, name")
+    .select("id, name, rhythm")
     .is("archived_at", null);
-  const idToName = new Map(
-    ((activeIds ?? []) as Array<{ id: string; name: string }>).map((a) => [
-      a.id,
-      a.name,
-    ])
-  );
+  const active = (activeRows ?? []) as Array<{
+    id: string;
+    name: string;
+    rhythm: Rhythm;
+  }>;
+  const idToName = new Map(active.map((a) => [a.id, a.name]));
+  const idToRhythm = new Map(active.map((a) => [a.id, a.rhythm]));
 
   type OverdueRow = {
     id: string;
     activity_id: string;
     scheduled_for: string;
     name: string | null;
+    landing_day: string;
   };
   let overdue: OverdueRow[] = [];
   if (idToName.size > 0) {
@@ -132,8 +147,25 @@ export default async function NotificationsPage() {
       .eq("status", "pending")
       .lt("scheduled_for", todayStr)
       .order("scheduled_for", { ascending: true })
-      .limit(50);
-    overdue = (data ?? []) as OverdueRow[];
+      .limit(200);
+    const rows = (data ?? []) as Array<{
+      id: string;
+      activity_id: string;
+      scheduled_for: string;
+      name: string | null;
+    }>;
+    const filtered: OverdueRow[] = [];
+    for (const r of rows) {
+      const rh = idToRhythm.get(r.activity_id);
+      if (!rh) continue;
+      if (!isPastDuePending(r.scheduled_for, rh, todayStr)) continue;
+      filtered.push({
+        ...r,
+        landing_day: unlabeledLandingDay(r.scheduled_for, rh),
+      });
+      if (filtered.length >= 50) break;
+    }
+    overdue = filtered;
   }
 
   void user;
@@ -232,14 +264,14 @@ export default async function NotificationsPage() {
             {overdue.map((o) => (
               <li key={o.id}>
                 <Link
-                  href={`/?view=day&date=${o.scheduled_for}`}
+                  href={`/?view=day&date=${o.landing_day}`}
                   className="flex items-center justify-between gap-3 rounded-md border border-zinc-200 bg-white px-4 py-3 text-sm transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900"
                 >
                   <span className="min-w-0 truncate font-medium">
                     {o.name ?? idToName.get(o.activity_id) ?? "Activity"}
                   </span>
                   <span className="shrink-0 text-xs font-medium text-amber-600 dark:text-amber-400">
-                    {formatDmy(o.scheduled_for)}
+                    {formatDmy(o.landing_day)}
                   </span>
                 </Link>
               </li>

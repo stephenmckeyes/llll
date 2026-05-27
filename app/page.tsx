@@ -25,6 +25,11 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { ensureInstancesBackfilled } from "@/lib/domain/backfill";
+import {
+  frequencyDueDay,
+  isPastDuePending,
+  unlabeledLandingDay,
+} from "@/lib/domain/frequency-period";
 import { rhythmCategoryLabel } from "@/lib/domain/rhythm-summary";
 import {
   computeStreakValue,
@@ -260,6 +265,7 @@ export default async function HomePage({
         <DayView
           startDate={date}
           todayStr={todayStr}
+          timezone={profile.timezone ?? "UTC"}
           incompleteInfo={incompleteInfo}
           tagMap={tagMap}
         />
@@ -304,6 +310,49 @@ export default async function HomePage({
 }
 
 // ---------------------------------------------------------------------------
+// Helpers for the day-view dropdown — drop completions that have been
+// soft-deleted, and format a UTC timestamp as a YYYY-MM-DD in the user's
+// timezone (so the bucket day matches what the user would have seen on
+// their device when they tapped Complete).
+// ---------------------------------------------------------------------------
+
+type CompletionLink = {
+  completion_id: string;
+  completions: { occurred_at: string; deleted_at: string | null } | null;
+};
+
+function liveCompletions(
+  links: CompletionLink[] | null
+): Array<{ completion_id: string; occurred_at: string }> {
+  if (!links) return [];
+  const out: Array<{ completion_id: string; occurred_at: string }> = [];
+  for (const link of links) {
+    const c = link.completions;
+    if (!c) continue;
+    if (c.deleted_at) continue;
+    out.push({ completion_id: link.completion_id, occurred_at: c.occurred_at });
+  }
+  return out;
+}
+
+function liveCompletionCount(links: CompletionLink[] | null): number {
+  return liveCompletions(links).length;
+}
+
+function ymdInTimeZone(iso: string, timezone: string): string {
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date(iso));
+  } catch {
+    return iso.slice(0, 10);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // fetchIncompleteInfo — used by every view's navigator to power the
 // "Incomplete (N)" chip + jump-to-oldest behavior.
 // ---------------------------------------------------------------------------
@@ -312,64 +361,68 @@ async function fetchIncompleteInfo(
   supabase: Awaited<ReturnType<typeof createClient>>,
   todayStr: string
 ): Promise<IncompleteInfo> {
-  // Strictly-past pending instances on still-active activities. "Strictly
-  // less than today" so the chip doesn't pester the user about things
-  // they still have today to finish.
+  // What counts as "unlabeled":
+  //   - non-frequency: status='pending' AND scheduled_for < today
+  //   - frequency:     status='pending' AND today >= periodEnd
+  //                    (i.e. the WHOLE period has closed without the
+  //                     user hitting the goal). A still-open period
+  //                     never counts — the user still has time.
   //
-  // Two-step pattern (rather than a single nested-FK query):
-  //   1. Fetch active activity IDs.
-  //   2. Count & find oldest pending instance by `activity_id in (...)`.
+  // SQL can do the cheap lower-bound (scheduled_for < today) — anything
+  // newer can't possibly be past-due. The frequency-specific second
+  // condition needs the rhythm, so we fetch rows + rhythms and filter
+  // in JS. The window of past-pending instances is small per user
+  // (typically O(10s)) so we accept the row-level fetch in exchange
+  // for the rule fix.
   //
-  // Why not a one-trip `activities!inner` + `head: true` + count: "exact"?
-  // PostgREST's count semantics when an inner-join filter is layered on
-  // a head-only query were undercounting in practice (the per-activity
-  // "Unlabeled N" badges in the grid would show a number while the
-  // page-level chip stayed at 0 — visible mismatch the user reported).
-  // Two simple queries cost a tiny extra round-trip but are reliable.
-  const { data: activeIds } = await supabase
+  // Two-step pattern (rather than a single nested-FK query): PostgREST's
+  // count semantics when an inner-join filter is layered on a head-only
+  // query were undercounting in practice — see git history. Two simple
+  // queries cost a tiny extra round-trip but are reliable.
+  const { data: activeRows } = await supabase
     .from("activities")
-    .select("id")
+    .select("id, rhythm")
     .is("archived_at", null);
 
-  const ids = ((activeIds ?? []) as Array<{ id: string }>).map((a) => a.id);
+  const active = (activeRows ?? []) as Array<{ id: string; rhythm: Rhythm }>;
+  if (active.length === 0) return { count: 0, oldestDate: null };
 
-  if (ids.length === 0) {
-    return { count: 0, oldestDate: null };
+  const rhythmById = new Map(active.map((a) => [a.id, a.rhythm] as const));
+  const ids = active.map((a) => a.id);
+
+  const { data: pendingRows } = await supabase
+    .from("activity_instances")
+    .select("activity_id, scheduled_for")
+    .in("activity_id", ids)
+    .eq("status", "pending")
+    .lt("scheduled_for", todayStr)
+    .order("scheduled_for", { ascending: true });
+
+  const rows = (pendingRows ?? []) as Array<{
+    activity_id: string;
+    scheduled_for: string;
+  }>;
+
+  // Filter in JS using the rhythm-aware rule. For frequency, the row's
+  // landing day (where the chip should JUMP) is the period's due day,
+  // not scheduled_for. For everything else it's scheduled_for.
+  type Past = { landingDay: string };
+  const past: Past[] = [];
+  for (const r of rows) {
+    const rh = rhythmById.get(r.activity_id);
+    if (!rh) continue;
+    if (!isPastDuePending(r.scheduled_for, rh, todayStr)) continue;
+    past.push({ landingDay: unlabeledLandingDay(r.scheduled_for, rh) });
   }
 
-  const [countResult, oldestResult] = await Promise.all([
-    supabase
-      .from("activity_instances")
-      .select("id", { count: "exact", head: true })
-      .in("activity_id", ids)
-      .eq("status", "pending")
-      .lt("scheduled_for", todayStr),
-    supabase
-      .from("activity_instances")
-      .select("scheduled_for")
-      .in("activity_id", ids)
-      .eq("status", "pending")
-      .lt("scheduled_for", todayStr)
-      .order("scheduled_for", { ascending: true })
-      .limit(1)
-      .maybeSingle(),
-  ]);
+  if (past.length === 0) return { count: 0, oldestDate: null };
 
-  // Always route the chip to the row's actual `scheduled_for` (not
-  // today). That's important even for overdue SINGLES — those used to
-  // get redirected to today to match `visibleOnDay`'s today-shift, but
-  // it broke for users already on today (no URL change → no re-fetch)
-  // and for instances older than the day-list's -90d window (never in
-  // the fetch). The fix lives on the rendering side now: `visibleOnDay`
-  // additionally renders overdue singles on their original scheduled_for
-  // so the chip's navigation always lands the user on a section that
-  // contains the row.
-  return {
-    count: countResult.count ?? 0,
-    oldestDate:
-      (oldestResult.data as { scheduled_for?: string } | null)?.scheduled_for ??
-      null,
-  };
+  // Oldest landing day → where the "jump to oldest" chip routes the
+  // user. `visibleOnDay` is guaranteed to render the row on that day,
+  // so the section will be non-empty when they land.
+  let oldest = past[0].landingDay;
+  for (const p of past) if (p.landingDay < oldest) oldest = p.landingDay;
+  return { count: past.length, oldestDate: oldest };
 }
 
 // ---------------------------------------------------------------------------
@@ -561,11 +614,13 @@ function SubTab({
 async function DayView({
   startDate,
   todayStr,
+  timezone,
   incompleteInfo,
   tagMap,
 }: {
   startDate: string;
   todayStr: string;
+  timezone: string;
   incompleteInfo: IncompleteInfo;
   tagMap: TagMap;
 }) {
@@ -583,11 +638,19 @@ async function DayView({
   // older two-query split (one for pending, one for completions joined
   // back to instances).
   //
-  // Why bucketing by scheduled_for (not completion.occurred_at): a user
-  // who completes Tuesday's gym on Saturday wants Tuesday's row to STAY
-  // on Tuesday's banner — they're documenting what they did for that
-  // scheduled day. Using occurred_at made it leap to Saturday, which
-  // looked like the past had silently changed.
+  // Dropdown bucketing:
+  //   - Non-frequency: keyed by scheduled_for. A user who completes
+  //     Tuesday's gym on Saturday wants Tuesday's row to STAY on
+  //     Tuesday's banner — they're documenting what they did for that
+  //     scheduled day. Using occurred_at made it leap to Saturday,
+  //     which looked like the past had silently changed.
+  //   - Frequency ("N×/period"): keyed by each completion's date in
+  //     the user's timezone. Frequency rhythms have no "this is what I
+  //     did on Tuesday" — the user can complete it any time inside the
+  //     period, and the dropdown should land on the day they actually
+  //     did it. Multiple completions = multiple dropdown rows. Missed
+  //     frequency lands on the period's due day (the last day inside
+  //     the window) as a single "missed" dropdown entry.
   const { data } = await supabase
     .from("activity_instances")
     .select(
@@ -614,7 +677,8 @@ async function DayView({
         track_on_grid
       ),
       completion_instances (
-        completion_id
+        completion_id,
+        completions ( occurred_at, deleted_at )
       )
     `
     )
@@ -622,6 +686,10 @@ async function DayView({
     .lte("scheduled_for", windowEndStr)
     .order("scheduled_for");
 
+  type RawCompletionLink = {
+    completion_id: string;
+    completions: { occurred_at: string; deleted_at: string | null } | null;
+  };
   type RawInstance = {
     id: string;
     scheduled_for: string;
@@ -633,7 +701,7 @@ async function DayView({
     notes: string | null;
     priority: number | null;
     activities: DayInstance["activity"] | null;
-    completion_instances: Array<{ completion_id: string }> | null;
+    completion_instances: RawCompletionLink[] | null;
   };
   const raw = (data ?? []) as unknown as RawInstance[];
   const live = raw.filter(
@@ -656,10 +724,12 @@ async function DayView({
     overrideNotes: r.notes ?? null,
     overridePriority: r.priority ?? null,
     activity: r.activities,
-    completionCount: r.completion_instances?.length ?? 0,
+    completionCount: liveCompletionCount(r.completion_instances),
   });
 
   // Pending instances → the active list. Completed/missed → the dropdown.
+  // (For a partially-completed frequency the row stays pending in the
+  // active list AND each completion shows up in its day's dropdown.)
   const instances: DayInstance[] = live
     .filter((r) => r.status === "pending")
     .map(toInstance);
@@ -667,14 +737,56 @@ async function DayView({
   const completedByDate: Record<string, DayMarkedItem[]> = {};
   const missedByDate: Record<string, DayMarkedItem[]> = {};
   for (const r of live) {
+    const isFrequency = r.activities.rhythm.type === "frequency";
+
+    if (isFrequency) {
+      // For frequency we emit ONE dropdown row per live completion,
+      // keyed by date(occurred_at) in the user's TZ. That holds even if
+      // the instance is still pending (partial progress) — each
+      // completion is still a real "I did this on day X" event worth
+      // showing in that day's dropdown. The completed-status flag on
+      // the instance carries no extra info beyond "the completions
+      // hit the goal," which is implicit from the per-completion rows.
+      const completions = liveCompletions(r.completion_instances);
+      for (const c of completions) {
+        const day = ymdInTimeZone(c.occurred_at, timezone);
+        (completedByDate[day] ??= []).push({
+          id: `${r.id}:${c.completion_id}`,
+          instanceId: r.id,
+          instance: toInstance(r),
+          // Inline Unlabel wipes ALL completions on this instance — hide
+          // it on per-completion rows so users don't accidentally undo
+          // their other progress. The modal still offers fine-grained
+          // controls.
+          hideInlineUnlabel: true,
+        });
+      }
+      if (r.status === "missed") {
+        // No "missed_at" column — and "missed" for a frequency means
+        // "user gave up on this period." Land it on the period's last
+        // day (the row's natural Unlabeled slot), which keeps it close
+        // to where the user would have found it pending.
+        const dueDay = frequencyDueDay(r.scheduled_for, r.activities.rhythm);
+        (missedByDate[dueDay] ??= []).push({
+          id: r.id,
+          instanceId: r.id,
+          instance: toInstance(r),
+        });
+      }
+      continue;
+    }
+
+    // Non-frequency: one dropdown row per instance, on its scheduled_for.
     if (r.status === "completed") {
       (completedByDate[r.scheduled_for] ??= []).push({
         id: r.id,
+        instanceId: r.id,
         instance: toInstance(r),
       });
     } else if (r.status === "missed") {
       (missedByDate[r.scheduled_for] ??= []).push({
         id: r.id,
+        instanceId: r.id,
         instance: toInstance(r),
       });
     }
