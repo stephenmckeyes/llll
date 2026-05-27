@@ -81,6 +81,82 @@ colored by first tag. Month view collapses overflow into "+N tag ·
   too small for name banners, so the design needs a different
   approach (dot per activity, or per-month aggregate).
 
+## Form-type activities (survey-style completion)
+
+Asked for. A NEW activity kind ("Form") alongside the existing
+single/daily/weekdays/interval/frequency rhythms — really an
+orthogonal "what does completing this activity LOOK like" axis.
+
+Today completing an activity is a one-tap binary verdict (Complete /
+Missed). A Form activity replaces the Complete button with a "Form"
+button that pulls up a modal containing a user-defined survey/form
+(Google-Forms-style fields), and submitting the form is what records
+the completion — with the field values stored as structured data so
+they can be charted and analyzed later.
+
+**Authoring (creation/edit flow):**
+- In "Add activity" (and Edit Rhythm) add a "Form" toggle/section
+  alongside the rhythm picker. Opens a form builder.
+- Field types to support, in priority order:
+  - Short text / Long text
+  - Number (with optional min/max/unit suffix like "lbs", "min")
+  - Slider / scale (1–5, 1–10, custom range)
+  - Single-select (radio) / multi-select (checkboxes)
+  - Date / time / duration
+  - Yes/No
+- Per-field: label, required flag, optional default, optional help
+  text. Reorderable. Add/remove fields freely on Edit Rhythm.
+- Form schema lives on the activity (new column, e.g.
+  `activities.form_schema jsonb`). Versioning matters: editing the
+  schema must NOT invalidate past submissions; either snapshot the
+  schema-version-id onto each submission OR keep the schema
+  append-only with field-deprecation flags. (Snapshot is simpler.)
+
+**Completion (run-time flow):**
+- The day list / grid / modals replace "Complete" with "Open form"
+  (or just "Form"). Tapping opens the form modal pre-filled with the
+  current schema.
+- Submitting the form:
+  - Creates the usual `completion` row (so streaks, X/Y, and
+    everything else keep working unchanged).
+  - Plus a new `completion_form_responses` row holding the answers
+    as jsonb + a snapshot of the schema-version-id used.
+- "Missed" still works the same way (skip the form entirely).
+- Edits to a past submission allowed via History → modal → edit
+  (creates a revision row rather than mutating in place, so the
+  audit trail stays clean).
+
+**Surfacing the data:**
+- History (per activity, all-activities, and the future graph view)
+  shows each completion as a row with its form values inline (or a
+  "View response" expander for long forms).
+- Analytics / graphs (own section or under Total view):
+  - Numeric / slider fields → line graph or histogram over time.
+  - Single/multi-select → bar chart of value frequencies.
+  - Filter by date range / tag.
+- Friend view: if the activity is shared with progress, the friend
+  sees the same form on a completed row (read-only).
+
+**Storage sketch (subject to schema review when this lands):**
+```
+activities.form_schema jsonb   -- null = legacy non-form activity
+activities.form_version int    -- bumped on every schema edit
+completion_form_responses (
+  completion_id uuid PK FK,
+  schema_version int,
+  answers jsonb                -- { field_id: value }
+)
+```
+
+**Out of scope for v1:**
+- Conditional/branching logic (show field B only if A == "Yes").
+- Multi-page forms.
+- Public/anonymous form submission. This is for the OWNER and their
+  friends only — not a public form-collection tool.
+
+This is a meaningful build (new schema, new mutation path, new
+visualizations) — pick it up as a contained phase, not a one-off.
+
 ## Grid view follow-ups
 
 Grid view shipped with Week / Month / Total / Custom ranges, column-
