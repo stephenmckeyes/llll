@@ -1093,28 +1093,130 @@ export async function unarchiveActivityWithEdit(
 }
 
 // ---------------------------------------------------------------------------
-// missInstance — flip the instance status to 'missed'. No completion row
-// is created. The button is labeled "Missed" in the UI; semantically the
-// user is acknowledging they didn't do this occurrence. (Phase 2c+ could
-// add a separate "skip" action if the user wants to distinguish "missed
-// by accident" from "intentionally skipped.")
+// missInstance — for one-off tasks (rhythm === 'single'), RESCHEDULE the
+// task to max(today, scheduled_for + 1) instead of finalising it as missed:
+// past-dated tasks jump to today, today's task rolls to tomorrow. This
+// matches the "a task that got missed still needs doing" mental model —
+// the user shouldn't have to keep re-adding the same errand.
+//
+// For rhythmic activities (daily / weekdays / interval / frequency) we keep
+// the legacy behavior: status flips to 'missed', no reschedule. The next
+// scheduled occurrence is already on the calendar for those.
+//
+// Return shape lets the caller router.refresh() when a reschedule happened
+// (so the row disappears from its old day and reappears on its new day).
 // ---------------------------------------------------------------------------
 
-export async function missInstance(instanceId: string) {
+export type MissInstanceResult =
+  | { rescheduled: false }
+  | { rescheduled: true; newDate: string };
+
+function ymdInUserTz(tz: string): string {
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+}
+
+function ymdPlusDays(ymd: string, delta: number): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + delta);
+  const yy = dt.getFullYear();
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
+export async function missInstance(
+  instanceId: string
+): Promise<MissInstanceResult> {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  await supabase
+  // Pull the instance + parent activity's rhythm/dates in one round-trip.
+  // The rhythm decides whether we reschedule (single) or just record the
+  // miss (everything else).
+  const { data: instRow } = await supabase
     .from("activity_instances")
-    .update({ status: "missed" })
-    .eq("id", instanceId);
+    .select("id, scheduled_for, activities ( id, rhythm )")
+    .eq("id", instanceId)
+    .maybeSingle();
 
-  // PERF: persist only, no revalidatePath — same instant-tap reasoning
-  // as completeInstance. Day view hides the row optimistically; the
-  // modal (grid/week/month) calls router.refresh() afterward.
+  type Row = {
+    id: string;
+    scheduled_for: string;
+    activities: { id: string; rhythm: Rhythm } | null;
+  };
+  const inst = instRow as Row | null;
+  const isSingle = inst?.activities?.rhythm.type === "single";
+
+  if (!inst || !inst.activities || !isSingle) {
+    // Recurring rhythms (or missing/malformed instance): legacy behavior.
+    await supabase
+      .from("activity_instances")
+      .update({ status: "missed" })
+      .eq("id", instanceId);
+    return { rescheduled: false };
+  }
+
+  // Compute the new date in the user's timezone: today if we're past
+  // scheduled_for, else scheduled_for + 1. max(today, scheduled_for + 1)
+  // captures both cases and also handles the (rare) future-dated single
+  // by pushing it one more day out.
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("timezone")
+    .eq("id", user.id)
+    .maybeSingle();
+  const tz = ((profile as { timezone?: string | null } | null)?.timezone) ?? "UTC";
+  const today = ymdInUserTz(tz);
+  const nextDay = ymdPlusDays(inst.scheduled_for, 1);
+  const newDate = today > nextDay ? today : nextDay;
+
+  if (newDate === inst.scheduled_for) {
+    // Nothing to move — degenerate case (shouldn't happen given the math
+    // above). Fall through to the plain missed-mark so the tap isn't a
+    // silent no-op.
+    await supabase
+      .from("activity_instances")
+      .update({ status: "missed" })
+      .eq("id", instanceId);
+    return { rescheduled: false };
+  }
+
+  // Move the instance AND the parent single-activity's start/end dates in
+  // lockstep — singles set end_date == start_date to bound the rhythm, and
+  // the backfill generator emits from start_date. Keeping them in sync
+  // avoids a duplicate instance being generated at the old start_date on
+  // the next backfill pass.
+  await Promise.all([
+    supabase
+      .from("activity_instances")
+      .update({ scheduled_for: newDate })
+      .eq("id", instanceId),
+    supabase
+      .from("activities")
+      .update({ start_date: newDate, end_date: newDate })
+      .eq("id", inst.activities.id),
+  ]);
+
+  invalidateBackfillCache(user.id);
+  // Day list / grid / notifications all read from the same activity_
+  // instances rows; revalidate the root path so the next fetch sees the
+  // moved row. Callers that need immediate UI reflect also call
+  // router.refresh() based on the returned result.
+  revalidatePath("/");
+  return { rescheduled: true, newDate };
 }
 
 // Kept as an alias for any older imports while we transition. UI no

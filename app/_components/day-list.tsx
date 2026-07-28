@@ -160,7 +160,13 @@ export function DayList({
   const [resolved, setResolved] = useState<
     ReadonlyMap<string, "completed" | "missed">
   >(new Map());
-  const instancesKey = instances.map((i) => `${i.id}:${i.completionCount}`).join(",");
+  // scheduled_for is in the key so the resolved map ALSO clears when a
+  // row moves (missInstance on a single reschedules to a new date). Left
+  // out, a rescheduled instance would keep its stale "✗ Missed" pill on
+  // its new day until a manual refresh.
+  const instancesKey = instances
+    .map((i) => `${i.id}:${i.scheduled_for}:${i.completionCount}`)
+    .join(",");
   const [lastKey, setLastKey] = useState(instancesKey);
   if (lastKey !== instancesKey) {
     setLastKey(instancesKey);

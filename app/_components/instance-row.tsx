@@ -10,6 +10,7 @@
 // own onClick, no event-bubbling games required.
 // ---------------------------------------------------------------------------
 
+import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
 import {
@@ -87,6 +88,7 @@ export function InstanceRow({
   // are NOT disabled while the action is in flight, so rapid taps (e.g.
   // +1 +1 +1) all register instead of being eaten by a disabled state.
   const [, startTransition] = useTransition();
+  const router = useRouter();
   const activity = instance.activity;
   const isFrequency = activity.rhythm.type === "frequency";
   const scheduledTimes = activity.scheduled_times ?? [];
@@ -209,12 +211,18 @@ export function InstanceRow({
       );
       if (!ok) return;
     }
+    // Optimistic mark-in-place. For single tasks the server rescheduler
+    // may push this row to a new date instead of accepting the miss —
+    // when that happens we router.refresh() below and the resolved-map
+    // clears on the next render (day-list's instancesKey includes
+    // scheduled_for, so a moved row resets its slot).
     onResolve(instance.id, "missed");
     if (isCurrentlyUnlabeled) {
       dispatchInstanceResolved({ wasUnlabeled: true });
     }
     startTransition(async () => {
-      await missInstance(instance.id);
+      const result = await missInstance(instance.id);
+      if (result?.rescheduled) router.refresh();
     });
   }
 

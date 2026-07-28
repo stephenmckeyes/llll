@@ -627,7 +627,21 @@ export function ActivityForm({
         </p>
       )}
 
-      <div className="mt-1 flex flex-wrap gap-2">
+      {/* Sticky action bar — pinned to the viewport bottom while the form
+          scrolls, so "Add Activity" / "Save for later" are always one tap
+          away without hunting through a long form. Sits at its natural
+          position once the form fits in one screen.
+          - -mx-6 bleeds through the parent <main>'s p-6 so the bar meets
+            the viewport edges on mobile (main.max-w-xl fills the screen
+            below the xl breakpoint).
+          - Opaque bg + top border so scrolling content doesn't show
+            through. z-20 keeps it above form content and the header (the
+            page's sticky header uses z-30).
+          - safe-area-inset-bottom padding respects the iOS home indicator. */}
+      <div
+        className="sticky bottom-0 z-20 -mx-6 flex flex-wrap gap-2 border-t border-zinc-200 bg-white px-6 py-3 dark:border-zinc-800 dark:bg-zinc-950"
+        style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
+      >
         <button
           type="submit"
           disabled={isPending || draftPending}
