@@ -1093,6 +1093,42 @@ export async function unarchiveActivityWithEdit(
 }
 
 // ---------------------------------------------------------------------------
+// updateInstanceComment — a per-occurrence reflection ("5km, felt great",
+// "skipped, kid sick"). Distinct from per-occurrence override notes and
+// from the activity's default notes. Empty / whitespace-only clears the
+// comment (NULL in the DB). Shared with any friend who has share_progress
+// on the parent activity.
+// ---------------------------------------------------------------------------
+
+const COMMENT_MAX_LEN = 2000;
+
+export async function updateInstanceComment(
+  instanceId: string,
+  comment: string | null
+): Promise<{ error: string } | { ok: true }> {
+  const trimmed = (comment ?? "").trim();
+  if (trimmed.length > COMMENT_MAX_LEN) {
+    return { error: `Comment too long (max ${COMMENT_MAX_LEN}).` };
+  }
+  const value = trimmed.length === 0 ? null : trimmed;
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase
+    .from("activity_instances")
+    .update({ comment: value })
+    .eq("id", instanceId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/");
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
 // missInstance — for one-off tasks (rhythm === 'single'), RESCHEDULE the
 // task to max(today, scheduled_for + 1) instead of finalising it as missed:
 // past-dated tasks jump to today, today's task rolls to tomorrow. This

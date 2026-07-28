@@ -198,6 +198,10 @@ export type SharedInstance = {
    *  frequency rhythms. Added in migration 0019. Falls back to an empty
    *  array on older RPC deployments. */
   completionDates: string[];
+  /** Owner's post-hoc reflection about this occurrence, shown read-only
+   *  in the friend view. NULL / empty = no comment. Added in migration
+   *  0020. Falls back to null on older RPC deployments. */
+  comment: string | null;
 };
 
 // getSharedInstancesWithMe — occurrences (+ completion state) of every
@@ -226,6 +230,7 @@ export async function getSharedInstancesWithMe(
     status: string;
     completion_count: number;
     completion_dates?: string[] | null;
+    comment?: string | null;
   }>;
   return rows.map((r) => ({
     ownerId: r.owner_id,
@@ -235,6 +240,7 @@ export async function getSharedInstancesWithMe(
     status: r.status as SharedInstance["status"],
     completionCount: r.completion_count,
     completionDates: r.completion_dates ?? [],
+    comment: r.comment ?? null,
   }));
 }
 

@@ -140,6 +140,11 @@ export function ChatThread({
                               ? {
                                   scheduledFor: m.quotedScheduledFor,
                                   statusLabel: m.quotedStatus ?? "",
+                                  // Chat-quote is a snapshot of an
+                                  // occurrence's state at reply time; we
+                                  // don't carry the owner's comment onto
+                                  // it. Leaving null skips the block.
+                                  comment: null,
                                 }
                               : null,
                           })

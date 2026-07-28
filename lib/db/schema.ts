@@ -217,6 +217,11 @@ export const activityInstances = pgTable(
     name: text("name"),
     notes: text("notes"),
     priority: smallint("priority"),
+    // Post-hoc reflection about THIS occurrence — "5km, felt great",
+    // "skipped, kid sick". Distinct from `notes` (per-occurrence
+    // override) and activities.notes (the rhythm's defaults). Shared
+    // with friends who have share_progress=true. Migration 0020.
+    comment: text("comment"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

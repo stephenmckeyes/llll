@@ -40,6 +40,7 @@ import { dispatchInstanceResolved } from "@/lib/ui/instance-resolved-event";
 
 import { ActivityFormFields } from "./activity-form-fields";
 import { ActivityHistoryModal } from "./activity-history-modal";
+import { CommentModal } from "./comment-modal";
 import type { DayInstance } from "./day-list";
 import { formatReminder } from "./reminders-field";
 import { TagChipList } from "./tag-chip";
@@ -73,6 +74,7 @@ export function ActivityModal({
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("details");
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [commentOpen, setCommentOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const activity = instance.activity;
   const isSingle = activity.rhythm.type === "single";
@@ -251,6 +253,15 @@ export function ActivityModal({
                 onClick={handleMissed}
               />
             )}
+            {/* Comment on THIS occurrence — a post-hoc reflection
+                shared with anyone the activity is shared with. The
+                button reflects state: bold + ✓ mark when a comment
+                already exists on this instance. */}
+            <Secondary
+              label={instance.comment ? "Comment ✓" : "Comment"}
+              disabled={isPending}
+              onClick={() => setCommentOpen(true)}
+            />
             <Secondary
               label="Edit activity"
               disabled={isPending}
@@ -284,6 +295,14 @@ export function ActivityModal({
           activityId={activity.id}
           activityName={activity.name}
           onClose={() => setHistoryOpen(false)}
+        />
+      )}
+      {commentOpen && (
+        <CommentModal
+          instanceId={instance.id}
+          activityName={activity.name}
+          initialComment={instance.comment}
+          onClose={() => setCommentOpen(false)}
         />
       )}
     </div>
@@ -346,6 +365,17 @@ function DetailsBody({
           </h3>
           <p className="whitespace-pre-wrap break-words text-sm">
             {effectiveNotes}
+          </p>
+        </div>
+      )}
+
+      {instance.comment && (
+        <div className="mt-5">
+          <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
+            Comment
+          </h3>
+          <p className="whitespace-pre-wrap break-words rounded-md bg-zinc-50 px-3 py-2 text-sm italic text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+            {instance.comment}
           </p>
         </div>
       )}

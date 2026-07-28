@@ -36,6 +36,7 @@ import type { TagMap } from "@/lib/domain/tags";
 import { type Rhythm } from "@/lib/validators/rhythm";
 
 import { ActivityModal } from "./activity-modal";
+import { CommentModal } from "./comment-modal";
 import { IncompleteButton, type IncompleteInfo } from "./incomplete-button";
 import { InlineAddRow } from "./inline-add-row";
 import { InstanceRow } from "./instance-row";
@@ -65,6 +66,11 @@ export type DayInstance = {
   overrideName: string | null;
   overrideNotes: string | null;
   overridePriority: number | null;
+  /** Post-hoc reflection about THIS occurrence — freely editable via the
+   *  Comment button on the row's resolved state, the dropdown row, and
+   *  the modal. NULL / empty = no comment. Shared with friends who have
+   *  share_progress on the parent activity. */
+  comment: string | null;
   activity: {
     id: string;
     name: string;
@@ -598,58 +604,130 @@ function MarkedTable({
       </p>
       <ul className="mt-1 flex flex-col gap-1">
         {items.map((it) => (
-          <li key={it.id} className="flex items-stretch gap-1">
-            <button
-              type="button"
-              onClick={() => onOpen(it.instance)}
-              title={
-                readOnly
-                  ? "Tap to view details"
-                  : "Click to open — you can revert or edit"
-              }
-              className="flex min-w-0 flex-1 items-start gap-2 rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-left text-xs transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900"
-            >
-              <span
-                aria-hidden
-                className={`mt-1 inline-block h-2 w-2 shrink-0 rounded-full ${swatch}`}
-              />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate font-medium text-zinc-800 dark:text-zinc-200">
-                  {it.instance.activity.name}
-                </span>
-                <span className="block truncate text-[11px] text-zinc-500">
-                  {summarizeRhythm(
-                    it.instance.activity.rhythm,
-                    it.instance.activity.scheduled_times
-                  )}
-                </span>
-                {it.instance.activity.notes && (
-                  <span className="block truncate text-[11px] text-zinc-500">
-                    {it.instance.activity.notes}
-                  </span>
-                )}
-              </span>
-            </button>
-            {/* Quick revert — sends this occurrence back to pending (out
-                of the dropdown, back into the active list) without opening
-                the modal. Hidden in the read-only friend view, and on
-                per-completion frequency rows where the all-or-nothing
-                instance reset would wipe the user's other completions
-                too (see DayMarkedItem.hideInlineUnlabel). */}
-            {!readOnly && !it.hideInlineUnlabel && (
-              <button
-                type="button"
-                onClick={() => onUnlabel(it.instanceId)}
-                title="Tapped by accident? Revert to pending."
-                className="shrink-0 touch-manipulation rounded-md border border-zinc-200 px-2 text-[11px] font-medium text-zinc-600 transition-colors hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-900"
-              >
-                Unlabel
-              </button>
-            )}
-          </li>
+          <MarkedRow
+            key={it.id}
+            it={it}
+            swatch={swatch}
+            onOpen={onOpen}
+            onUnlabel={onUnlabel}
+            readOnly={readOnly}
+          />
         ))}
       </ul>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// MarkedRow — one row inside a MarkedTable. Split out into its own
+// component so it can carry a per-row Comment modal state without
+// hoisting a Map<id, boolean> up to the parent.
+// ---------------------------------------------------------------------------
+
+function MarkedRow({
+  it,
+  swatch,
+  onOpen,
+  onUnlabel,
+  readOnly,
+}: {
+  it: DayMarkedItem;
+  swatch: string;
+  onOpen: (inst: DayInstance) => void;
+  onUnlabel: (id: string) => void;
+  readOnly: boolean;
+}) {
+  const [commentOpen, setCommentOpen] = useState(false);
+  return (
+    <li className="flex items-stretch gap-1">
+      <button
+        type="button"
+        onClick={() => onOpen(it.instance)}
+        title={
+          readOnly
+            ? "Tap to view details"
+            : "Click to open — you can revert or edit"
+        }
+        className="flex min-w-0 flex-1 items-start gap-2 rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-left text-xs transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900"
+      >
+        <span
+          aria-hidden
+          className={`mt-1 inline-block h-2 w-2 shrink-0 rounded-full ${swatch}`}
+        />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate font-medium text-zinc-800 dark:text-zinc-200">
+            {it.instance.activity.name}
+          </span>
+          <span className="block truncate text-[11px] text-zinc-500">
+            {summarizeRhythm(
+              it.instance.activity.rhythm,
+              it.instance.activity.scheduled_times
+            )}
+          </span>
+          {it.instance.activity.notes && (
+            <span className="block truncate text-[11px] text-zinc-500">
+              {it.instance.activity.notes}
+            </span>
+          )}
+          {/* Comment preview — the reflection the user (or shared owner)
+              wrote about this occurrence. Truncates to one line here; the
+              modal shows the full text and lets the owner edit. Owner-
+              side surfaces highlight the comment with a subtle "italic
+              quote" tone so it visually distinguishes from the notes
+              lines above. */}
+          {it.instance.comment && (
+            <span className="mt-0.5 block truncate text-[11px] italic text-zinc-600 dark:text-zinc-400">
+              “{it.instance.comment}”
+            </span>
+          )}
+        </span>
+      </button>
+      {/* Owner-only: Comment (add / edit reflection). Hidden for
+          read-only friend view — friends can view the comment via the
+          preview above but can't edit. */}
+      {!readOnly && (
+        <button
+          type="button"
+          onClick={() => setCommentOpen(true)}
+          title={
+            it.instance.comment
+              ? "Edit your reflection"
+              : "Add a reflection — shared with anyone this activity is shared with"
+          }
+          className={`shrink-0 touch-manipulation rounded-md border px-2 text-[11px] font-medium transition-colors ${
+            it.instance.comment
+              ? "border-zinc-900 text-zinc-900 hover:bg-zinc-100 dark:border-zinc-50 dark:text-zinc-50 dark:hover:bg-zinc-900"
+              : "border-zinc-200 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-900"
+          }`}
+        >
+          {it.instance.comment ? "✓" : "Comment"}
+        </button>
+      )}
+      {/* Quick revert — sends this occurrence back to pending (out of
+          the dropdown, back into the active list) without opening the
+          modal. Hidden in the read-only friend view, and on per-
+          completion frequency rows where the all-or-nothing instance
+          reset would wipe the user's other completions too (see
+          DayMarkedItem.hideInlineUnlabel). */}
+      {!readOnly && !it.hideInlineUnlabel && (
+        <button
+          type="button"
+          onClick={() => onUnlabel(it.instanceId)}
+          title="Tapped by accident? Revert to pending."
+          className="shrink-0 touch-manipulation rounded-md border border-zinc-200 px-2 text-[11px] font-medium text-zinc-600 transition-colors hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-900"
+        >
+          Unlabel
+        </button>
+      )}
+      {commentOpen && (
+        <CommentModal
+          instanceId={it.instanceId}
+          activityName={it.instance.activity.name}
+          initialComment={it.instance.comment}
+          onClose={() => setCommentOpen(false)}
+        />
+      )}
+    </li>
   );
 }
 

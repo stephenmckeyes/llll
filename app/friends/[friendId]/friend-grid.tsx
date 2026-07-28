@@ -265,6 +265,7 @@ export function FriendGrid({
               inst.scheduled_for,
               todayStr
             ),
+            comment: inst.comment,
           })
         }
         showStats={showStats}

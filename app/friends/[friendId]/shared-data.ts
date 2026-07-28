@@ -11,7 +11,13 @@ import { frequencyDueDay } from "@/lib/domain/frequency-period";
 
 // A specific dated occurrence the user clicked / replied to (the date plus a
 // human label for its state). Drives the occurrence detail + the chat quote.
-export type Occurrence = { scheduledFor: string; statusLabel: string };
+// `comment` is the OWNER's per-occurrence reflection (migration 0020),
+// displayed read-only in the friend view when present.
+export type Occurrence = {
+  scheduledFor: string;
+  statusLabel: string;
+  comment: string | null;
+};
 
 export function occurrenceStatusLabel(
   status: string,
@@ -45,6 +51,7 @@ export function toDayInstance(
     overrideName: null,
     overrideNotes: null,
     overridePriority: null,
+    comment: inst.comment,
     activity: {
       id: share.activityId,
       name: share.name,

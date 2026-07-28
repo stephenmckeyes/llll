@@ -662,6 +662,7 @@ async function DayView({
       name,
       notes,
       priority,
+      comment,
       activities (
         id,
         name,
@@ -700,6 +701,7 @@ async function DayView({
     name: string | null;
     notes: string | null;
     priority: number | null;
+    comment: string | null;
     activities: DayInstance["activity"] | null;
     completion_instances: RawCompletionLink[] | null;
   };
@@ -723,6 +725,7 @@ async function DayView({
     overrideName: r.name ?? null,
     overrideNotes: r.notes ?? null,
     overridePriority: r.priority ?? null,
+    comment: r.comment ?? null,
     activity: r.activities,
     completionCount: liveCompletionCount(r.completion_instances),
   });
@@ -1481,6 +1484,7 @@ async function GridView({
     name: string | null;
     notes: string | null;
     priority: number | null;
+    comment: string | null;
     completion_instances: Array<{ completion_id: string }> | null;
   };
   // For singles we need the full instance + completion-count payload
@@ -1496,6 +1500,7 @@ async function GridView({
     name: string | null;
     notes: string | null;
     priority: number | null;
+    comment: string | null;
     completion_instances: Array<{ completion_id: string }> | null;
   };
   // Streak data: ALL past-or-today instances per rhythmic activity. No
@@ -1524,7 +1529,7 @@ async function GridView({
         : supabase
             .from("activity_instances")
             .select(
-              "id, activity_id, scheduled_for, status, tags, name, notes, priority, completion_instances ( completion_id )"
+              "id, activity_id, scheduled_for, status, tags, name, notes, priority, comment, completion_instances ( completion_id )"
             )
             .in("activity_id", rhythmicIds)
             .gte("scheduled_for", rangeStartStr)
@@ -1535,7 +1540,7 @@ async function GridView({
         : supabase
             .from("activity_instances")
             .select(
-              "id, activity_id, scheduled_for, status, tags, name, notes, priority, completion_instances ( completion_id )"
+              "id, activity_id, scheduled_for, status, tags, name, notes, priority, comment, completion_instances ( completion_id )"
             )
             .in("activity_id", singleIds)
             .gte("scheduled_for", rangeStartStr)
@@ -1864,6 +1869,7 @@ function toDayInstance(
     name?: string | null;
     notes?: string | null;
     priority?: number | null;
+    comment?: string | null;
     completion_instances: Array<{ completion_id: string }> | null;
   },
   act: {
@@ -1896,6 +1902,7 @@ function toDayInstance(
     overrideName: inst.name ?? null,
     overrideNotes: inst.notes ?? null,
     overridePriority: inst.priority ?? null,
+    comment: inst.comment ?? null,
     completionCount: inst.completion_instances?.length ?? 0,
     activity: {
       id: act.id,

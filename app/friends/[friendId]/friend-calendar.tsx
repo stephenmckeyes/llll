@@ -104,6 +104,7 @@ export function FriendCalendar({
                 inst.scheduled_for,
                 todayStr
               ),
+              comment: inst.comment,
             })
           }
         />
@@ -224,6 +225,7 @@ function WeekGrid({
                               inst.scheduledFor,
                               todayStr
                             ),
+                            comment: inst.comment,
                           })
                         }
                         title={act?.name ?? "Activity"}

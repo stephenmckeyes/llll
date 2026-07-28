@@ -103,16 +103,26 @@ export function SharedActivityModal({
         <div className="flex-1 overflow-y-auto px-5 py-4">
           {/* The specific occurrence the user opened (date + state). */}
           {occurrence && (
-            <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900">
-              <div className="min-w-0">
-                <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-                  This occurrence
-                </p>
-                <p className="truncate text-sm font-medium">
-                  {formatDmy(occurrence.scheduledFor)}
-                </p>
+            <div className="mb-4 flex flex-col gap-2 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                    This occurrence
+                  </p>
+                  <p className="truncate text-sm font-medium">
+                    {formatDmy(occurrence.scheduledFor)}
+                  </p>
+                </div>
+                <StatusBadge label={occurrence.statusLabel} />
               </div>
-              <StatusBadge label={occurrence.statusLabel} />
+              {/* Owner's reflection on this occurrence (migration 0020).
+                  Read-only on the friend side — quoted so it visually
+                  reads as the owner's voice. */}
+              {occurrence.comment && (
+                <p className="whitespace-pre-wrap break-words rounded-md bg-white px-2 py-1.5 text-xs italic text-zinc-700 dark:bg-zinc-950 dark:text-zinc-300">
+                  “{occurrence.comment}”
+                </p>
+              )}
             </div>
           )}
 

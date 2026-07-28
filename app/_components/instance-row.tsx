@@ -22,6 +22,7 @@ import { rhythmCategoryLabel } from "@/lib/domain/rhythm-summary";
 import type { TagMap } from "@/lib/domain/tags";
 import { dispatchInstanceResolved } from "@/lib/ui/instance-resolved-event";
 
+import { CommentModal } from "./comment-modal";
 import type { DayInstance } from "./day-list";
 import { EditableProgressBadge } from "./editable-progress-badge";
 import { TagChipList } from "./tag-chip";
@@ -89,6 +90,7 @@ export function InstanceRow({
   // +1 +1 +1) all register instead of being eaten by a disabled state.
   const [, startTransition] = useTransition();
   const router = useRouter();
+  const [commentOpen, setCommentOpen] = useState(false);
   const activity = instance.activity;
   const isFrequency = activity.rhythm.type === "frequency";
   const scheduledTimes = activity.scheduled_times ?? [];
@@ -330,9 +332,9 @@ export function InstanceRow({
       ) : resolution ? (
         // Resolved IN PLACE — the row keeps its slot so the list doesn't
         // reflow under rapid tapping. A status pill replaces the action
-        // buttons, alongside an "Unlabel" button so an accidental tap can
-        // be reverted to pending without reloading the page. The row
-        // otherwise clears on the next navigation/refresh.
+        // buttons, alongside "Comment" (reflection about this occurrence)
+        // and "Unlabel" (revert an accidental tap). The row otherwise
+        // clears on the next navigation/refresh.
         <div className="flex shrink-0 items-center gap-2">
           <span
             className={`min-h-11 inline-flex items-center rounded-md px-3 py-2 text-xs font-semibold ${
@@ -343,6 +345,22 @@ export function InstanceRow({
           >
             {resolution === "completed" ? "✓ Done" : "✗ Missed"}
           </span>
+          <button
+            type="button"
+            onClick={() => setCommentOpen(true)}
+            title={
+              instance.comment
+                ? "Edit your reflection on this occurrence"
+                : "Add a reflection — shared with anyone this activity is shared with"
+            }
+            className={`min-h-11 shrink-0 touch-manipulation rounded-md border px-3 py-2 text-xs font-medium transition-colors active:bg-zinc-100 dark:active:bg-zinc-900 ${
+              instance.comment
+                ? "border-zinc-900 text-zinc-900 hover:bg-zinc-100 dark:border-zinc-50 dark:text-zinc-50 dark:hover:bg-zinc-900"
+                : "border-zinc-300 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
+            }`}
+          >
+            {instance.comment ? "Comment ✓" : "Comment"}
+          </button>
           <button
             type="button"
             onClick={handleUnlabel}
@@ -389,6 +407,14 @@ export function InstanceRow({
             Missed
           </button>
         </>
+      )}
+      {commentOpen && (
+        <CommentModal
+          instanceId={instance.id}
+          activityName={effectiveName}
+          initialComment={instance.comment}
+          onClose={() => setCommentOpen(false)}
+        />
       )}
     </li>
   );
