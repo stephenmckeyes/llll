@@ -56,6 +56,8 @@ export type ActivityRow = ActivityFormInitial & {
   archived_at: string | null;
   created_at: string;
   track_on_grid: boolean;
+  rollover_missed_days: boolean;
+  rollover_change_rhythm: boolean;
 };
 
 type Mode = "details" | "edit-rhythm";

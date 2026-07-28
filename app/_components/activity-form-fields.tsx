@@ -78,6 +78,10 @@ export type ActivityFormInitial = {
   /** Show this activity in the Grid view (migration 0016). Everything is
    *  still tracked; this only gates grid display. */
   track_on_grid: boolean;
+  /** Migration 0021 — how a MISSED recurring occurrence should behave.
+   *  Both default false (legacy: just mark missed). Hidden on single. */
+  rollover_missed_days: boolean;
+  rollover_change_rhythm: boolean;
 };
 
 export function ActivityFormFields({
@@ -117,6 +121,12 @@ export function ActivityFormFields({
   const [trackOnGrid, setTrackOnGrid] = useState<boolean>(
     initialValues.track_on_grid
   );
+  const [rolloverMissedDays, setRolloverMissedDays] = useState<boolean>(
+    initialValues.rollover_missed_days
+  );
+  const [rolloverChangeRhythm, setRolloverChangeRhythm] = useState<boolean>(
+    initialValues.rollover_change_rhythm
+  );
 
   function toggleWeekday(day: DayOfWeek) {
     setWeekdays((prev) =>
@@ -149,6 +159,16 @@ export function ActivityFormFields({
         type="hidden"
         name="trackOnGrid"
         value={trackOnGrid ? "true" : "false"}
+      />
+      <input
+        type="hidden"
+        name="rolloverMissedDays"
+        value={rolloverMissedDays ? "true" : "false"}
+      />
+      <input
+        type="hidden"
+        name="rolloverChangeRhythm"
+        value={rolloverChangeRhythm ? "true" : "false"}
       />
 
       {/* --- Track on Grid? (default: off) -------------------------- */}
@@ -474,7 +494,126 @@ export function ActivityFormFields({
       <div className="mt-4">
         <RemindersField reminders={reminders} setReminders={setReminders} />
       </div>
+
+      {/* --- Rollover on missed (recurring only) -------------------- */}
+      {/* Hidden on rhythm=single because singles use missInstance's
+          reschedule-to-today rule, not these toggles. */}
+      {!isSingle && (
+        <RolloverToggles
+          rhythmKind={rhythmKind}
+          rolloverMissedDays={rolloverMissedDays}
+          setRolloverMissedDays={setRolloverMissedDays}
+          rolloverChangeRhythm={rolloverChangeRhythm}
+          setRolloverChangeRhythm={setRolloverChangeRhythm}
+        />
+      )}
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// RolloverToggles — two independent per-activity opt-ins for what should
+// happen when a recurring occurrence gets marked missed. Each toggle
+// carries a short warning when the current rhythm makes its behavior
+// unusual (e.g. Daily + rollover-missed-days is a no-op; Frequency +
+// change-rhythm shifts the whole period).
+// ---------------------------------------------------------------------------
+
+function RolloverToggles({
+  rhythmKind,
+  rolloverMissedDays,
+  setRolloverMissedDays,
+  rolloverChangeRhythm,
+  setRolloverChangeRhythm,
+}: {
+  rhythmKind: RhythmKind;
+  rolloverMissedDays: boolean;
+  setRolloverMissedDays: (v: boolean) => void;
+  rolloverChangeRhythm: boolean;
+  setRolloverChangeRhythm: (v: boolean) => void;
+}) {
+  // Warnings surface when the toggle would do something odd for the
+  // chosen rhythm — text is deliberately narrow ("what this will do")
+  // so the user can decide whether they meant it. Empty string → no
+  // warning rendered.
+  const missedWarning = ((): string => {
+    if (!rolloverMissedDays) return "";
+    if (rhythmKind === "daily")
+      return "Daily activities already generate an instance every day — a make-up won't add anything visible.";
+    if (rhythmKind === "frequency")
+      return "For N-times-per-period rhythms, the make-up counts as an extra slot inside the same period.";
+    return "";
+  })();
+  const changeWarning = ((): string => {
+    if (!rolloverChangeRhythm) return "";
+    if (rhythmKind === "daily")
+      return "Every day is already scheduled — shifting a daily rhythm has no visible effect.";
+    if (rhythmKind === "weekdays")
+      return "Shifts every selected weekday by 1 (Mon → Tue, Wed → Thu, …). May change which days the activity lands on.";
+    if (rhythmKind === "frequency")
+      return "Shifts the whole period start by 1 day; progress on the current period stays put but future periods move.";
+    return "";
+  })();
+
+  return (
+    <fieldset className="mt-4 flex flex-col gap-3 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+      <legend className="px-1 text-sm font-medium">On missed</legend>
+      <p className="text-xs text-zinc-500">
+        What should happen when you tap Missed on an occurrence of this
+        rhythm? Both off = just record the miss.
+      </p>
+      <RolloverCheckbox
+        checked={rolloverMissedDays}
+        onChange={setRolloverMissedDays}
+        title="Rollover missed days"
+        hint="Also add a make-up occurrence on the next day. Main schedule stays put."
+        warning={missedWarning}
+      />
+      <RolloverCheckbox
+        checked={rolloverChangeRhythm}
+        onChange={setRolloverChangeRhythm}
+        title="Rollover and change rhythm"
+        hint="Shift the whole rhythm forward by 1 day starting from the missed date. Best for “every N days.”"
+        warning={changeWarning}
+      />
+    </fieldset>
+  );
+}
+
+function RolloverCheckbox({
+  checked,
+  onChange,
+  title,
+  hint,
+  warning,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  title: string;
+  hint: string;
+  warning: string;
+}) {
+  return (
+    <label className="flex cursor-pointer items-start gap-3">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        // 20px box aligns with the ~20px cap-height of the title line
+        // above so the check sits centered on the first line even when
+        // hint text wraps below.
+        className="mt-0.5 h-5 w-5 shrink-0 accent-zinc-900 dark:accent-zinc-50"
+      />
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-medium">{title}</span>
+        <span className="mt-0.5 block text-xs text-zinc-500">{hint}</span>
+        {warning && (
+          <span className="mt-1 block rounded-md bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+            Heads up: {warning}
+          </span>
+        )}
+      </span>
+    </label>
   );
 }
 

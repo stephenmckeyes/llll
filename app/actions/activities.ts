@@ -63,6 +63,13 @@ export async function createActivity(
 
   // Grid display flag (migration 0016). Default false ("don't track on grid").
   const trackOnGrid = String(formData.get("trackOnGrid")) === "true";
+  // Rollover-on-missed flags (migration 0021). Only meaningful for
+  // recurring rhythms; singles have their own missInstance behavior.
+  // Both default false when the form input isn't present.
+  const rolloverMissedDays =
+    String(formData.get("rolloverMissedDays")) === "true";
+  const rolloverChangeRhythm =
+    String(formData.get("rolloverChangeRhythm")) === "true";
 
   // ---- 2. Reconstruct + validate the rhythm -------------------------------
 
@@ -222,6 +229,10 @@ export async function createActivity(
         scheduled_times: scheduledTimes,
         reminders: remindersValidated.data,
         track_on_grid: trackOnGrid,
+        // Toggles are per-activity and independent of the rhythm value —
+        // stored on the row so they apply to every future miss.
+        rollover_missed_days: rolloverMissedDays,
+        rollover_change_rhythm: rolloverChangeRhythm,
       })
       .select("id")
       .single();
@@ -350,6 +361,10 @@ export async function createDraftActivity(
     scheduled_times: scheduledTimes,
     reminders,
     track_on_grid: String(formData.get("trackOnGrid")) === "true",
+    rollover_missed_days:
+      String(formData.get("rolloverMissedDays")) === "true",
+    rollover_change_rhythm:
+      String(formData.get("rolloverChangeRhythm")) === "true",
     // The whole point: parked in the archive, generating no instances.
     archived_at: new Date().toISOString(),
   });
@@ -638,6 +653,10 @@ export async function updateActivityRhythm(
       scheduled_times: scheduledTimes,
       reminders: remindersValidated.data,
       track_on_grid: String(formData.get("trackOnGrid")) === "true",
+      rollover_missed_days:
+        String(formData.get("rolloverMissedDays")) === "true",
+      rollover_change_rhythm:
+        String(formData.get("rolloverChangeRhythm")) === "true",
     })
     .eq("id", activityId);
   if (uerr) return { error: uerr.message };
@@ -1179,25 +1198,35 @@ export async function missInstance(
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // Pull the instance + parent activity's rhythm/dates in one round-trip.
-  // The rhythm decides whether we reschedule (single) or just record the
-  // miss (everything else).
+  // Pull the instance + parent activity's rhythm + rollover toggles in
+  // one round-trip. The rhythm and toggles together decide whether we
+  // reschedule (single), shift the rhythm, insert a make-up, or just
+  // record the miss.
   const { data: instRow } = await supabase
     .from("activity_instances")
-    .select("id, scheduled_for, activities ( id, rhythm )")
+    .select(
+      "id, scheduled_for, activities ( id, rhythm, start_date, end_date, rollover_missed_days, rollover_change_rhythm )"
+    )
     .eq("id", instanceId)
     .maybeSingle();
 
+  type ActivityMeta = {
+    id: string;
+    rhythm: Rhythm;
+    start_date: string;
+    end_date: string | null;
+    rollover_missed_days: boolean;
+    rollover_change_rhythm: boolean;
+  };
   type Row = {
     id: string;
     scheduled_for: string;
-    activities: { id: string; rhythm: Rhythm } | null;
+    activities: ActivityMeta | null;
   };
   const inst = instRow as Row | null;
-  const isSingle = inst?.activities?.rhythm.type === "single";
 
-  if (!inst || !inst.activities || !isSingle) {
-    // Recurring rhythms (or missing/malformed instance): legacy behavior.
+  if (!inst || !inst.activities) {
+    // Missing/malformed — legacy fallback so the tap isn't a no-op.
     await supabase
       .from("activity_instances")
       .update({ status: "missed" })
@@ -1205,54 +1234,215 @@ export async function missInstance(
     return { rescheduled: false };
   }
 
-  // Compute the new date in the user's timezone: today if we're past
-  // scheduled_for, else scheduled_for + 1. max(today, scheduled_for + 1)
-  // captures both cases and also handles the (rare) future-dated single
-  // by pushing it one more day out.
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("timezone")
-    .eq("id", user.id)
-    .maybeSingle();
-  const tz = ((profile as { timezone?: string | null } | null)?.timezone) ?? "UTC";
-  const today = ymdInUserTz(tz);
+  const activity = inst.activities;
+  const rhythm = activity.rhythm;
+
+  // ---------- Single: reschedule instead of finalising missed ----------
+  if (rhythm.type === "single") {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("timezone")
+      .eq("id", user.id)
+      .maybeSingle();
+    const tz = ((profile as { timezone?: string | null } | null)?.timezone) ?? "UTC";
+    const today = ymdInUserTz(tz);
+    const nextDay = ymdPlusDays(inst.scheduled_for, 1);
+    const newDate = today > nextDay ? today : nextDay;
+
+    if (newDate === inst.scheduled_for) {
+      await supabase
+        .from("activity_instances")
+        .update({ status: "missed" })
+        .eq("id", instanceId);
+      return { rescheduled: false };
+    }
+
+    await Promise.all([
+      supabase
+        .from("activity_instances")
+        .update({ scheduled_for: newDate })
+        .eq("id", instanceId),
+      supabase
+        .from("activities")
+        .update({ start_date: newDate, end_date: newDate })
+        .eq("id", activity.id),
+    ]);
+    invalidateBackfillCache(user.id);
+    revalidatePath("/");
+    return { rescheduled: true, newDate };
+  }
+
+  // ---------- Recurring: mark missed, then apply rollover toggles ------
+  await supabase
+    .from("activity_instances")
+    .update({ status: "missed" })
+    .eq("id", instanceId);
+
   const nextDay = ymdPlusDays(inst.scheduled_for, 1);
-  const newDate = today > nextDay ? today : nextDay;
+  let anySchemaChange = false;
 
-  if (newDate === inst.scheduled_for) {
-    // Nothing to move — degenerate case (shouldn't happen given the math
-    // above). Fall through to the plain missed-mark so the tap isn't a
-    // silent no-op.
-    await supabase
-      .from("activity_instances")
-      .update({ status: "missed" })
-      .eq("id", instanceId);
-    return { rescheduled: false };
+  // "Rollover and change rhythm" runs FIRST so the schedule-shift's
+  // regen defines a clean canvas; "Rollover missed days" then either
+  // inserts a make-up on next-day (or hits the unique index harmlessly
+  // if the shifted schedule already put an occurrence there).
+  if (activity.rollover_change_rhythm) {
+    const changed = await shiftRhythmForward({
+      supabase,
+      activityId: activity.id,
+      rhythm,
+      currentStartDate: activity.start_date,
+      currentEndDate: activity.end_date,
+      missedDate: inst.scheduled_for,
+      newAnchor: nextDay,
+    });
+    if (changed) anySchemaChange = true;
   }
 
-  // Move the instance AND the parent single-activity's start/end dates in
-  // lockstep — singles set end_date == start_date to bound the rhythm, and
-  // the backfill generator emits from start_date. Keeping them in sync
-  // avoids a duplicate instance being generated at the old start_date on
-  // the next backfill pass.
-  await Promise.all([
-    supabase
+  if (activity.rollover_missed_days) {
+    // Idempotent via the (activity_id, scheduled_for) unique index —
+    // any collision (e.g. daily activity where tomorrow already exists)
+    // is silently ignored.
+    await supabase
       .from("activity_instances")
-      .update({ scheduled_for: newDate })
-      .eq("id", instanceId),
-    supabase
-      .from("activities")
-      .update({ start_date: newDate, end_date: newDate })
-      .eq("id", inst.activities.id),
-  ]);
+      .upsert(
+        {
+          activity_id: activity.id,
+          scheduled_for: nextDay,
+          status: "pending",
+          tags: [],
+        },
+        { onConflict: "activity_id,scheduled_for", ignoreDuplicates: true }
+      );
+    anySchemaChange = true;
+  }
 
-  invalidateBackfillCache(user.id);
-  // Day list / grid / notifications all read from the same activity_
-  // instances rows; revalidate the root path so the next fetch sees the
-  // moved row. Callers that need immediate UI reflect also call
-  // router.refresh() based on the returned result.
-  revalidatePath("/");
-  return { rescheduled: true, newDate };
+  if (anySchemaChange) {
+    invalidateBackfillCache(user.id);
+    revalidatePath("/");
+  }
+  return { rescheduled: false };
+}
+
+// ---------------------------------------------------------------------------
+// shiftRhythmForward — implements the "Rollover and change rhythm" toggle.
+//
+// Different rhythm types shift differently:
+//   - interval:  bump start_date to newAnchor (missed_date + 1). The
+//                anchor becomes the new phase.
+//   - weekdays:  rotate the selected days by +1 (mon → tue, etc.). A day
+//                that was "sun" wraps to "mon".
+//   - frequency: bump start_date so the period anchor moves forward by 1
+//                day. Progress on the current-period instance stays put.
+//   - daily:     no-op (every day is already scheduled).
+//   - single:    unreachable — handled by the caller before we get here.
+//
+// After mutating the activity row, DELETE all pending future instances
+// from missed_date+1 onward and regenerate from the new anchor. Past
+// instances (completed, missed, or pending-before-the-miss) stay put —
+// they're history.
+//
+// Returns true when it changed something the caller should revalidate.
+// ---------------------------------------------------------------------------
+
+async function shiftRhythmForward({
+  supabase,
+  activityId,
+  rhythm,
+  currentStartDate,
+  currentEndDate,
+  missedDate,
+  newAnchor,
+}: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  activityId: string;
+  rhythm: Rhythm;
+  currentStartDate: string;
+  currentEndDate: string | null;
+  missedDate: string;
+  newAnchor: string;
+}): Promise<boolean> {
+  let updatedRhythm: Rhythm = rhythm;
+  let updatedStartDate: string = currentStartDate;
+
+  switch (rhythm.type) {
+    case "daily":
+      // Every day is already scheduled — nothing to shift.
+      return false;
+    case "interval":
+    case "frequency":
+      // Both anchor to start_date. Moving the anchor forward by 1 day
+      // shifts every future occurrence by 1 day.
+      updatedStartDate = newAnchor;
+      break;
+    case "weekdays": {
+      const nextByName: Record<string, "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun"> = {
+        sun: "mon",
+        mon: "tue",
+        tue: "wed",
+        wed: "thu",
+        thu: "fri",
+        fri: "sat",
+        sat: "sun",
+      };
+      updatedRhythm = {
+        type: "weekdays",
+        days: rhythm.days.map((d) => nextByName[d] ?? d),
+      };
+      break;
+    }
+    case "single":
+      return false;
+  }
+
+  await supabase
+    .from("activities")
+    .update({
+      rhythm: updatedRhythm,
+      start_date: updatedStartDate,
+    })
+    .eq("id", activityId);
+
+  // Wipe every pending instance from the day AFTER the miss onward, so
+  // regen can lay the shifted schedule down cleanly. missedDate itself
+  // already has status=missed (set by the caller); we don't touch it.
+  await supabase
+    .from("activity_instances")
+    .delete()
+    .eq("activity_id", activityId)
+    .eq("status", "pending")
+    .gt("scheduled_for", missedDate);
+
+  // Regenerate from the new anchor out to a comfortable horizon. The
+  // ensureInstancesBackfilled pass on the next page render will extend
+  // further if needed; here we just make sure the near-term calendar
+  // stays populated.
+  const horizonYmd = ymdPlusDays(newAnchor, INSTANCE_HORIZON_DAYS);
+  const rangeTo =
+    currentEndDate !== null && currentEndDate < horizonYmd
+      ? currentEndDate
+      : horizonYmd;
+
+  if (rangeTo >= newAnchor) {
+    const fresh = generateInstances(updatedRhythm, {
+      from: newAnchor,
+      to: rangeTo,
+    });
+    if (fresh.length > 0) {
+      const rows = fresh.map((i) => ({
+        activity_id: activityId,
+        scheduled_for: i.scheduledFor,
+        status: "pending" as const,
+        tags: [],
+      }));
+      await supabase
+        .from("activity_instances")
+        .upsert(rows, {
+          onConflict: "activity_id,scheduled_for",
+          ignoreDuplicates: true,
+        });
+    }
+  }
+  return true;
 }
 
 // Kept as an alias for any older imports while we transition. UI no

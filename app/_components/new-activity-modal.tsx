@@ -34,6 +34,8 @@ function blankActivity(startDate: string): ActivityFormInitial {
     end_date: null,
     reminders: [],
     track_on_grid: false,
+    rollover_missed_days: false,
+    rollover_change_rhythm: false,
   };
 }
 

@@ -75,6 +75,10 @@ export function ActivityForm({
   // Grid display flag (default off). Everything is tracked regardless — this
   // only controls whether the activity appears in the Grid view.
   const [trackOnGrid, setTrackOnGrid] = useState(false);
+  // Rollover-on-missed toggles (default off; hidden while rhythm=Once
+  // since singles reschedule via their own rule). See migration 0021.
+  const [rolloverMissedDays, setRolloverMissedDays] = useState(false);
+  const [rolloverChangeRhythm, setRolloverChangeRhythm] = useState(false);
 
   function handleSaveForLater() {
     const form = formRef.current;
@@ -596,6 +600,59 @@ export function ActivityForm({
       {/* --- 6. Reminders ---------------------------------------------- */}
       <RemindersField reminders={reminders} setReminders={setReminders} />
 
+      {/* --- 7. Rollover on missed (recurring only) -------------------- */}
+      {/* Hidden while rhythm is Once / Unrhythmic Selection because
+          singles reschedule via their own rule (see missInstance). Both
+          toggles are always submitted (hidden inputs) so the server
+          reads a defined value on every submit. */}
+      <input
+        type="hidden"
+        name="rolloverMissedDays"
+        value={rolloverMissedDays ? "true" : "false"}
+      />
+      <input
+        type="hidden"
+        name="rolloverChangeRhythm"
+        value={rolloverChangeRhythm ? "true" : "false"}
+      />
+      {!isSingleLike && (
+        <fieldset className="flex flex-col gap-3 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+          <legend className="px-1 text-sm font-medium">On missed</legend>
+          <p className="text-xs text-zinc-500">
+            What should happen when you tap Missed on an occurrence of
+            this rhythm? Both off = just record the miss.
+          </p>
+          <RolloverCheckbox
+            checked={rolloverMissedDays}
+            onChange={setRolloverMissedDays}
+            title="Rollover missed days"
+            hint="Also add a make-up occurrence on the next day. Main schedule stays put."
+            warning={
+              rolloverMissedDays && rhythmKind === "daily"
+                ? "Daily activities already generate an instance every day — a make-up won't add anything visible."
+                : rolloverMissedDays && rhythmKind === "frequency"
+                  ? "For N-times-per-period rhythms, the make-up counts as an extra slot inside the same period."
+                  : ""
+            }
+          />
+          <RolloverCheckbox
+            checked={rolloverChangeRhythm}
+            onChange={setRolloverChangeRhythm}
+            title="Rollover and change rhythm"
+            hint="Shift the whole rhythm forward by 1 day starting from the missed date. Best for “every N days.”"
+            warning={
+              rolloverChangeRhythm && rhythmKind === "daily"
+                ? "Every day is already scheduled — shifting a daily rhythm has no visible effect."
+                : rolloverChangeRhythm && rhythmKind === "weekdays"
+                  ? "Shifts every selected weekday by 1 (Mon → Tue, Wed → Thu, …). May change which days the activity lands on."
+                  : rolloverChangeRhythm && rhythmKind === "frequency"
+                    ? "Shifts the whole period start by 1 day; progress on the current period stays put but future periods move."
+                    : ""
+            }
+          />
+        </fieldset>
+      )}
+
       {/* --- Calendar preview ------------------------------------------ */}
       <CalendarPreview
         rhythm={previewRhythm}
@@ -817,6 +874,44 @@ function ConfigBox({
     >
       {children}
     </div>
+  );
+}
+
+// Local copy of the same widget used by ActivityFormFields — same visual
+// layout so Edit Rhythm and the create page look identical when either
+// toggle is checked. Kept private to this file rather than exported to
+// avoid a client-component cross-import chain during build.
+function RolloverCheckbox({
+  checked,
+  onChange,
+  title,
+  hint,
+  warning,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  title: string;
+  hint: string;
+  warning: string;
+}) {
+  return (
+    <label className="flex cursor-pointer items-start gap-3">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="mt-0.5 h-5 w-5 shrink-0 accent-zinc-900 dark:accent-zinc-50"
+      />
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-medium">{title}</span>
+        <span className="mt-0.5 block text-xs text-zinc-500">{hint}</span>
+        {warning && (
+          <span className="mt-1 block rounded-md bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+            Heads up: {warning}
+          </span>
+        )}
+      </span>
+    </label>
   );
 }
 

@@ -675,7 +675,9 @@ async function DayView({
         end_date,
         archived_at,
         reminders,
-        track_on_grid
+        track_on_grid,
+        rollover_missed_days,
+        rollover_change_rhythm
       ),
       completion_instances (
         completion_id,
@@ -1334,7 +1336,7 @@ async function GridView({
     supabase
       .from("activities")
       .select(
-        "id, name, notes, rhythm, priority, scheduled_times, default_skill_tags, start_date, end_date, archived_at, reminders, streak_mode, streak_goal, track_on_grid"
+        "id, name, notes, rhythm, priority, scheduled_times, default_skill_tags, start_date, end_date, archived_at, reminders, streak_mode, streak_goal, track_on_grid, rollover_missed_days, rollover_change_rhythm"
       )
       .eq("user_id", userId)
       .is("archived_at", null)
@@ -1363,6 +1365,8 @@ async function GridView({
     streak_mode: string | null;
     streak_goal: number | null;
     track_on_grid: boolean;
+    rollover_missed_days: boolean;
+    rollover_change_rhythm: boolean;
   };
   // Grid only DISPLAYS activities the user opted into (track_on_grid).
   // Everything is still tracked elsewhere; this is a display filter.
@@ -1885,6 +1889,8 @@ function toDayInstance(
     archived_at: string | null;
     reminders: Array<{ amount: number; unit: string }>;
     track_on_grid: boolean;
+    rollover_missed_days?: boolean;
+    rollover_change_rhythm?: boolean;
   }
 ): DayInstance {
   return {
@@ -1917,6 +1923,10 @@ function toDayInstance(
       archived_at: act.archived_at,
       reminders: act.reminders ?? [],
       track_on_grid: act.track_on_grid,
+      // Toggles default to false when the query didn't select them —
+      // the Edit Rhythm form just reflects the last-saved state.
+      rollover_missed_days: act.rollover_missed_days ?? false,
+      rollover_change_rhythm: act.rollover_change_rhythm ?? false,
     },
   };
 }

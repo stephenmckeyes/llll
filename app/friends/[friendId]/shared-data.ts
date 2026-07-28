@@ -67,6 +67,10 @@ export function toDayInstance(
       // Friend's track_on_grid isn't shared; doesn't matter for the
       // read-only friend view.
       track_on_grid: false,
+      // Same story for rollover toggles — friend view is read-only
+      // (no missInstance calls), so these are pure defaults.
+      rollover_missed_days: false,
+      rollover_change_rhythm: false,
     },
   };
 }

@@ -91,6 +91,11 @@ export type DayInstance = {
      *  see migration 0016). Needed so Edit Rhythm can prefill the
      *  Track-on-Grid toggle. */
     track_on_grid: boolean;
+    /** Rollover-on-missed toggles (migration 0021). Needed so Edit
+     *  Rhythm can prefill them AND so the field-set type stays in sync
+     *  with ActivityFormInitial. Both default false. */
+    rollover_missed_days: boolean;
+    rollover_change_rhythm: boolean;
   };
 };
 

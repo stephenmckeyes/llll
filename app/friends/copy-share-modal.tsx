@@ -60,6 +60,8 @@ export function CopyShareModal({
     end_date: shared.endDate,
     reminders: [],
     track_on_grid: false,
+    rollover_missed_days: false,
+    rollover_change_rhythm: false,
   };
 
   function submit() {

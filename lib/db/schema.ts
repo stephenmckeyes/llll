@@ -180,6 +180,17 @@ export const activities = pgTable(
     // Show this activity in the Grid view (migration 0016). Everything is
     // still tracked; this only gates grid DISPLAY. Default false.
     trackOnGrid: boolean("track_on_grid").notNull().default(false),
+    // Rollover toggles (migration 0021) — how a missed RECURRING
+    // occurrence should treat the schedule.
+    //   rolloverMissedDays  → also insert a make-up on the next day
+    //   rolloverChangeRhythm → shift the whole rhythm forward by 1 day
+    // Independent booleans; both default false (no behavior change).
+    // Ignored for rhythm=single (which uses missInstance's built-in
+    // reschedule-to-today rule).
+    rolloverMissedDays: boolean("rollover_missed_days").notNull().default(false),
+    rolloverChangeRhythm: boolean("rollover_change_rhythm")
+      .notNull()
+      .default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
