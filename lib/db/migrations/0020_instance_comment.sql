@@ -17,6 +17,12 @@
 ALTER TABLE public.activity_instances
   ADD COLUMN IF NOT EXISTS comment text;
 
+-- Postgres refuses to CREATE OR REPLACE a function when the return-column
+-- list changes (error 42P13: "cannot change return type of existing
+-- function"). Since we're widening RETURNS TABLE with a new `comment`
+-- column, drop the old signature first. IF EXISTS keeps re-runs safe.
+DROP FUNCTION IF EXISTS public.get_shared_instances_with_me(date, date);
+
 CREATE OR REPLACE FUNCTION public.get_shared_instances_with_me(
   p_from date,
   p_to   date
