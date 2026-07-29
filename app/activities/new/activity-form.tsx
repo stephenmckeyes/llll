@@ -23,6 +23,10 @@ import type {
 
 import { RemindersField } from "@/app/_components/reminders-field";
 import { TagPicker } from "@/app/_components/tag-picker";
+import {
+  DENSITY_PRESETS,
+  type AddActivityDensity,
+} from "@/lib/domain/add-activity-density";
 import type { Reminder } from "@/lib/validators/reminder";
 import type { TagMap } from "@/lib/domain/tags";
 
@@ -55,9 +59,19 @@ const DEFAULT_TIME = "12:00";
 
 export function ActivityForm({
   initialTagMap,
+  density = "default",
 }: {
   initialTagMap: TagMap;
+  /** Visual density (migration 0023 / /settings/appearance). Falls back
+   *  to 'default' so existing callers stay unchanged. */
+  density?: AddActivityDensity;
 }) {
+  // Density preset drives the top-level flex-col gap. Individual sections
+  // aren't rewritten one-by-one — the container gap is the dominant lever
+  // for "how spread out is the form?" and captures 80% of the visual
+  // effect for zero per-section refactor. `sectionMt` on the sticky
+  // action bar tightens the space above it in Compact.
+  const preset = DENSITY_PRESETS[density];
   const [state, formAction, isPending] = useActionState<
     ActivityFormState,
     FormData
@@ -214,6 +228,10 @@ export function ActivityForm({
     <form
       ref={formRef}
       action={formAction}
+      // data-density scopes the density-related CSS in globals.css to
+      // this form only, without threading a `density` prop through
+      // every section. The `default` value has no CSS overrides.
+      data-density={density}
       onKeyDown={(e) => {
         // Don't let Enter inside an input submit the form. Only the
         // explicit "Add Activity" button should submit. Textareas keep
@@ -228,7 +246,7 @@ export function ActivityForm({
           e.preventDefault();
         }
       }}
-      className="flex w-full max-w-full min-w-0 flex-col gap-6"
+      className={`flex w-full max-w-full min-w-0 flex-col ${preset.formGap}`}
     >
       {/* Track-on-Grid state travels through FormData via a hidden input;
           the visible section moved to the bottom of the form (below). */}

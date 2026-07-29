@@ -94,6 +94,11 @@ export const profiles = pgTable("profiles", {
     .notNull()
     .default(true),
   streakGoal: smallint("streak_goal"),
+  // Add Activity form density (migration 0023). One of
+  // 'default' | 'compact' | 'expanded' — read-time defaults to
+  // 'default' for anything unrecognized, no CHECK constraint so we
+  // can add more modes later without a migration.
+  addActivityDensity: text("add_activity_density").notNull().default("default"),
 });
 
 // ===========================================================================

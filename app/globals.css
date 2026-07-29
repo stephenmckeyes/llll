@@ -118,3 +118,40 @@ summary,
   -webkit-user-select: none;
   user-select: none;
 }
+
+/* ---------------------------------------------------------------------------
+   Add Activity form density (migration 0023)
+   ---------------------------------------------------------------------------
+   The /activities/new form's root <form> stamps a `data-density` attribute.
+   These rules cascade to EVERY descendant fieldset without touching each
+   one individually — the alternative was threading the density preset
+   into every section as a prop. The container gap between top-level
+   sections is set inline (see activity-form.tsx) because it's the most
+   noticeable lever; padding and inner gaps are tuned here.
+
+   The `default` mode intentionally has NO overrides — it inherits the
+   Tailwind utility classes exactly, so existing users see zero change.
+   --------------------------------------------------------------------- */
+form[data-density="compact"] fieldset {
+  padding: 0.5rem;
+}
+form[data-density="compact"] fieldset legend {
+  font-size: 0.8125rem;
+}
+form[data-density="compact"] fieldset + fieldset,
+form[data-density="compact"] fieldset + label,
+form[data-density="compact"] label + fieldset {
+  margin-top: 0.5rem;
+}
+form[data-density="compact"] .mt-3,
+form[data-density="compact"] .mt-4 {
+  margin-top: 0.5rem;
+}
+
+form[data-density="expanded"] fieldset {
+  padding: 1rem;
+}
+form[data-density="expanded"] .mt-3,
+form[data-density="expanded"] .mt-4 {
+  margin-top: 1.5rem;
+}

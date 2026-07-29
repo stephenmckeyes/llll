@@ -9,10 +9,27 @@
 import { SettingsShell } from "../_settings-shell";
 import { requireOnboardedUser } from "@/lib/auth/require-onboarded-user";
 
+import {
+  isAddActivityDensity,
+  type AddActivityDensity,
+} from "@/lib/domain/add-activity-density";
+import { AddActivityDensityPicker } from "./add-activity-density-picker";
 import { ThemeToggle } from "../theme-toggle";
 
 export default async function AppearanceSettingsPage() {
-  await requireOnboardedUser();
+  const { supabase, user } = await requireOnboardedUser();
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("add_activity_density")
+    .eq("id", user.id)
+    .maybeSingle();
+  const rawDensity =
+    (profile as { add_activity_density?: string } | null)?.add_activity_density ??
+    "default";
+  const initialDensity: AddActivityDensity = isAddActivityDensity(rawDensity)
+    ? rawDensity
+    : "default";
 
   return (
     <SettingsShell title="Appearance">
@@ -29,6 +46,18 @@ export default async function AppearanceSettingsPage() {
         at high brightness, since black pixels are switched off. On LCD
         screens it makes no meaningful difference.
       </p>
+
+      <hr className="my-2 border-zinc-200 dark:border-zinc-800" />
+
+      <div className="flex flex-col gap-2">
+        <h2 className="text-sm font-medium">Add Activity form</h2>
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          Choose how tightly the Add Activity form packs its fields.
+          Same options either way — Compact minimizes scrolling on
+          phones, Expanded gives more breathing room on desktop.
+        </p>
+        <AddActivityDensityPicker initialDensity={initialDensity} />
+      </div>
     </SettingsShell>
   );
 }
