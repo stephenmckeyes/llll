@@ -34,7 +34,11 @@ function blankActivity(startDate: string): ActivityFormInitial {
     end_date: null,
     reminders: [],
     track_on_grid: false,
-    rollover_missed_days: false,
+    // Default rhythm is single, and singles default to the reschedule-
+    // on-miss behavior (see migration 0022 + missInstance). Rhythmic
+    // rhythms should uncheck this on selection — the form retains the
+    // last state, so users can still opt into either interpretation.
+    rollover_missed_days: true,
     rollover_change_rhythm: false,
   };
 }

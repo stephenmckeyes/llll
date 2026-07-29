@@ -75,9 +75,13 @@ export function ActivityForm({
   // Grid display flag (default off). Everything is tracked regardless — this
   // only controls whether the activity appears in the Grid view.
   const [trackOnGrid, setTrackOnGrid] = useState(false);
-  // Rollover-on-missed toggles (default off; hidden while rhythm=Once
-  // since singles reschedule via their own rule). See migration 0021.
-  const [rolloverMissedDays, setRolloverMissedDays] = useState(false);
+  // Rollover-on-missed toggles. Default rhythm is "single" so
+  // `rolloverMissedDays` starts CHECKED — that means "reschedule to
+  // today/tomorrow on miss" (the existing single-task behavior,
+  // preserved retroactively for existing rows by migration 0022). If
+  // the user switches to a recurring rhythm they can uncheck it —
+  // there the checked meaning is "insert a make-up on the next day."
+  const [rolloverMissedDays, setRolloverMissedDays] = useState(true);
   const [rolloverChangeRhythm, setRolloverChangeRhythm] = useState(false);
 
   function handleSaveForLater() {
@@ -226,43 +230,13 @@ export function ActivityForm({
       }}
       className="flex w-full max-w-full min-w-0 flex-col gap-6"
     >
-      {/* --- 0. Track on Grid? (default: no) -------------------------- */}
+      {/* Track-on-Grid state travels through FormData via a hidden input;
+          the visible section moved to the bottom of the form (below). */}
       <input
         type="hidden"
         name="trackOnGrid"
         value={trackOnGrid ? "true" : "false"}
       />
-      <fieldset className="flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
-        <legend className="px-1 text-sm font-medium">Grid</legend>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => setTrackOnGrid(false)}
-            className={`flex-1 touch-manipulation rounded-md border px-3 py-2 text-center text-sm font-medium transition-colors ${
-              !trackOnGrid
-                ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
-                : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-            }`}
-          >
-            Don&rsquo;t track on grid
-          </button>
-          <button
-            type="button"
-            onClick={() => setTrackOnGrid(true)}
-            className={`flex-1 touch-manipulation rounded-md border px-3 py-2 text-center text-sm font-medium transition-colors ${
-              trackOnGrid
-                ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
-                : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-            }`}
-          >
-            Track on grid
-          </button>
-        </div>
-        <p className="text-xs text-zinc-500">
-          Everything is tracked either way — this only controls whether the
-          activity appears in the Grid view.
-        </p>
-      </fieldset>
 
       {/* --- 1. Activity (name) ---------------------------------------- */}
       <FieldLabel label="Activity">
@@ -600,11 +574,41 @@ export function ActivityForm({
       {/* --- 6. Reminders ---------------------------------------------- */}
       <RemindersField reminders={reminders} setReminders={setReminders} />
 
-      {/* --- 7. Rollover on missed (recurring only) -------------------- */}
-      {/* Hidden while rhythm is Once / Unrhythmic Selection because
-          singles reschedule via their own rule (see missInstance). Both
-          toggles are always submitted (hidden inputs) so the server
-          reads a defined value on every submit. */}
+      {/* --- 7. Show on Grid (moved to bottom per user request) ------- */}
+      <fieldset className="flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+        <legend className="px-1 text-sm font-medium">Grid</legend>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setTrackOnGrid(false)}
+            className={`flex-1 touch-manipulation rounded-md border px-3 py-2 text-center text-sm font-medium transition-colors ${
+              !trackOnGrid
+                ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            }`}
+          >
+            Don&rsquo;t show on grid
+          </button>
+          <button
+            type="button"
+            onClick={() => setTrackOnGrid(true)}
+            className={`flex-1 touch-manipulation rounded-md border px-3 py-2 text-center text-sm font-medium transition-colors ${
+              trackOnGrid
+                ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            }`}
+          >
+            Show on Grid
+          </button>
+        </div>
+      </fieldset>
+
+      {/* --- 8. Rollover on missed ------------------------------------ */}
+      {/* Shown for EVERY rhythm now — singles get a single "Rollover
+          missed days" toggle (default on = reschedule instead of
+          finalising as missed); recurring rhythms get both toggles
+          (defaults off). "Change rhythm" is hidden for singles because
+          there's no rhythm to shift. */}
       <input
         type="hidden"
         name="rolloverMissedDays"
@@ -615,26 +619,33 @@ export function ActivityForm({
         name="rolloverChangeRhythm"
         value={rolloverChangeRhythm ? "true" : "false"}
       />
-      {!isSingleLike && (
-        <fieldset className="flex flex-col gap-3 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
-          <legend className="px-1 text-sm font-medium">On missed</legend>
-          <p className="text-xs text-zinc-500">
-            What should happen when you tap Missed on an occurrence of
-            this rhythm? Both off = just record the miss.
-          </p>
-          <RolloverCheckbox
-            checked={rolloverMissedDays}
-            onChange={setRolloverMissedDays}
-            title="Rollover missed days"
-            hint="Also add a make-up occurrence on the next day. Main schedule stays put."
-            warning={
-              rolloverMissedDays && rhythmKind === "daily"
+      <fieldset className="flex flex-col gap-3 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+        <legend className="px-1 text-sm font-medium">On missed</legend>
+        <p className="text-xs text-zinc-500">
+          {isSingleLike
+            ? "What should happen when you tap Missed on this task? Default: roll it forward instead of finalising as missed."
+            : "What should happen when you tap Missed on an occurrence of this rhythm? Both off = just record the miss."}
+        </p>
+        <RolloverCheckbox
+          checked={rolloverMissedDays}
+          onChange={setRolloverMissedDays}
+          title="Rollover missed days"
+          hint={
+            isSingleLike
+              ? "Move this task to today (or tomorrow if it's today's) instead of finalising as missed."
+              : "Also add a make-up occurrence on the next day. Main schedule stays put."
+          }
+          warning={
+            isSingleLike
+              ? ""
+              : rolloverMissedDays && rhythmKind === "daily"
                 ? "Daily activities already generate an instance every day — a make-up won't add anything visible."
                 : rolloverMissedDays && rhythmKind === "frequency"
                   ? "For N-times-per-period rhythms, the make-up counts as an extra slot inside the same period."
                   : ""
-            }
-          />
+          }
+        />
+        {!isSingleLike && (
           <RolloverCheckbox
             checked={rolloverChangeRhythm}
             onChange={setRolloverChangeRhythm}
@@ -650,8 +661,8 @@ export function ActivityForm({
                     : ""
             }
           />
-        </fieldset>
-      )}
+        )}
+      </fieldset>
 
       {/* --- Calendar preview ------------------------------------------ */}
       <CalendarPreview

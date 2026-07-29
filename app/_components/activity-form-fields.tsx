@@ -171,39 +171,6 @@ export function ActivityFormFields({
         value={rolloverChangeRhythm ? "true" : "false"}
       />
 
-      {/* --- Track on Grid? (default: off) -------------------------- */}
-      <fieldset className="flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
-        <legend className="px-1 text-sm font-medium">Grid</legend>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => setTrackOnGrid(false)}
-            className={`flex-1 touch-manipulation rounded-md border px-3 py-2 text-center text-sm font-medium transition-colors ${
-              !trackOnGrid
-                ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
-                : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-            }`}
-          >
-            Don&rsquo;t track on grid
-          </button>
-          <button
-            type="button"
-            onClick={() => setTrackOnGrid(true)}
-            className={`flex-1 touch-manipulation rounded-md border px-3 py-2 text-center text-sm font-medium transition-colors ${
-              trackOnGrid
-                ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
-                : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-            }`}
-          >
-            Track on grid
-          </button>
-        </div>
-        <p className="text-xs text-zinc-500">
-          Everything is tracked either way — this only controls whether the
-          activity appears in the Grid view.
-        </p>
-      </fieldset>
-
       {/* --- Activity name ----------------------------------------- */}
       <label className="block">
         <span className="text-sm font-medium">Activity</span>
@@ -495,18 +462,48 @@ export function ActivityFormFields({
         <RemindersField reminders={reminders} setReminders={setReminders} />
       </div>
 
-      {/* --- Rollover on missed (recurring only) -------------------- */}
-      {/* Hidden on rhythm=single because singles use missInstance's
-          reschedule-to-today rule, not these toggles. */}
-      {!isSingle && (
-        <RolloverToggles
-          rhythmKind={rhythmKind}
-          rolloverMissedDays={rolloverMissedDays}
-          setRolloverMissedDays={setRolloverMissedDays}
-          rolloverChangeRhythm={rolloverChangeRhythm}
-          setRolloverChangeRhythm={setRolloverChangeRhythm}
-        />
-      )}
+      {/* --- Show on Grid (moved to bottom per user request) --------- */}
+      <fieldset className="mt-4 flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+        <legend className="px-1 text-sm font-medium">Grid</legend>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setTrackOnGrid(false)}
+            className={`flex-1 touch-manipulation rounded-md border px-3 py-2 text-center text-sm font-medium transition-colors ${
+              !trackOnGrid
+                ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            }`}
+          >
+            Don&rsquo;t show on grid
+          </button>
+          <button
+            type="button"
+            onClick={() => setTrackOnGrid(true)}
+            className={`flex-1 touch-manipulation rounded-md border px-3 py-2 text-center text-sm font-medium transition-colors ${
+              trackOnGrid
+                ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            }`}
+          >
+            Show on Grid
+          </button>
+        </div>
+      </fieldset>
+
+      {/* --- Rollover on missed ------------------------------------- */}
+      {/* Shown for every rhythm — singles get a single "Rollover missed
+          days" toggle (default on = reschedule instead of finalising as
+          missed); recurring rhythms get both toggles (defaults off).
+          `changeRhythm` is hidden on singles because there's no rhythm
+          to shift. */}
+      <RolloverToggles
+        rhythmKind={rhythmKind}
+        rolloverMissedDays={rolloverMissedDays}
+        setRolloverMissedDays={setRolloverMissedDays}
+        rolloverChangeRhythm={rolloverChangeRhythm}
+        setRolloverChangeRhythm={setRolloverChangeRhythm}
+      />
     </>
   );
 }
@@ -532,12 +529,15 @@ function RolloverToggles({
   rolloverChangeRhythm: boolean;
   setRolloverChangeRhythm: (v: boolean) => void;
 }) {
+  const isSingleKind = rhythmKind === "single";
+
   // Warnings surface when the toggle would do something odd for the
   // chosen rhythm — text is deliberately narrow ("what this will do")
   // so the user can decide whether they meant it. Empty string → no
-  // warning rendered.
+  // warning rendered. Singles get no warnings — the reschedule
+  // behavior is unambiguous.
   const missedWarning = ((): string => {
-    if (!rolloverMissedDays) return "";
+    if (!rolloverMissedDays || isSingleKind) return "";
     if (rhythmKind === "daily")
       return "Daily activities already generate an instance every day — a make-up won't add anything visible.";
     if (rhythmKind === "frequency")
@@ -559,23 +559,32 @@ function RolloverToggles({
     <fieldset className="mt-4 flex flex-col gap-3 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
       <legend className="px-1 text-sm font-medium">On missed</legend>
       <p className="text-xs text-zinc-500">
-        What should happen when you tap Missed on an occurrence of this
-        rhythm? Both off = just record the miss.
+        {isSingleKind
+          ? "What should happen when you tap Missed on this task? Default: roll it forward instead of finalising as missed."
+          : "What should happen when you tap Missed on an occurrence of this rhythm? Both off = just record the miss."}
       </p>
       <RolloverCheckbox
         checked={rolloverMissedDays}
         onChange={setRolloverMissedDays}
         title="Rollover missed days"
-        hint="Also add a make-up occurrence on the next day. Main schedule stays put."
+        hint={
+          isSingleKind
+            ? "Move this task to today (or tomorrow if it's today's) instead of finalising as missed."
+            : "Also add a make-up occurrence on the next day. Main schedule stays put."
+        }
         warning={missedWarning}
       />
-      <RolloverCheckbox
-        checked={rolloverChangeRhythm}
-        onChange={setRolloverChangeRhythm}
-        title="Rollover and change rhythm"
-        hint="Shift the whole rhythm forward by 1 day starting from the missed date. Best for “every N days.”"
-        warning={changeWarning}
-      />
+      {/* "Change rhythm" applies only to recurring rhythms — there's
+          nothing to shift on a one-off single. */}
+      {!isSingleKind && (
+        <RolloverCheckbox
+          checked={rolloverChangeRhythm}
+          onChange={setRolloverChangeRhythm}
+          title="Rollover and change rhythm"
+          hint="Shift the whole rhythm forward by 1 day starting from the missed date. Best for “every N days.”"
+          warning={changeWarning}
+        />
+      )}
     </fieldset>
   );
 }

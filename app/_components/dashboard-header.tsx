@@ -19,10 +19,24 @@ export function DashboardHeader({ userEmail }: { userEmail: string }) {
   return (
     <div className="flex flex-col gap-2">
       {/* Row 1: title + Settings, top-aligned so Settings sits level with
-          the top of "Mission" at the very top-right. */}
+          the top of "Mission" at the very top-right. The title is a
+          Link back to "/" (no query string) so tapping it always resets
+          to today — the fix for stale bookmarks / autocomplete URLs
+          that pinned the Day view to a past date. */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-3xl font-semibold tracking-tight">Mission</h1>
+          <PendingLink
+            href="/"
+            ariaLabel="Home — today"
+            className="inline-block rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900 dark:focus-visible:ring-zinc-50"
+          >
+            <h1
+              title="Home — today"
+              className="text-3xl font-semibold tracking-tight"
+            >
+              Mission
+            </h1>
+          </PendingLink>
           <p className="flex flex-wrap items-center gap-x-2 text-xs text-zinc-500">
             <span className="truncate">{userEmail}</span>
             <span aria-hidden>·</span>

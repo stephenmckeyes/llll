@@ -58,6 +58,15 @@ import { SectionTabs } from "./_components/section-tabs";
 import { TagDotRow } from "./_components/tag-chip";
 import { TabPending } from "./_components/tab-pending";
 
+// Force a fresh server render on every request. The dashboard is a
+// per-user personalized page anyway — nothing about it is meaningfully
+// cacheable — and without this a CDN / RSC cache can serve HTML whose
+// `todayStr` was baked days ago, which is why the Day view could open
+// pinned to a stale date. `cookies()` inside supabase already makes the
+// route dynamic; this line makes the intent explicit and belt-and-
+// suspenders proof against future cache misconfiguration.
+export const dynamic = "force-dynamic";
+
 type ViewKind = "day" | "week" | "month" | "year" | "grid";
 type GridRange = "week" | "month" | "total" | "custom";
 

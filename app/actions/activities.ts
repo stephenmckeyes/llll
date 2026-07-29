@@ -1238,7 +1238,19 @@ export async function missInstance(
   const rhythm = activity.rhythm;
 
   // ---------- Single: reschedule instead of finalising missed ----------
+  // The reschedule is now opt-in via activity.rollover_missed_days
+  // (default TRUE per migration 0022, exposed as a checkbox on the
+  // Once form). Users who want the classic "hard-missed" verdict for a
+  // one-off task uncheck it.
   if (rhythm.type === "single") {
+    if (!activity.rollover_missed_days) {
+      await supabase
+        .from("activity_instances")
+        .update({ status: "missed" })
+        .eq("id", instanceId);
+      return { rescheduled: false };
+    }
+
     const { data: profile } = await supabase
       .from("profiles")
       .select("timezone")
