@@ -20,8 +20,26 @@ ALTER TABLE public.activity_instances
 -- Postgres refuses to CREATE OR REPLACE a function when the return-column
 -- list changes (error 42P13: "cannot change return type of existing
 -- function"). Since we're widening RETURNS TABLE with a new `comment`
--- column, drop the old signature first. IF EXISTS keeps re-runs safe.
-DROP FUNCTION IF EXISTS public.get_shared_instances_with_me(date, date);
+-- column, drop every overload of the name first, regardless of parameter
+-- signature. Iterating via pg_proc keeps the migration bulletproof if a
+-- previous run left the function with an unexpected signature.
+DO $migration_0020$
+DECLARE r record;
+BEGIN
+  FOR r IN
+    SELECT format(
+      'DROP FUNCTION IF EXISTS public.%I(%s) CASCADE',
+      p.proname,
+      pg_get_function_identity_arguments(p.oid)
+    ) AS cmd
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname = 'get_shared_instances_with_me'
+  LOOP
+    EXECUTE r.cmd;
+  END LOOP;
+END $migration_0020$;
 
 CREATE OR REPLACE FUNCTION public.get_shared_instances_with_me(
   p_from date,
