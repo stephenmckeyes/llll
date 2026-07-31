@@ -25,6 +25,10 @@ import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import {
+  isAddActivityDensity,
+  type AddActivityDensity,
+} from "@/lib/domain/add-activity-density";
 import { ensureInstancesBackfilled } from "@/lib/domain/backfill";
 import {
   frequencyDueDay,
@@ -179,7 +183,7 @@ export default async function HomePage({
   const [profileResult, tagFetch] = await Promise.all([
     supabase
       .from("profiles")
-      .select("timezone, onboarded_at")
+      .select("timezone, onboarded_at, add_activity_density")
       .eq("id", user.id)
       .maybeSingle(),
     Promise.all([
@@ -210,6 +214,17 @@ export default async function HomePage({
   // keys off this single value, threaded into every view + helper.
   const todayStr = todayInTimeZone(profile.timezone ?? "UTC");
   const date = parseDateParam(params.date, todayStr);
+
+  // Add Activity form density — shapes every "Add / Edit activity"
+  // surface that renders under this page. Threaded into DayView (and
+  // its DayList/modal children) so a user who picked Compact sees the
+  // condensed form both on /activities/new AND in the day-list "+"
+  // modal + Edit Rhythm + Edit Activity — one setting, uniform effect.
+  const addActivityDensity: AddActivityDensity = isAddActivityDensity(
+    profile.add_activity_density
+  )
+    ? profile.add_activity_density
+    : "default";
 
   // Top up the user's activity_instances out to ~1 year ahead of whatever
   // they're looking at. Indefinite rhythms (no end_date) only get N days
@@ -294,6 +309,7 @@ export default async function HomePage({
           timezone={profile.timezone ?? "UTC"}
           incompleteInfo={incompleteInfo}
           tagMap={tagMap}
+          density={addActivityDensity}
         />
       )}
       {view === "week" && (
@@ -643,12 +659,14 @@ async function DayView({
   timezone,
   incompleteInfo,
   tagMap,
+  density,
 }: {
   startDate: string;
   todayStr: string;
   timezone: string;
   incompleteInfo: IncompleteInfo;
   tagMap: TagMap;
+  density: AddActivityDensity;
 }) {
   const supabase = await createClient();
 
@@ -832,6 +850,7 @@ async function DayView({
       todayStr={todayStr}
       incompleteInfo={incompleteInfo}
       tagMap={tagMap}
+      density={density}
     />
   );
 }

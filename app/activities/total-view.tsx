@@ -22,6 +22,8 @@ import type { TagMap } from "@/lib/domain/tags";
 
 import { TagChipList } from "@/app/_components/tag-chip";
 
+import { type AddActivityDensity } from "@/lib/domain/add-activity-density";
+
 import { ActivityDetailModal, type ActivityRow } from "./activity-detail-modal";
 
 type GroupBy = "status" | "tag" | "rhythm";
@@ -32,9 +34,13 @@ type Group = { key: string; label: string; items: ActivityRow[] };
 export function TotalView({
   activities,
   tagMap,
+  density = "default",
 }: {
   activities: ActivityRow[];
   tagMap: TagMap;
+  /** Add Activity form-density preference, forwarded to
+   *  ActivityDetailModal so Edit Rhythm shares the setting. */
+  density?: AddActivityDensity;
 }) {
   // Defaults: grouped by Tag, showing Active only (per user request) — the
   // most useful "what am I actively working on, organized by area" view.
@@ -123,6 +129,7 @@ export function TotalView({
           activity={openActivity}
           tagMap={tagMap}
           onClose={() => setOpenId(null)}
+          density={density}
         />
       )}
     </div>

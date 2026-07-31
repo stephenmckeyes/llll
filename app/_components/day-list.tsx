@@ -27,6 +27,7 @@ import {
 } from "react";
 
 import { unlabelInstance } from "@/app/actions/activities";
+import { type AddActivityDensity } from "@/lib/domain/add-activity-density";
 import {
   frequencyDueDay,
   frequencyPeriodEnd,
@@ -131,6 +132,7 @@ export function DayList({
   tagMap,
   readOnly = false,
   onReadOnlyOpen,
+  density = "default",
 }: {
   initialDate: string;
   completedByDate: Record<string, DayMarkedItem[]>;
@@ -147,6 +149,12 @@ export function DayList({
    *  owner-only mutation modal) so the friend view can show its own
    *  read-only detail. */
   onReadOnlyOpen?: (inst: DayInstance) => void;
+  /** Add Activity form density (migration 0023). Applied to the two
+   *  mutation modals below (NewActivityModal + ActivityModal's edit
+   *  bodies) so a user who picked Compact sees the condensed form
+   *  everywhere Add-Activity happens, not just on /activities/new.
+   *  Optional — read-only friend contexts leave it default. */
+  density?: AddActivityDensity;
 }) {
   const router = useRouter();
   const [, startUnlabelTransition] = useTransition();
@@ -429,6 +437,7 @@ export function DayList({
           todayStr={todayStr}
           onClose={() => setOpenInstance(null)}
           tagMap={tagMap}
+          density={density}
         />
       )}
 
@@ -437,6 +446,7 @@ export function DayList({
           startDate={addDay}
           tagMap={tagMap}
           onClose={() => setAddDay(null)}
+          density={density}
         />
       )}
     </div>

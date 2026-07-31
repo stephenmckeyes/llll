@@ -38,6 +38,8 @@ import { normalizeReminder } from "@/lib/validators/reminder";
 import { useBodyScrollLock } from "@/lib/ui/body-scroll-lock";
 import { dispatchInstanceResolved } from "@/lib/ui/instance-resolved-event";
 
+import { type AddActivityDensity } from "@/lib/domain/add-activity-density";
+
 import { ActivityFormFields } from "./activity-form-fields";
 import { ActivityHistoryModal } from "./activity-history-modal";
 import { CommentModal } from "./comment-modal";
@@ -62,6 +64,7 @@ export function ActivityModal({
   todayStr,
   onClose,
   tagMap,
+  density = "default",
 }: {
   instance: DayInstance;
   todayStr: string;
@@ -70,6 +73,11 @@ export function ActivityModal({
    *  TagChipList and the edit-mode TagPicker. Pass `{}` if you have
    *  none — chips fall back to gray. */
   tagMap: TagMap;
+  /** Add Activity form-density preference (migration 0023). Forwarded
+   *  to both edit bodies so the Compact/Expanded CSS in globals.css
+   *  applies to the Edit forms too, matching the standalone
+   *  /activities/new page. */
+  density?: AddActivityDensity;
 }) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("details");
@@ -210,6 +218,7 @@ export function ActivityModal({
             tagMap={tagMap}
             onDone={() => onClose()}
             onCancel={() => setMode("details")}
+            density={density}
           />
         ) : (
           <EditRhythmBody
@@ -217,6 +226,7 @@ export function ActivityModal({
             tagMap={tagMap}
             onDone={() => onClose()}
             onCancel={() => setMode("details")}
+            density={density}
           />
         )}
 
@@ -435,11 +445,13 @@ function EditActivityBody({
   tagMap,
   onDone,
   onCancel,
+  density = "default",
 }: {
   instance: DayInstance;
   tagMap: TagMap;
   onDone: () => void;
   onCancel: () => void;
+  density?: AddActivityDensity;
 }) {
   const activity = instance.activity;
   // Bind to the INSTANCE id — updateInstanceFields writes per-occurrence
@@ -470,6 +482,7 @@ function EditActivityBody({
   return (
     <form
       action={formAction}
+      data-density={density}
       onKeyDown={(e) => {
         // Don't let Enter auto-submit (consistent with the create form).
         const target = e.target as HTMLElement;
@@ -612,11 +625,13 @@ export function EditRhythmBody({
   tagMap,
   onDone,
   onCancel,
+  density = "default",
 }: {
   activity: DayInstance["activity"];
   tagMap: TagMap;
   onDone: () => void;
   onCancel: () => void;
+  density?: AddActivityDensity;
 }) {
   // Edit-rhythm is now the "full reset" path — it edits every
   // future-facing field (name, notes, tags, priority, dates, reminders,
@@ -638,6 +653,7 @@ export function EditRhythmBody({
 
   return (
     <form
+      data-density={density}
       action={(fd) => {
         // Confirmation popup before destructive regenerate.
         const ok = window.confirm(

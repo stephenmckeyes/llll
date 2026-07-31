@@ -28,7 +28,9 @@ export async function requireOnboardedUser() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("timezone, display_name, username, onboarded_at")
+    .select(
+      "timezone, display_name, username, onboarded_at, add_activity_density"
+    )
     .eq("id", user.id)
     .maybeSingle();
 

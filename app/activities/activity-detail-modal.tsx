@@ -29,6 +29,7 @@ import { EditRhythmBody } from "@/app/_components/activity-modal";
 import { ActivityHistoryModal } from "@/app/_components/activity-history-modal";
 import type { ActivityFormInitial } from "@/app/_components/activity-form-fields";
 import { TagChipList } from "@/app/_components/tag-chip";
+import { type AddActivityDensity } from "@/lib/domain/add-activity-density";
 import {
   summarizeDateRange,
   summarizeRhythm,
@@ -66,10 +67,14 @@ export function ActivityDetailModal({
   activity,
   tagMap,
   onClose,
+  density = "default",
 }: {
   activity: ActivityRow;
   tagMap: TagMap;
   onClose: () => void;
+  /** Applies the profile's Add Activity form-density preference to
+   *  the nested Edit Rhythm body when the user opens it. */
+  density?: AddActivityDensity;
 }) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("details");
@@ -291,6 +296,7 @@ export function ActivityDetailModal({
           <EditRhythmBody
             activity={activity}
             tagMap={tagMap}
+            density={density}
             onDone={() => {
               onClose();
               router.refresh();

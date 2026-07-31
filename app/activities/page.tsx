@@ -11,6 +11,10 @@
 // ---------------------------------------------------------------------------
 
 import { requireOnboardedUser } from "@/lib/auth/require-onboarded-user";
+import {
+  isAddActivityDensity,
+  type AddActivityDensity,
+} from "@/lib/domain/add-activity-density";
 import { buildTagMap, computeTagUsage, type TagMap } from "@/lib/domain/tags";
 
 import { DashboardHeader } from "@/app/_components/dashboard-header";
@@ -59,6 +63,12 @@ export default async function ActivitiesPage() {
   );
 
   const todayStr = todayInTimeZone(profile.timezone ?? "UTC");
+  const density: AddActivityDensity = isAddActivityDensity(
+    (profile as { add_activity_density?: string }).add_activity_density
+  )
+    ? ((profile as { add_activity_density: AddActivityDensity })
+        .add_activity_density)
+    : "default";
 
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-4 p-6">
@@ -70,7 +80,7 @@ export default async function ActivitiesPage() {
         {active.length} active · {archived.length} archived · {all.length} total
       </p>
 
-      <TotalView activities={all} tagMap={tagMap} />
+      <TotalView activities={all} tagMap={tagMap} density={density} />
     </main>
   );
 }

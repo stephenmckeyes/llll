@@ -14,6 +14,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 
 import { createActivity } from "@/app/actions/activities";
+import { type AddActivityDensity } from "@/lib/domain/add-activity-density";
 import type { TagMap } from "@/lib/domain/tags";
 import { useBodyScrollLock } from "@/lib/ui/body-scroll-lock";
 
@@ -47,11 +48,15 @@ export function NewActivityModal({
   startDate,
   tagMap,
   onClose,
+  density = "default",
 }: {
   /** YYYY-MM-DD the user tapped — prefills the form's Start date. */
   startDate: string;
   tagMap: TagMap;
   onClose: () => void;
+  /** Applies the profile's Add Activity form-density preference to
+   *  this modal's form (see globals.css → form[data-density=…]). */
+  density?: AddActivityDensity;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const [isPending, startTransition] = useTransition();
@@ -119,6 +124,7 @@ export function NewActivityModal({
 
         <form
           ref={formRef}
+          data-density={density}
           onKeyDown={(e) => {
             const target = e.target as HTMLElement;
             if (
