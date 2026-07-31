@@ -412,10 +412,22 @@ function DetailsBody({
 }
 
 // ---------------------------------------------------------------------------
-// Edit-activity body — edits ONLY this single occurrence (per-instance
-// overrides for name / notes / tags / priority). It never touches the
-// parent activity or any other occurrence. Series-level changes (rhythm,
-// schedule dates, times, reminders) go through Edit Rhythm.
+// Edit-activity body — edits ONLY this single occurrence.
+//
+// Per-occurrence writable fields: name, notes, priority, tags, AND date
+// (scheduled_for). "Everything about this instance" — no other
+// occurrence of the series is touched. Series-wide edits (rhythm,
+// schedule range, times of day, reminders) go through Edit Rhythm.
+//
+// Date semantics:
+//   - Move this instance's scheduled_for to any date.
+//   - Non-single rhythms: the parent rhythm keeps generating on its
+//     normal schedule; only this one row moves. Two rows on a day are
+//     visually fine (the day list renders them both). A collision on
+//     the target date (another occurrence of THIS activity already
+//     there) is caught server-side and surfaced as a clear error.
+//   - Single rhythms: server-side ALSO updates activity.start_date +
+//     end_date so backfill doesn't regenerate the old date.
 // ---------------------------------------------------------------------------
 
 function EditActivityBody({
@@ -442,6 +454,9 @@ function EditActivityBody({
   // has one, else the series value).
   const [priority, setPriority] = useState<number>(
     instance.overridePriority ?? activity.priority
+  );
+  const [scheduledFor, setScheduledFor] = useState<string>(
+    instance.scheduled_for
   );
 
   // If the action returns ok, close the modal so the user sees the refreshed
@@ -488,6 +503,28 @@ function EditActivityBody({
             defaultValue={instance.overrideName ?? activity.name}
             className={inputClasses}
           />
+        </label>
+
+        <label className="mt-4 block">
+          <span className="text-sm font-medium">Date</span>
+          <input
+            type="date"
+            name="scheduledFor"
+            required
+            value={scheduledFor}
+            onChange={(e) => setScheduledFor(e.target.value)}
+            className={inputClasses}
+          />
+          {/* Date change nudge — non-single rhythms will still generate
+              their normal occurrences on the ORIGINAL day; only this row
+              moves. Singles keep the activity's start/end in sync. */}
+          {scheduledFor !== instance.scheduled_for && (
+            <p className="mt-1 text-xs text-zinc-500">
+              {activity.rhythm.type === "single"
+                ? "This one-off task will move to the new date."
+                : "Only this occurrence moves. Future occurrences keep their normal schedule."}
+            </p>
+          )}
         </label>
 
         <label className="mt-4 block">

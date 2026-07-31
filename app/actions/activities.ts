@@ -996,6 +996,9 @@ const instanceEditSchema = z.object({
   name: z.string().trim().min(1, "Name can't be empty.").max(120),
   notes: z.string().trim().max(500),
   priority: z.number().int().min(1).max(3),
+  scheduledFor: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date."),
 });
 
 export async function updateInstanceFields(
@@ -1007,6 +1010,7 @@ export async function updateInstanceFields(
     name: formData.get("name"),
     notes: formData.get("notes") ?? "",
     priority: Number(formData.get("priority") ?? 2),
+    scheduledFor: formData.get("scheduledFor"),
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
@@ -1030,24 +1034,81 @@ export async function updateInstanceFields(
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  // Fetch the instance + its parent rhythm so we can decide whether
+  // moving the date also needs to bump activity.start_date/end_date
+  // (singles) and detect if the target date already has an instance
+  // (collision — the (activity_id, scheduled_for) unique index).
+  const { data: instRow } = await supabase
+    .from("activity_instances")
+    .select("id, scheduled_for, activities ( id, rhythm )")
+    .eq("id", instanceId)
+    .maybeSingle();
+
+  type ParentActivity = { id: string; rhythm: Rhythm };
+  type Row = {
+    id: string;
+    scheduled_for: string;
+    activities: ParentActivity | null;
+  };
+  const inst = instRow as Row | null;
+  if (!inst || !inst.activities) return { error: "Activity not found." };
+
+  const activity = inst.activities;
+  const isSingle = activity.rhythm.type === "single";
+  const oldDate = inst.scheduled_for;
+  const newDate = parsed.data.scheduledFor;
+  const dateChanged = newDate !== oldDate;
+
+  // Collision check when the date actually changed. A frequency instance
+  // moving into another period's slot, a weekdays instance moving onto
+  // a day that already has one — either would trip the unique
+  // (activity_id, scheduled_for) index. Fail fast with a clear message
+  // rather than surfacing a 23505 as a raw error string.
+  if (dateChanged) {
+    const { count } = await supabase
+      .from("activity_instances")
+      .select("id", { count: "exact", head: true })
+      .eq("activity_id", activity.id)
+      .eq("scheduled_for", newDate);
+    if ((count ?? 0) > 0) {
+      return {
+        error: `Another occurrence of this activity is already on ${newDate}.`,
+      };
+    }
+  }
+
   // Per-occurrence override write — ONLY this instance row. RLS scopes
   // it to the user via the activity-FK policy (same path completeInstance
-  // / missInstance already update through).
+  // / missInstance already update through). scheduled_for is included
+  // only when it changed to keep the write minimal.
+  const patch: Record<string, unknown> = {
+    name: parsed.data.name,
+    notes: parsed.data.notes.length === 0 ? null : parsed.data.notes,
+    priority: parsed.data.priority,
+    tags,
+  };
+  if (dateChanged) patch.scheduled_for = newDate;
+
   const { error } = await supabase
     .from("activity_instances")
-    .update({
-      name: parsed.data.name,
-      notes: parsed.data.notes.length === 0 ? null : parsed.data.notes,
-      priority: parsed.data.priority,
-      tags,
-    })
+    .update(patch)
     .eq("id", instanceId);
 
   if (error) return { error: error.message };
 
-  // No backfill invalidation — a per-occurrence edit doesn't change
-  // future instance generation. Revalidate so the day list reflects the
-  // override on the next render.
+  // Singles: keep activity.start_date + end_date in lockstep with the
+  // (single) instance's scheduled_for. The generator emits from
+  // start_date, so leaving them stale would let backfill create a
+  // duplicate instance at the old date on the next pass.
+  if (dateChanged && isSingle) {
+    await supabase
+      .from("activities")
+      .update({ start_date: newDate, end_date: newDate })
+      .eq("id", activity.id);
+    invalidateBackfillCache(user.id);
+  }
+
+  // Revalidate so the day list reflects the override on the next render.
   revalidatePath("/");
   return { ok: true };
 }
