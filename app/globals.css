@@ -171,8 +171,11 @@ form[data-density="compact"] select {
 }
 form[data-density="compact"] textarea {
   /* Notes textarea starts at rows=2 in the JSX; visually clamp it further
-     so the form isn't dominated by an empty notes box on first render. */
+     so the form isn't dominated by an empty notes box on first render.
+     Explicit `height` overrides the rows attribute; the textarea will
+     scroll internally past that height. */
   min-height: 1.75rem;
+  height: 2rem;
 }
 
 /* Buttons everywhere — Add/Remove chips, rhythm-kind radios, weekday
@@ -228,6 +231,63 @@ form[data-density="compact"] .grid.grid-cols-7 {
   gap: 1px;
 }
 
+/* Compact — restructure the Rhythm picker into a 2-column grid.
+   Halves the rhythm section's height (5-6 stacked full-width buttons
+   → 3-4 rows of 2). The legend spans both columns so it still reads
+   as a section header. Any hint paragraphs inside also span. */
+form[data-density="compact"] [data-form-section="rhythm"] {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.25rem;
+  align-items: stretch;
+}
+form[data-density="compact"] [data-form-section="rhythm"] > legend {
+  grid-column: 1 / -1;
+  margin-bottom: 0.25rem;
+}
+form[data-density="compact"] [data-form-section="rhythm"] > p {
+  grid-column: 1 / -1;
+}
+form[data-density="compact"] [data-form-section="rhythm"] > button {
+  min-height: 2.25rem;
+  padding: 0.375rem 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  /* Hint text ("Several one-offs, shared details") crowds the label at
+     column width; hide it in Compact — the label alone is enough
+     signal, and the setting picker preview shows the density will be
+     tight. */
+}
+form[data-density="compact"] [data-form-section="rhythm"] > button > span.text-xs {
+  display: none;
+}
+/* The radio-dot decoration is decorative; shrink it so it doesn't
+   crowd the label at column width. Selector works for both button
+   shapes (standalone form wraps dot+label inside a flex span, the
+   shared ActivityFormFields renders the dot as a direct child). */
+form[data-density="compact"] [data-form-section="rhythm"] button [aria-hidden] {
+  height: 0.75rem;
+  width: 0.75rem;
+}
+
+/* Compact — shrink the calendar preview: smaller cells, tighter gaps,
+   smaller legend/text. The 5-week grid stays intact so the user still
+   sees the preview; it just takes ~40% less vertical space. */
+form[data-density="compact"] [data-form-section="calendar-preview"] {
+  padding: 0.375rem;
+  gap: 0.375rem;
+}
+form[data-density="compact"] [data-form-section="calendar-preview"] .grid.grid-cols-7 {
+  gap: 1px;
+}
+form[data-density="compact"] [data-form-section="calendar-preview"] .grid.grid-cols-7 > * {
+  min-height: 1.5rem;
+  aspect-ratio: auto;
+}
+form[data-density="compact"] [data-form-section="calendar-preview"] p {
+  font-size: 0.6875rem;
+}
+
 /* ============ EXPANDED: roomier for desktop ============ */
 form[data-density="expanded"] fieldset,
 form[data-density="expanded"] .rounded-md.border {
@@ -252,4 +312,24 @@ form[data-density="expanded"] textarea,
 form[data-density="expanded"] select {
   padding-top: 0.625rem;
   padding-bottom: 0.625rem;
+}
+
+/* Expanded — subtle background wash on each fieldset so sections read
+   as distinct cards rather than one long scroll. Keeps borders visible
+   (still identifies "section"), just adds a small elevation cue. In
+   dark mode we go slightly LIGHTER than the surrounding zinc-950
+   background for the same effect. */
+form[data-density="expanded"] fieldset {
+  background: rgb(250 250 250);
+}
+.dark form[data-density="expanded"] fieldset {
+  background: rgb(24 24 27);
+}
+form[data-density="expanded"] fieldset > legend {
+  font-size: 0.9375rem;
+  padding: 0 0.375rem;
+}
+form[data-density="expanded"] [data-form-section="calendar-preview"] {
+  padding: 1.25rem;
+  gap: 1rem;
 }

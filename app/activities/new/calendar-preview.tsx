@@ -201,7 +201,13 @@ function parseLocalDate(yyyyMmDd: string): Date {
 
 function Pane({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex w-full min-w-0 flex-col gap-3 overflow-hidden rounded-md border border-zinc-200 p-3 dark:border-zinc-800 sm:p-4">
+    <div
+      // Marked so density CSS in globals.css can shrink the cells and
+      // labels for Compact mode (or expand them for Expanded) without
+      // needing to know about this component's Tailwind class list.
+      data-form-section="calendar-preview"
+      className="flex w-full min-w-0 flex-col gap-3 overflow-hidden rounded-md border border-zinc-200 p-3 dark:border-zinc-800 sm:p-4"
+    >
       {children}
     </div>
   );

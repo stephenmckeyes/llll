@@ -301,7 +301,10 @@ export function ActivityForm({
           wrapped radio gets tapped, so the conditional rhythm config wasn't
           appearing on phones. Buttons + state-driven highlight always work. */}
       <input type="hidden" name="rhythmType" value={rhythmKind} />
-      <fieldset className="flex flex-col gap-2">
+      {/* Marked so Compact density can restructure this fieldset into a
+          2-column grid via globals.css — cuts the rhythm picker's height
+          nearly in half without threading a `density` prop into it. */}
+      <fieldset data-form-section="rhythm" className="flex flex-col gap-2">
         <legend className="mb-1 text-sm font-medium">Rhythm</legend>
         <RhythmRadio value="single" current={rhythmKind} onChange={setRhythmKind} label="Once" />
         <RhythmRadio

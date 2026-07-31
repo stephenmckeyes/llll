@@ -207,7 +207,13 @@ export function ActivityFormFields({
       </div>
 
       {/* --- Rhythm kind selector ---------------------------------- */}
-      <fieldset className="mt-4 flex flex-col gap-1">
+      {/* data-form-section marker lets Compact density restructure this
+          fieldset into a 2-column grid via globals.css (see comment on
+          form[data-density=compact] [data-form-section=rhythm]). */}
+      <fieldset
+        data-form-section="rhythm"
+        className="mt-4 flex flex-col gap-1"
+      >
         <legend className="mb-1 text-sm font-medium">Rhythm</legend>
         {(
           [
