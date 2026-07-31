@@ -21,6 +21,7 @@ import {
   startOfMonth,
   startOfWeek,
 } from "date-fns";
+import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -147,6 +148,22 @@ export default async function HomePage({
   if (!user) return <SignedOutLanding />;
 
   const params = await searchParams;
+
+  // Cold-open reset: when the browser (or PWA / bookmark / typed URL /
+  // "shortcut to home screen") loads this page fresh — `sec-fetch-site:
+  // none` — strip any lingering ?date / ?view / ?range params and land
+  // on today. This fixes "the app always opens to Thu May 21, 2026":
+  // the URL was captured months ago by a navigation, then remembered
+  // by the phone as the app's start URL. Internal <Link> clicks are
+  // `same-origin`, so mid-navigation state (Next arrow → far-future
+  // day, Grid Custom range, etc.) is preserved untouched.
+  const h = await headers();
+  const isColdOpen = h.get("sec-fetch-site") === "none";
+  const hasStaleParams = Boolean(
+    params.date || params.view || params.range || params.from || params.to
+  );
+  if (isColdOpen && hasStaleParams) redirect("/");
+
   const view = parseView(params.view);
   const range = parseGridRange(params.range);
   // Custom range params — only meaningful when range==="custom" but we

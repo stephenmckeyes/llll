@@ -123,35 +123,133 @@ summary,
    Add Activity form density (migration 0023)
    ---------------------------------------------------------------------------
    The /activities/new form's root <form> stamps a `data-density` attribute.
-   These rules cascade to EVERY descendant fieldset without touching each
-   one individually — the alternative was threading the density preset
-   into every section as a prop. The container gap between top-level
-   sections is set inline (see activity-form.tsx) because it's the most
-   noticeable lever; padding and inner gaps are tuned here.
+   These rules cascade to EVERY descendant fieldset / input / button
+   without touching each one individually — the alternative was threading
+   the density preset into every section as a prop. The container gap
+   between top-level sections is set inline (see activity-form.tsx)
+   because it's the most noticeable lever; everything else is tuned here.
 
    The `default` mode intentionally has NO overrides — it inherits the
    Tailwind utility classes exactly, so existing users see zero change.
    --------------------------------------------------------------------- */
-form[data-density="compact"] fieldset {
-  padding: 0.5rem;
+
+/* ============ COMPACT: pack the form to fit a phone screen ============ */
+form[data-density="compact"] fieldset,
+form[data-density="compact"] .rounded-md.border {
+  padding: 0.375rem;
 }
 form[data-density="compact"] fieldset legend {
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
+  padding-left: 0;
+  padding-right: 0;
 }
 form[data-density="compact"] fieldset + fieldset,
 form[data-density="compact"] fieldset + label,
-form[data-density="compact"] label + fieldset {
-  margin-top: 0.5rem;
+form[data-density="compact"] label + fieldset,
+form[data-density="compact"] fieldset + div,
+form[data-density="compact"] div + fieldset {
+  margin-top: 0.25rem;
 }
 form[data-density="compact"] .mt-3,
 form[data-density="compact"] .mt-4 {
-  margin-top: 0.5rem;
+  margin-top: 0.25rem;
 }
 
-form[data-density="expanded"] fieldset {
+/* Text inputs, textareas, selects — the biggest single space consumer. */
+form[data-density="compact"] input[type="text"],
+form[data-density="compact"] input[type="date"],
+form[data-density="compact"] input[type="time"],
+form[data-density="compact"] input[type="number"],
+form[data-density="compact"] textarea,
+form[data-density="compact"] select {
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+  font-size: 0.8125rem;
+  line-height: 1.1rem;
+}
+form[data-density="compact"] textarea {
+  /* Notes textarea starts at rows=2 in the JSX; visually clamp it further
+     so the form isn't dominated by an empty notes box on first render. */
+  min-height: 1.75rem;
+}
+
+/* Buttons everywhere — Add/Remove chips, rhythm-kind radios, weekday
+   pills, priority tabs, "+ Add time", "+ Add date", ✓ commit, "i"
+   icon, etc. Keeping min-h below the 44px touch target trades a bit
+   of tap comfort for density — the user opted in. */
+form[data-density="compact"] button {
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+  min-height: 2rem;
+  font-size: 0.8125rem;
+  line-height: 1rem;
+}
+
+/* Rhythm-kind buttons stack vertically — compress each row's height. */
+form[data-density="compact"] fieldset button[type="button"] {
+  padding-top: 0.375rem;
+  padding-bottom: 0.375rem;
+}
+
+/* Hide pure-informational hint paragraphs inside fieldsets — "Pick at
+   least one.", "No set time — this sorts to the end of the day.",
+   the interval "rest days" note, the reminders empty-state, etc.
+   Keep interactive text and error / warning callouts (they use
+   different color classes and aren't `text-zinc-500`). */
+form[data-density="compact"] fieldset > p.text-xs.text-zinc-500,
+form[data-density="compact"] fieldset p.text-xs.italic {
+  display: none;
+}
+
+/* Tighter lists inside fieldsets (times-of-day rows, extra-date rows,
+   reminders list). */
+form[data-density="compact"] fieldset ul {
+  gap: 0.125rem !important;
+}
+form[data-density="compact"] fieldset li {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+/* Grid-of-two schedule (Start / End) — tighter internal gap. */
+form[data-density="compact"] .grid.grid-cols-2 {
+  gap: 0.5rem;
+}
+
+/* Small labels above inputs (e.g. Start date / End date) — halve gap. */
+form[data-density="compact"] label {
+  gap: 0.125rem;
+}
+
+/* Calendar preview eats real vertical space; compress it too. */
+form[data-density="compact"] .grid.grid-cols-7 {
+  gap: 1px;
+}
+
+/* ============ EXPANDED: roomier for desktop ============ */
+form[data-density="expanded"] fieldset,
+form[data-density="expanded"] .rounded-md.border {
   padding: 1rem;
 }
 form[data-density="expanded"] .mt-3,
 form[data-density="expanded"] .mt-4 {
   margin-top: 1.5rem;
+}
+form[data-density="expanded"] fieldset + fieldset,
+form[data-density="expanded"] fieldset + label,
+form[data-density="expanded"] label + fieldset,
+form[data-density="expanded"] fieldset + div,
+form[data-density="expanded"] div + fieldset {
+  margin-top: 1.25rem;
+}
+form[data-density="expanded"] input[type="text"],
+form[data-density="expanded"] input[type="date"],
+form[data-density="expanded"] input[type="time"],
+form[data-density="expanded"] input[type="number"],
+form[data-density="expanded"] textarea,
+form[data-density="expanded"] select {
+  padding-top: 0.625rem;
+  padding-bottom: 0.625rem;
 }
