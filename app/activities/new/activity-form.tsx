@@ -67,11 +67,13 @@ export function ActivityForm({
   density?: AddActivityDensity;
 }) {
   // Density preset drives the top-level flex-col gap. Individual sections
-  // aren't rewritten one-by-one — the container gap is the dominant lever
-  // for "how spread out is the form?" and captures 80% of the visual
-  // effect for zero per-section refactor. `sectionMt` on the sticky
-  // action bar tightens the space above it in Compact.
+  // ALSO branch on `isCompact` below — dropping headers, hiding Priority,
+  // collapsing the Rhythm picker into inline chips, using the Tag
+  // picker's compact mode, etc. — because the CSS-only pass only
+  // tightened spacing, not structure. Compact is the "strip everything
+  // non-essential" mode per user spec.
   const preset = DENSITY_PRESETS[density];
+  const isCompact = density === "compact";
   const [state, formAction, isPending] = useActionState<
     ActivityFormState,
     FormData
@@ -256,43 +258,72 @@ export function ActivityForm({
         value={trackOnGrid ? "true" : "false"}
       />
 
+      {/* Compact hides the Priority radios entirely; ship a
+          Medium-priority default so the server-side schema still gets
+          a valid value. PriorityRadio (default) uses `defaultChecked
+          value="2"` for the same result, so behavior is preserved. */}
+      {isCompact && (
+        <input type="hidden" name="priority" value="2" />
+      )}
+
       {/* --- 1. Activity (name) ---------------------------------------- */}
-      <FieldLabel label="Activity">
+      {isCompact ? (
         <input
           type="text"
           name="name"
           required
           maxLength={120}
-          placeholder="Morning run"
+          placeholder="Activity name"
           value={name}
           onChange={(e) => setName(e.target.value)}
           className={inputClasses}
         />
-      </FieldLabel>
+      ) : (
+        <FieldLabel label="Activity">
+          <input
+            type="text"
+            name="name"
+            required
+            maxLength={120}
+            placeholder="Morning run"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className={inputClasses}
+          />
+        </FieldLabel>
+      )}
 
       {/* --- 2. Notes -------------------------------------------------- */}
-      {/* Free-form text — links, sub-steps, "remember to bring X". The
-          textarea is purely for prose; the old "Notes and Tags" header
-          was misleading because it bundled this with the tag picker.
-          They're separate concerns and each gets its own section. */}
-      <fieldset className="flex flex-col gap-2">
-        <legend className="text-sm font-medium">Notes</legend>
+      {isCompact ? (
         <textarea
           name="notes"
           rows={2}
           maxLength={500}
-          placeholder="Notes, links, sub-steps…"
+          placeholder="Notes"
           className={`${inputClasses} resize-none`}
         />
-      </fieldset>
+      ) : (
+        <fieldset className="flex flex-col gap-2">
+          <legend className="text-sm font-medium">Notes</legend>
+          <textarea
+            name="notes"
+            rows={2}
+            maxLength={500}
+            placeholder="Notes, links, sub-steps…"
+            className={`${inputClasses} resize-none`}
+          />
+        </fieldset>
+      )}
 
       {/* --- 3. Tags --------------------------------------------------- */}
-      {/* TagPicker emits one hidden `<input name="tag">` per selected
-          tag; the server reads them with formData.getAll("tag"). */}
-      <fieldset className="flex flex-col gap-2">
-        <legend className="text-sm font-medium">Tags</legend>
-        <TagPicker initialTagMap={initialTagMap} />
-      </fieldset>
+      {isCompact ? (
+        <TagPicker initialTagMap={initialTagMap} compact />
+      ) : (
+        <fieldset className="flex flex-col gap-2">
+          <legend className="text-sm font-medium">Tags</legend>
+          <TagPicker initialTagMap={initialTagMap} />
+        </fieldset>
+      )}
 
       {/* --- 3. Rhythm ------------------------------------------------- */}
       {/* Hidden input mirrors React state for FormData. The visible
@@ -301,39 +332,76 @@ export function ActivityForm({
           wrapped radio gets tapped, so the conditional rhythm config wasn't
           appearing on phones. Buttons + state-driven highlight always work. */}
       <input type="hidden" name="rhythmType" value={rhythmKind} />
-      {/* Marked so Compact density can restructure this fieldset into a
-          2-column grid via globals.css — cuts the rhythm picker's height
-          nearly in half without threading a `density` prop into it. */}
-      <fieldset data-form-section="rhythm" className="flex flex-col gap-2">
-        <legend className="mb-1 text-sm font-medium">Rhythm</legend>
-        <RhythmRadio value="single" current={rhythmKind} onChange={setRhythmKind} label="Once" />
-        <RhythmRadio
-          value="selection"
-          current={rhythmKind}
-          onChange={setRhythmKind}
-          label="Unrhythmic Selection"
-          hint="Several one-offs, shared details"
-        />
-        <RhythmRadio value="daily" current={rhythmKind} onChange={setRhythmKind} label="Daily" />
-        <RhythmRadio
-          value="weekdays"
-          current={rhythmKind}
-          onChange={setRhythmKind}
-          label="Specific Days of the Week"
-        />
-        <RhythmRadio
-          value="interval"
-          current={rhythmKind}
-          onChange={setRhythmKind}
-          label="Every N Days"
-        />
-        <RhythmRadio
-          value="frequency"
-          current={rhythmKind}
-          onChange={setRhythmKind}
-          label="N times per period"
-        />
-      </fieldset>
+      {/* Compact: inline chip flow, buttons sized to text, no radio dot,
+          highlight-only selection. Default keeps the tall stacked radios
+          (also gets a CSS 2-col grid via globals.css). */}
+      {isCompact ? (
+        <div
+          data-form-section="rhythm"
+          className="flex flex-wrap gap-1"
+        >
+          {(
+            [
+              ["single", "Once"],
+              ["selection", "Pick Dates"],
+              ["daily", "Daily"],
+              ["weekdays", "Days per Week"],
+              ["interval", "Every N Days"],
+              ["frequency", "Target Count"],
+            ] as const
+          ).map(([value, label]) => {
+            const selected = rhythmKind === value;
+            return (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setRhythmKind(value)}
+                className={`touch-manipulation rounded-md border px-2 py-1 text-xs font-medium transition-colors ${
+                  selected
+                    ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                    : "border-zinc-300 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        /* Marked so Compact density can restructure this fieldset into a
+           2-column grid via globals.css when isCompact is false but the
+           CSS-only density path (Default → Expanded) still applies. */
+        <fieldset data-form-section="rhythm" className="flex flex-col gap-2">
+          <legend className="mb-1 text-sm font-medium">Rhythm</legend>
+          <RhythmRadio value="single" current={rhythmKind} onChange={setRhythmKind} label="Once" />
+          <RhythmRadio
+            value="selection"
+            current={rhythmKind}
+            onChange={setRhythmKind}
+            label="Pick Dates"
+            hint="Several one-offs, shared details"
+          />
+          <RhythmRadio value="daily" current={rhythmKind} onChange={setRhythmKind} label="Daily" />
+          <RhythmRadio
+            value="weekdays"
+            current={rhythmKind}
+            onChange={setRhythmKind}
+            label="Days per Week"
+          />
+          <RhythmRadio
+            value="interval"
+            current={rhythmKind}
+            onChange={setRhythmKind}
+            label="Every N Days"
+          />
+          <RhythmRadio
+            value="frequency"
+            current={rhythmKind}
+            onChange={setRhythmKind}
+            label="Target Count"
+          />
+        </fieldset>
+      )}
 
       {/* Conditional rhythm config */}
       {rhythmKind === "weekdays" && (
@@ -443,36 +511,60 @@ export function ActivityForm({
 
       {/* --- 4. Schedule ----------------------------------------------- */}
       <fieldset className="flex flex-col gap-3">
-        <legend className="mb-1 text-sm font-medium">Schedule</legend>
-        <div className="grid grid-cols-2 gap-3">
-          <FieldLabel label="Start date">
-            <input
-              type="date"
-              name="startDate"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className={inputClasses}
-            />
-          </FieldLabel>
-          <FieldLabel
-            label={
-              <>
-                End date{" "}
-                <span className="font-normal text-zinc-500">
-                  {isSingleLike ? "(n/a)" : "(optional)"}
-                </span>
-              </>
-            }
-          >
-            <input
-              type="date"
-              name="endDate"
-              value={isSingleLike ? "" : endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              disabled={isSingleLike}
-              className={inputClasses}
-            />
-          </FieldLabel>
+        {!isCompact && (
+          <legend className="mb-1 text-sm font-medium">Schedule</legend>
+        )}
+        <div className={`grid grid-cols-2 ${isCompact ? "gap-2" : "gap-3"}`}>
+          {isCompact ? (
+            <>
+              <input
+                type="date"
+                name="startDate"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className={inputClasses}
+              />
+              <input
+                type="date"
+                name="endDate"
+                value={isSingleLike ? "" : endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                disabled={isSingleLike}
+                className={inputClasses}
+              />
+            </>
+          ) : (
+            <>
+              <FieldLabel label="Start date">
+                <input
+                  type="date"
+                  name="startDate"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className={inputClasses}
+                />
+              </FieldLabel>
+              <FieldLabel
+                label={
+                  <>
+                    End date{" "}
+                    <span className="font-normal text-zinc-500">
+                      {isSingleLike ? "(n/a)" : "(optional)"}
+                    </span>
+                  </>
+                }
+              >
+                <input
+                  type="date"
+                  name="endDate"
+                  value={isSingleLike ? "" : endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  disabled={isSingleLike}
+                  className={inputClasses}
+                />
+              </FieldLabel>
+            </>
+          )}
         </div>
 
         {/* Selection mode: list of extra dates, each producing its own
@@ -580,8 +672,14 @@ export function ActivityForm({
         )}
       </fieldset>
 
-      {/* --- 5. Priority (only for Once / Selection) ------------------- */}
-      {isSingleLike && (
+      {/* --- 5. Priority (only for Once / Selection; hidden in Compact) - */}
+      {/* Compact strips Priority entirely per the "just show + Add
+          reminder" / "hide headers" spec. A hidden default (Medium =
+          "2") still submits because the underlying <PriorityRadio>
+          radios were `defaultChecked` on Medium; on Compact submit,
+          FormData.get("priority") returns "2" as a fallback via the
+          Zod default in the server action. */}
+      {!isCompact && isSingleLike && (
         <fieldset className="flex flex-col gap-2">
           <legend className="mb-1 text-sm font-medium">Priority</legend>
           <div className="flex gap-2">
@@ -593,36 +691,69 @@ export function ActivityForm({
       )}
 
       {/* --- 6. Reminders ---------------------------------------------- */}
-      <RemindersField reminders={reminders} setReminders={setReminders} />
+      <RemindersField
+        reminders={reminders}
+        setReminders={setReminders}
+        compact={isCompact}
+      />
 
       {/* --- 7. Show on Grid (moved to bottom per user request) ------- */}
-      <fieldset className="flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
-        <legend className="px-1 text-sm font-medium">Grid</legend>
-        <div className="flex gap-2">
+      {/* Compact: drop the "Grid" legend + fieldset border, keep just
+          two tight toggle buttons on one row. */}
+      {isCompact ? (
+        <div className="flex gap-1">
           <button
             type="button"
             onClick={() => setTrackOnGrid(false)}
-            className={`flex-1 touch-manipulation rounded-md border px-3 py-2 text-center text-sm font-medium transition-colors ${
+            className={`flex-1 touch-manipulation rounded-md border px-2 py-1 text-center text-xs font-medium transition-colors ${
               !trackOnGrid
                 ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
                 : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
             }`}
           >
-            Don&rsquo;t show on grid
+            Off Grid
           </button>
           <button
             type="button"
             onClick={() => setTrackOnGrid(true)}
-            className={`flex-1 touch-manipulation rounded-md border px-3 py-2 text-center text-sm font-medium transition-colors ${
+            className={`flex-1 touch-manipulation rounded-md border px-2 py-1 text-center text-xs font-medium transition-colors ${
               trackOnGrid
                 ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
                 : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
             }`}
           >
-            Show on Grid
+            On Grid
           </button>
         </div>
-      </fieldset>
+      ) : (
+        <fieldset className="flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+          <legend className="px-1 text-sm font-medium">Grid</legend>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setTrackOnGrid(false)}
+              className={`flex-1 touch-manipulation rounded-md border px-3 py-2 text-center text-sm font-medium transition-colors ${
+                !trackOnGrid
+                  ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                  : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+              }`}
+            >
+              Don&rsquo;t show on grid
+            </button>
+            <button
+              type="button"
+              onClick={() => setTrackOnGrid(true)}
+              className={`flex-1 touch-manipulation rounded-md border px-3 py-2 text-center text-sm font-medium transition-colors ${
+                trackOnGrid
+                  ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                  : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+              }`}
+            >
+              Show on Grid
+            </button>
+          </div>
+        </fieldset>
+      )}
 
       {/* --- 8. Rollover on missed ------------------------------------ */}
       {/* Shown for EVERY rhythm now — singles get a single "Rollover
@@ -640,6 +771,30 @@ export function ActivityForm({
         name="rolloverChangeRhythm"
         value={rolloverChangeRhythm ? "true" : "false"}
       />
+      {isCompact ? (
+        <div className="flex flex-wrap items-center gap-3 text-xs">
+          <label className="flex cursor-pointer items-center gap-1.5">
+            <input
+              type="checkbox"
+              checked={rolloverMissedDays}
+              onChange={(e) => setRolloverMissedDays(e.target.checked)}
+              className="h-4 w-4 accent-zinc-900 dark:accent-zinc-50"
+            />
+            Rollover missed
+          </label>
+          {!isSingleLike && (
+            <label className="flex cursor-pointer items-center gap-1.5">
+              <input
+                type="checkbox"
+                checked={rolloverChangeRhythm}
+                onChange={(e) => setRolloverChangeRhythm(e.target.checked)}
+                className="h-4 w-4 accent-zinc-900 dark:accent-zinc-50"
+              />
+              Change rhythm
+            </label>
+          )}
+        </div>
+      ) : (
       <fieldset className="flex flex-col gap-3 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
         <legend className="px-1 text-sm font-medium">On missed</legend>
         <p className="text-xs text-zinc-500">
@@ -684,8 +839,13 @@ export function ActivityForm({
           />
         )}
       </fieldset>
+      )}
 
       {/* --- Calendar preview ------------------------------------------ */}
+      {/* Compact hides the preview: the whole point of Compact is min
+          scrolling, and the 5-week grid is the single biggest vertical
+          consumer. Default + Expanded show it. */}
+      {!isCompact && (
       <CalendarPreview
         rhythm={previewRhythm}
         startDate={startDate}
@@ -697,6 +857,7 @@ export function ActivityForm({
         // surfaced as a "+ N more" notice instead.
         extraDates={isSelection ? extraStartDates : undefined}
       />
+      )}
 
       {/* Error */}
       {state && "error" in state && (

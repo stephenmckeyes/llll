@@ -27,6 +27,7 @@ import {
   ActivityFormFields,
   type ActivityFormInitial,
 } from "@/app/_components/activity-form-fields";
+import { type AddActivityDensity } from "@/lib/domain/add-activity-density";
 import {
   createActivity,
   unarchiveActivityWithEdit,
@@ -40,11 +41,13 @@ export function UnarchiveModal({
   activity,
   tagMap,
   onClose,
+  density = "default",
 }: {
   /** All fields ActivityFormFields needs, plus the row id for the
    *  unarchive path. */
   activity: ActivityFormInitial & { id: string };
   tagMap: TagMap;
+  density?: AddActivityDensity;
   onClose: () => void;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
@@ -168,6 +171,7 @@ export function UnarchiveModal({
               initialValues={activity}
               blankStartDate
               tagMap={tagMap}
+              density={density}
             />
 
             {error && (

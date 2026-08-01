@@ -317,6 +317,7 @@ export function ActivityDetailModal({
         <UnarchiveModal
           activity={activity}
           tagMap={tagMap}
+          density={density}
           onClose={() => {
             setUnarchiveOpen(false);
             // The unarchive action revalidates /activities; close the

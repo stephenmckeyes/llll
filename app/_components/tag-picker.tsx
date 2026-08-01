@@ -43,12 +43,20 @@ const QUICK_LIMIT = 5;
 export function TagPicker({
   initialSelected = [],
   initialTagMap,
+  compact = false,
 }: {
   initialSelected?: string[];
   /** Existing user tags, keyed by name. The picker rebuilds this
    *  locally as the user creates new tags so newly-added ones become
    *  selectable immediately without a page refresh. */
   initialTagMap: TagMap;
+  /** Add-Activity compact mode (migration 0023). Collapses the whole
+   *  picker to one row — a native <select> for adding an existing
+   *  tag + inline "+ New tag" button. Selected tags render as a tiny
+   *  chip row below (keeps removal possible without opening the
+   *  standard view). All the frequency / all-tags / search UI is
+   *  omitted. */
+  compact?: boolean;
 }) {
   const [selected, setSelected] = useState<string[]>(initialSelected);
   // Local mirror of the tag map. Starts from the server-rendered prop
@@ -124,6 +132,26 @@ export function TagPicker({
       setNewColor("emerald");
       setCreating(false);
     });
+  }
+
+  if (compact) {
+    return (
+      <CompactTagRow
+        selected={selected}
+        tagMap={tagMap}
+        allTags={allTags}
+        creating={creating}
+        setCreating={setCreating}
+        newName={newName}
+        setNewName={setNewName}
+        newColor={newColor}
+        setNewColor={setNewColor}
+        error={error}
+        isPending={isPending}
+        onToggleTag={toggleTag}
+        onCreate={handleCreate}
+      />
+    );
   }
 
   return (
@@ -355,6 +383,170 @@ export function TagPicker({
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// CompactTagRow — the whole picker collapsed to one line: a native <select>
+// to add an existing tag + inline "+ New tag" button. Chosen tags appear
+// as a small chip row below (needed so removing a tag doesn't require
+// switching density). The + New tag button opens an inline mini-editor
+// (name only; color defaults to the currently-picked color to save a
+// tap — user can pick a different one if the "Create a new tag" section
+// is what they want).
+// ---------------------------------------------------------------------------
+
+function CompactTagRow({
+  selected,
+  tagMap,
+  allTags,
+  creating,
+  setCreating,
+  newName,
+  setNewName,
+  newColor,
+  setNewColor,
+  error,
+  isPending,
+  onToggleTag,
+  onCreate,
+}: {
+  selected: string[];
+  tagMap: TagMap;
+  allTags: TagInfo[];
+  creating: boolean;
+  setCreating: (v: boolean) => void;
+  newName: string;
+  setNewName: (v: string) => void;
+  newColor: TagColor;
+  setNewColor: (v: TagColor) => void;
+  error: string | null;
+  isPending: boolean;
+  onToggleTag: (name: string) => void;
+  onCreate: () => void;
+}) {
+  const options = allTags.filter((t) => !selected.includes(t.name));
+
+  function handleSelectChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const v = e.target.value;
+    if (!v) return;
+    onToggleTag(v);
+    // Reset the select back to the placeholder so the same tag can be
+    // re-picked later if the user removes it.
+    e.currentTarget.value = "";
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      {/* Hidden inputs so the form still submits the selected tags. */}
+      {selected.map((name) => (
+        <input key={name} type="hidden" name="tag" value={name} />
+      ))}
+
+      <div className="flex flex-wrap items-center gap-1">
+        <select
+          onChange={handleSelectChange}
+          defaultValue=""
+          className="min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+        >
+          <option value="">
+            {options.length === 0 ? "No unused tags" : "Add tag…"}
+          </option>
+          {options.map((t) => (
+            <option key={t.name} value={t.name}>
+              {t.name}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={() => setCreating(!creating)}
+          className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+        >
+          + New tag
+        </button>
+      </div>
+
+      {/* Selected tags — tiny inline chip row. Clicking removes.
+          Necessary because the compact picker has no other way to
+          drop a tag once it's added. */}
+      {selected.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {selected.map((name) => {
+            const color = tagColorFor(name, tagMap);
+            return (
+              <button
+                key={name}
+                type="button"
+                onClick={() => onToggleTag(name)}
+                title="Click to remove"
+                className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${tagChipClasses(
+                  color
+                )}`}
+              >
+                {name}
+                <span aria-hidden className="opacity-70">
+                  ✕
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Inline create — expands as a small row when + New tag is
+          tapped. Uses the same createTag path as the default picker;
+          just a name input + one-tap Add button. Color defaults to
+          the last-picked value from the parent picker state (emerald
+          on first mount). */}
+      {creating && (
+        <div className="mt-1 flex flex-col gap-1 rounded-md border border-dashed border-zinc-300 p-1.5 dark:border-zinc-700">
+          <div className="flex items-center gap-1">
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="New tag name"
+              maxLength={40}
+              className="min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+            />
+            <button
+              type="button"
+              onClick={onCreate}
+              disabled={isPending}
+              className="rounded-md bg-zinc-900 px-2 py-1 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
+            >
+              {isPending ? "…" : "Add"}
+            </button>
+          </div>
+          {/* Color picker collapsed to a single row of small swatches;
+              current color is ringed. */}
+          <div className="flex flex-wrap gap-1">
+            {TAG_COLORS.map((c) => {
+              const isSel = c === newColor;
+              return (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setNewColor(c)}
+                  aria-label={c}
+                  className={`h-4 w-4 rounded-full ${tagSwatchClasses(c)} ${
+                    isSel
+                      ? "ring-2 ring-zinc-900 ring-offset-1 dark:ring-zinc-50 dark:ring-offset-zinc-950"
+                      : ""
+                  }`}
+                />
+              );
+            })}
+          </div>
+          {error && (
+            <p className="text-[10px] text-red-600 dark:text-red-400">
+              {error}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

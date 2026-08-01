@@ -15,11 +15,16 @@ export function RemindersField({
   setReminders,
   legendClassName,
   helperClassName,
+  compact = false,
 }: {
   reminders: Reminder[];
   setReminders: (next: Reminder[]) => void;
   legendClassName?: string;
   helperClassName?: string;
+  /** Add-Activity compact mode (migration 0023). Drops the "Reminders"
+   *  legend + empty-state "None." helper; only the existing rows and
+   *  the "+ Add reminder" button render. */
+  compact?: boolean;
 }) {
   function update(i: number, patch: Partial<Reminder>) {
     setReminders(
@@ -37,14 +42,18 @@ export function RemindersField({
   }
 
   return (
-    <fieldset className="flex flex-col gap-2">
-      <legend className={legendClassName ?? "text-sm font-medium"}>
-        Reminders
-      </legend>
+    <fieldset className={`flex flex-col ${compact ? "gap-1" : "gap-2"}`}>
+      {!compact && (
+        <legend className={legendClassName ?? "text-sm font-medium"}>
+          Reminders
+        </legend>
+      )}
       {reminders.length === 0 ? (
-        <p className={helperClassName ?? "text-xs text-zinc-500"}>
-          None. Click below to add one.
-        </p>
+        !compact && (
+          <p className={helperClassName ?? "text-xs text-zinc-500"}>
+            None. Click below to add one.
+          </p>
+        )
       ) : (
         <ul className="flex flex-col gap-2">
           {reminders.map((r, i) => (

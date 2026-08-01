@@ -675,7 +675,11 @@ export function EditRhythmBody({
       className="flex flex-1 flex-col overflow-hidden"
     >
       <div className="flex-1 overflow-y-auto px-5 py-4">
-        <ActivityFormFields initialValues={activity} tagMap={tagMap} />
+        <ActivityFormFields
+          initialValues={activity}
+          tagMap={tagMap}
+          density={density}
+        />
 
         <p className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950 dark:text-amber-300">
           Saving these edits will change this activity and all future

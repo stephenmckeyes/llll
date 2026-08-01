@@ -141,6 +141,7 @@ export function NewActivityModal({
             <ActivityFormFields
               initialValues={blankActivity(startDate)}
               tagMap={tagMap}
+              density={density}
             />
 
             {error && (
