@@ -572,11 +572,13 @@ export function ActivityForm({
             values; the server splits them in createActivity. */}
         {isSelection && (
           <ConfigBox column>
-            <p className="text-xs text-zinc-500">
-              Each additional date becomes a separate one-time activity
-              sharing the name, notes, tags, time, priority, and reminders
-              above.
-            </p>
+            {!isCompact && (
+              <p className="text-xs text-zinc-500">
+                Each additional date becomes a separate one-time activity
+                sharing the name, notes, tags, time, priority, and reminders
+                above.
+              </p>
+            )}
             {extraStartDates.length > 0 && (
               <ul className="flex flex-col gap-2">
                 {extraStartDates.map((d, i) => (
@@ -631,7 +633,7 @@ export function ActivityForm({
             </>
           }
         >
-          {scheduledTimes.length === 0 && (
+          {!isCompact && scheduledTimes.length === 0 && (
             <p className="text-xs text-zinc-500">
               No set time — this sorts to the end of the day.
             </p>
@@ -842,10 +844,10 @@ export function ActivityForm({
       )}
 
       {/* --- Calendar preview ------------------------------------------ */}
-      {/* Compact hides the preview: the whole point of Compact is min
-          scrolling, and the 5-week grid is the single biggest vertical
-          consumer. Default + Expanded show it. */}
-      {!isCompact && (
+      {/* Kept visible in every density. Compact CSS in globals.css
+          (see form[data-density=compact] [data-form-section=
+          calendar-preview]) shrinks the cells + padding so it doesn't
+          dominate. */}
       <CalendarPreview
         rhythm={previewRhythm}
         startDate={startDate}
@@ -857,7 +859,6 @@ export function ActivityForm({
         // surfaced as a "+ N more" notice instead.
         extraDates={isSelection ? extraStartDates : undefined}
       />
-      )}
 
       {/* Error */}
       {state && "error" in state && (
