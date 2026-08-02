@@ -13,7 +13,9 @@ import {
   isAddActivityDensity,
   type AddActivityDensity,
 } from "@/lib/domain/add-activity-density";
+import { isTimeFormat, type TimeFormat } from "@/lib/ui/format-time";
 import { AddActivityDensityPicker } from "./add-activity-density-picker";
+import { TimeFormatPicker } from "./time-format-picker";
 import { ThemeToggle } from "../theme-toggle";
 
 export default async function AppearanceSettingsPage() {
@@ -21,7 +23,7 @@ export default async function AppearanceSettingsPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("add_activity_density")
+    .select("add_activity_density, time_format")
     .eq("id", user.id)
     .maybeSingle();
   const rawDensity =
@@ -30,6 +32,11 @@ export default async function AppearanceSettingsPage() {
   const initialDensity: AddActivityDensity = isAddActivityDensity(rawDensity)
     ? rawDensity
     : "default";
+  const rawFormat =
+    (profile as { time_format?: string } | null)?.time_format ?? "auto";
+  const initialFormat: TimeFormat = isTimeFormat(rawFormat)
+    ? rawFormat
+    : "auto";
 
   return (
     <SettingsShell title="Appearance">
@@ -46,6 +53,17 @@ export default async function AppearanceSettingsPage() {
         at high brightness, since black pixels are switched off. On LCD
         screens it makes no meaningful difference.
       </p>
+
+      <hr className="my-2 border-zinc-200 dark:border-zinc-800" />
+
+      <div className="flex flex-col gap-2">
+        <h2 className="text-sm font-medium">Time format</h2>
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          Controls how scheduled times render everywhere — day list,
+          activity modal, week/month banners.
+        </p>
+        <TimeFormatPicker initialFormat={initialFormat} />
+      </div>
 
       <hr className="my-2 border-zinc-200 dark:border-zinc-800" />
 

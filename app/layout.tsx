@@ -61,6 +61,13 @@ const themeScript = `
     var dark = saved === "dark" || saved === "sleep" || (saved === "system" && prefersDark);
     root.classList.toggle("dark", dark);
     root.classList.toggle("sleep", saved === "sleep");
+    // Seed the time-format localStorage key with 'auto' on first
+    // paint so components that call useTimeFormat before hydration
+    // (SSR mismatch prevention) read a stable value. The Settings
+    // picker overrides this once the user picks 12h / 24h.
+    if (!localStorage.getItem("mission-time-format")) {
+      localStorage.setItem("mission-time-format", "auto");
+    }
   } catch (e) {}
 })();
 `;

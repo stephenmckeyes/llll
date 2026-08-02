@@ -5,6 +5,7 @@
 // short label like "Daily · 7:00 AM" or "Every Mon, Wed, Fri · from May 12".
 // ---------------------------------------------------------------------------
 
+import { formatTime, type TimeFormat } from "@/lib/ui/format-time";
 import {
   normalizeFrequencyPeriod,
   type Rhythm,
@@ -132,11 +133,15 @@ function baseCategoryLabel(rhythm: Rhythm): string {
 
 /**
  * Format scheduled times for display: "8:00 AM, 12:00 PM, 6:00 PM".
- * Uses browser locale. Returns "" for no times.
+ * `format` follows the profile's time_format preference; omit for
+ * server-safe browser-locale default (== 'auto').
  */
-export function summarizeScheduledTimes(times: string[]): string {
+export function summarizeScheduledTimes(
+  times: string[],
+  format: TimeFormat = "auto"
+): string {
   if (times.length === 0) return "";
-  return times.map(formatTime).join(", ");
+  return times.map((t) => formatTime(t, format)).join(", ");
 }
 
 // ---------------------------------------------------------------------------
@@ -149,16 +154,5 @@ function shortDate(yyyyMmDd: string): string {
     day: "numeric",
     year: "numeric",
     timeZone: "UTC",
-  });
-}
-
-function formatTime(hhmm: string): string {
-  const [h, m] = hhmm.split(":").map(Number);
-  if (!Number.isFinite(h) || !Number.isFinite(m)) return hhmm;
-  const d = new Date();
-  d.setHours(h, m, 0, 0);
-  return d.toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
   });
 }

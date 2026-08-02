@@ -20,6 +20,8 @@ import {
 } from "@/app/actions/activities";
 import { rhythmCategoryLabel } from "@/lib/domain/rhythm-summary";
 import type { TagMap } from "@/lib/domain/tags";
+import { formatTime } from "@/lib/ui/format-time";
+import { useTimeFormat } from "@/lib/ui/format-time-client";
 import { dispatchInstanceResolved } from "@/lib/ui/instance-resolved-event";
 
 import { CommentModal } from "./comment-modal";
@@ -91,6 +93,7 @@ export function InstanceRow({
   const [, startTransition] = useTransition();
   const router = useRouter();
   const [commentOpen, setCommentOpen] = useState(false);
+  const timeFormat = useTimeFormat();
   const activity = instance.activity;
   const isFrequency = activity.rhythm.type === "frequency";
   const scheduledTimes = activity.scheduled_times ?? [];
@@ -293,7 +296,9 @@ export function InstanceRow({
           )}
           {activity.scheduled_times.length > 0 && (
             <p className="mt-0.5 truncate text-xs text-zinc-600 dark:text-zinc-400">
-              {activity.scheduled_times.map(formatTime).join(" · ")}
+              {activity.scheduled_times
+                .map((t) => formatTime(t, timeFormat))
+                .join(" · ")}
             </p>
           )}
           {instance.tags.length > 0 && (
@@ -453,17 +458,6 @@ function readOnlyStatus(
     label: "Pending",
     cls: "bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400",
   };
-}
-
-function formatTime(hhmm: string): string {
-  const [h, m] = hhmm.split(":").map(Number);
-  if (!Number.isFinite(h) || !Number.isFinite(m)) return hhmm;
-  const d = new Date();
-  d.setHours(h, m, 0, 0);
-  return d.toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  });
 }
 
 function daysBetween(fromYmd: string, toYmd: string): number {

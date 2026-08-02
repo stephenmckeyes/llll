@@ -99,6 +99,9 @@ export const profiles = pgTable("profiles", {
   // 'default' for anything unrecognized, no CHECK constraint so we
   // can add more modes later without a migration.
   addActivityDensity: text("add_activity_density").notNull().default("default"),
+  // Time-format preference (migration 0024). One of 'auto' | '12h' |
+  // '24h'; 'auto' delegates to the browser locale (existing behavior).
+  timeFormat: text("time_format").notNull().default("auto"),
 });
 
 // ===========================================================================

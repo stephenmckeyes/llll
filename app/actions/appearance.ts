@@ -15,6 +15,7 @@ import {
   type AddActivityDensity,
 } from "@/lib/domain/add-activity-density";
 import { createClient } from "@/lib/supabase/server";
+import { isTimeFormat, type TimeFormat } from "@/lib/ui/format-time";
 
 export async function updateAddActivityDensity(
   density: AddActivityDensity
@@ -38,5 +39,30 @@ export async function updateAddActivityDensity(
   // reflects the new preference immediately.
   revalidatePath("/settings/appearance");
   revalidatePath("/activities/new");
+  return { ok: true };
+}
+
+export async function updateTimeFormat(
+  format: TimeFormat
+): Promise<{ error: string } | { ok: true }> {
+  if (!isTimeFormat(format)) return { error: "Invalid time format." };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({ time_format: format })
+    .eq("id", user.id);
+  if (error) return { error: error.message };
+
+  // Every route that shows a scheduled time reads this eventually; the
+  // client hook (`useTimeFormat`) mirrors it to localStorage so mounted
+  // consumers pick up the change without a page reload. Revalidate the
+  // settings page for the next SSR render.
+  revalidatePath("/settings/appearance");
   return { ok: true };
 }
