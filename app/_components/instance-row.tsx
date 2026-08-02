@@ -23,6 +23,9 @@ import type { TagMap } from "@/lib/domain/tags";
 import { formatTime } from "@/lib/ui/format-time";
 import { useTimeFormat } from "@/lib/ui/format-time-client";
 import { dispatchInstanceResolved } from "@/lib/ui/instance-resolved-event";
+import { normalizeReminder } from "@/lib/validators/reminder";
+
+import { formatReminder } from "./reminders-field";
 
 import { CommentModal } from "./comment-modal";
 import type { DayInstance } from "./day-list";
@@ -298,6 +301,20 @@ export function InstanceRow({
             <p className="mt-0.5 truncate text-xs text-zinc-600 dark:text-zinc-400">
               {activity.scheduled_times
                 .map((t) => formatTime(t, timeFormat))
+                .join(" · ")}
+            </p>
+          )}
+          {/* Reminders row — shows what reminders are CONFIGURED on
+              the parent activity (this instance will fire them once
+              the delivery pipeline ships in a follow-up). Amber tone
+              distinguishes it from the neutral schedule/times/notes
+              lines above so a glance conveys "notifications will
+              trigger". */}
+          {activity.reminders.length > 0 && (
+            <p className="mt-0.5 truncate text-xs text-amber-700 dark:text-amber-300">
+              Reminds{" "}
+              {activity.reminders
+                .map((r) => formatReminder(normalizeReminder(r)))
                 .join(" · ")}
             </p>
           )}
