@@ -15,6 +15,7 @@ import {
 } from "@/lib/domain/add-activity-density";
 import { isTimeFormat, type TimeFormat } from "@/lib/ui/format-time";
 import { AddActivityDensityPicker } from "./add-activity-density-picker";
+import { CalendarSync } from "./calendar-sync";
 import { TimeFormatPicker } from "./time-format-picker";
 import { ThemeToggle } from "../theme-toggle";
 
@@ -23,7 +24,7 @@ export default async function AppearanceSettingsPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("add_activity_density, time_format")
+    .select("add_activity_density, time_format, ics_token")
     .eq("id", user.id)
     .maybeSingle();
   const rawDensity =
@@ -37,6 +38,8 @@ export default async function AppearanceSettingsPage() {
   const initialFormat: TimeFormat = isTimeFormat(rawFormat)
     ? rawFormat
     : "auto";
+  const initialIcsToken =
+    (profile as { ics_token?: string | null } | null)?.ics_token ?? null;
 
   return (
     <SettingsShell title="Appearance">
@@ -63,6 +66,13 @@ export default async function AppearanceSettingsPage() {
           activity modal, week/month banners.
         </p>
         <TimeFormatPicker initialFormat={initialFormat} />
+      </div>
+
+      <hr className="my-2 border-zinc-200 dark:border-zinc-800" />
+
+      <div className="flex flex-col gap-2">
+        <h2 className="text-sm font-medium">Calendar sync</h2>
+        <CalendarSync initialToken={initialIcsToken} />
       </div>
 
       <hr className="my-2 border-zinc-200 dark:border-zinc-800" />

@@ -102,6 +102,10 @@ export const profiles = pgTable("profiles", {
   // Time-format preference (migration 0024). One of 'auto' | '12h' |
   // '24h'; 'auto' delegates to the browser locale (existing behavior).
   timeFormat: text("time_format").notNull().default("auto"),
+  // Per-profile read-only calendar-export token (migration 0025).
+  // NULL until the user enables sync in Settings. Rotating it
+  // invalidates every subscribed calendar app.
+  icsToken: text("ics_token"),
 });
 
 // ===========================================================================
