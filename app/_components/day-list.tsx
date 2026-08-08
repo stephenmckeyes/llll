@@ -97,6 +97,8 @@ export type DayInstance = {
      *  with ActivityFormInitial. Both default false. */
     rollover_missed_days: boolean;
     rollover_change_rhythm: boolean;
+    /** Auto-archive on completion (migration 0026). */
+    auto_archive: boolean;
   };
 };
 

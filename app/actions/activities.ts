@@ -70,6 +70,10 @@ export async function createActivity(
     String(formData.get("rolloverMissedDays")) === "true";
   const rolloverChangeRhythm =
     String(formData.get("rolloverChangeRhythm")) === "true";
+  // Auto-archive on completion (migration 0026). Default false when
+  // the form input is absent so older callers stay unchanged; the
+  // create-activity forms explicitly send "true" for new singles.
+  const autoArchive = String(formData.get("autoArchive")) === "true";
 
   // ---- 2. Reconstruct + validate the rhythm -------------------------------
 
@@ -233,6 +237,7 @@ export async function createActivity(
         // stored on the row so they apply to every future miss.
         rollover_missed_days: rolloverMissedDays,
         rollover_change_rhythm: rolloverChangeRhythm,
+        auto_archive: autoArchive,
       })
       .select("id")
       .single();
@@ -365,6 +370,7 @@ export async function createDraftActivity(
       String(formData.get("rolloverMissedDays")) === "true",
     rollover_change_rhythm:
       String(formData.get("rolloverChangeRhythm")) === "true",
+    auto_archive: String(formData.get("autoArchive")) === "true",
     // The whole point: parked in the archive, generating no instances.
     archived_at: new Date().toISOString(),
   });
@@ -497,6 +503,15 @@ export async function completeInstance(instanceId: string) {
   if (!user) redirect("/login");
 
   await logCompletion(supabase, user.id, { instanceIds: [instanceId] });
+
+  // Auto-archive on completion (migration 0026). For rhythm=single
+  // activities flagged auto_archive=true, the parent activity is now
+  // done and should move to Total View → Past so it stops cluttering
+  // Active. We look up the activity via the instance we just
+  // completed — one extra round-trip, only fires when the instance
+  // belongs to a single with the flag set, no-op otherwise.
+  await maybeAutoArchive(supabase, instanceId);
+
   // PERF: this action ONLY persists — it does NOT revalidatePath. The
   // day view hides the completed row optimistically (instant, no
   // main-thread-blocking re-render), and other surfaces (grid / week /
@@ -507,6 +522,36 @@ export async function completeInstance(instanceId: string) {
   // routes always re-fetch on navigation, so nothing goes stale beyond
   // the current render. (Also no invalidateBackfillCache — completing
   // doesn't change future instance generation.)
+}
+
+// ---------------------------------------------------------------------------
+// maybeAutoArchive — set activities.archived_at = now() when the parent
+// of the given instance is a single-rhythm activity with auto_archive
+// = true. Called from completeInstance + missInstance (in the "finalise
+// as missed" branch). No-op for anything else — recurring activities
+// don't have a natural "done" moment.
+// ---------------------------------------------------------------------------
+
+async function maybeAutoArchive(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  instanceId: string
+) {
+  const { data: row } = await supabase
+    .from("activity_instances")
+    .select("activities ( id, rhythm, auto_archive, archived_at )")
+    .eq("id", instanceId)
+    .maybeSingle();
+
+  const activity = (row as { activities: { id: string; rhythm: Rhythm; auto_archive: boolean; archived_at: string | null } | null } | null)?.activities;
+  if (!activity) return;
+  if (activity.archived_at) return; // already archived
+  if (!activity.auto_archive) return;
+  if (activity.rhythm.type !== "single") return;
+
+  await supabase
+    .from("activities")
+    .update({ archived_at: new Date().toISOString() })
+    .eq("id", activity.id);
 }
 
 // ---------------------------------------------------------------------------
@@ -657,6 +702,7 @@ export async function updateActivityRhythm(
         String(formData.get("rolloverMissedDays")) === "true",
       rollover_change_rhythm:
         String(formData.get("rolloverChangeRhythm")) === "true",
+      auto_archive: String(formData.get("autoArchive")) === "true",
     })
     .eq("id", activityId);
   if (uerr) return { error: uerr.message };
@@ -1266,7 +1312,7 @@ export async function missInstance(
   const { data: instRow } = await supabase
     .from("activity_instances")
     .select(
-      "id, scheduled_for, activities ( id, rhythm, start_date, end_date, rollover_missed_days, rollover_change_rhythm )"
+      "id, scheduled_for, activities ( id, rhythm, start_date, end_date, rollover_missed_days, rollover_change_rhythm, auto_archive )"
     )
     .eq("id", instanceId)
     .maybeSingle();
@@ -1278,6 +1324,7 @@ export async function missInstance(
     end_date: string | null;
     rollover_missed_days: boolean;
     rollover_change_rhythm: boolean;
+    auto_archive: boolean;
   };
   type Row = {
     id: string;
@@ -1309,6 +1356,13 @@ export async function missInstance(
         .from("activity_instances")
         .update({ status: "missed" })
         .eq("id", instanceId);
+      // Finalising a single as missed counts as "done" for auto-archive.
+      if (activity.auto_archive) {
+        await supabase
+          .from("activities")
+          .update({ archived_at: new Date().toISOString() })
+          .eq("id", activity.id);
+      }
       return { rescheduled: false };
     }
 
@@ -1327,6 +1381,12 @@ export async function missInstance(
         .from("activity_instances")
         .update({ status: "missed" })
         .eq("id", instanceId);
+      if (activity.auto_archive) {
+        await supabase
+          .from("activities")
+          .update({ archived_at: new Date().toISOString() })
+          .eq("id", activity.id);
+      }
       return { rescheduled: false };
     }
 

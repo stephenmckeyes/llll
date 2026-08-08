@@ -27,7 +27,12 @@ import { type AddActivityDensity } from "@/lib/domain/add-activity-density";
 import { ActivityDetailModal, type ActivityRow } from "./activity-detail-modal";
 
 type GroupBy = "status" | "tag" | "rhythm";
-type StatusFilter = "all" | "active" | "archived";
+// Total View is now split into three buckets so completed one-off
+// tasks don't clutter the "Active" list:
+//   - active   : archived_at IS NULL (day-to-day working set)
+//   - past     : auto-archived on completion (self-cleanup singles)
+//   - archived : manually archived / soft-deleted by the user
+type StatusFilter = "all" | "active" | "past" | "archived";
 
 type Group = { key: string; label: string; items: ActivityRow[] };
 
@@ -35,12 +40,18 @@ export function TotalView({
   activities,
   tagMap,
   density = "default",
+  completedByActivityId = {},
 }: {
   activities: ActivityRow[];
   tagMap: TagMap;
   /** Add Activity form-density preference, forwarded to
    *  ActivityDetailModal so Edit Rhythm shares the setting. */
   density?: AddActivityDensity;
+  /** activityId → ISO timestamp of the LATEST completion for that
+   *  activity. Only populated for auto-archived rows (see
+   *  /activities/page.tsx). Used by the Past-filter cards to render
+   *  "Scheduled X · Completed Y". */
+  completedByActivityId?: Record<string, string>;
 }) {
   // Defaults: grouped by Tag, showing Active only (per user request) — the
   // most useful "what am I actively working on, organized by area" view.
@@ -51,8 +62,14 @@ export function TotalView({
   const filtered = useMemo(() => {
     if (statusFilter === "active")
       return activities.filter((a) => a.archived_at === null);
+    if (statusFilter === "past")
+      return activities.filter(
+        (a) => a.archived_at !== null && a.auto_archive
+      );
     if (statusFilter === "archived")
-      return activities.filter((a) => a.archived_at !== null);
+      return activities.filter(
+        (a) => a.archived_at !== null && !a.auto_archive
+      );
     return activities;
   }, [activities, statusFilter]);
 
@@ -82,9 +99,10 @@ export function TotalView({
         <ControlRow label="Show">
           <Segmented
             options={[
-              ["all", "All"],
               ["active", "Active"],
+              ["past", "Past"],
               ["archived", "Archived"],
+              ["all", "All"],
             ]}
             value={statusFilter}
             onChange={(v) => setStatusFilter(v as StatusFilter)}
@@ -115,6 +133,7 @@ export function TotalView({
                     key={a.id}
                     activity={a}
                     tagMap={tagMap}
+                    completedAt={completedByActivityId[a.id] ?? null}
                     onOpen={() => setOpenId(a.id)}
                   />
                 ))}
@@ -223,13 +242,21 @@ function sortByName(rows: ActivityRow[]): ActivityRow[] {
 function ActivityCard({
   activity,
   tagMap,
+  completedAt,
   onOpen,
 }: {
   activity: ActivityRow;
   tagMap: TagMap;
+  /** ISO timestamp of the latest completion for THIS activity, when
+   *  the parent /activities page fetched it (only for auto-archived
+   *  rows). Drives the "Scheduled X · Completed Y" line for the Past
+   *  filter. */
+  completedAt?: string | null;
   onOpen: () => void;
 }) {
   const archived = activity.archived_at !== null;
+  const isSingle = activity.rhythm.type === "single";
+  const isPast = archived && activity.auto_archive;
   return (
     <li>
       <button
@@ -245,7 +272,16 @@ function ActivityCard({
           >
             {activity.name}
           </span>
-          {archived && (
+          {/* Distinguish auto-archived (Past) from manually archived so
+              the user can tell why a row is off Active without opening
+              the modal. Past = self-cleanup; Archived = user's soft
+              delete. */}
+          {isPast && (
+            <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+              Past
+            </span>
+          )}
+          {archived && !isPast && (
             <span className="shrink-0 rounded bg-zinc-200 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
               Archived
             </span>
@@ -259,6 +295,19 @@ function ActivityCard({
         <span className="truncate text-sm text-zinc-600 dark:text-zinc-400">
           {summarizeRhythm(activity.rhythm, activity.scheduled_times)}
         </span>
+        {/* Historical dates line — only for Past singles where we have
+            both a scheduled day (activity.start_date == scheduled_for)
+            and a completion timestamp. Reads "Scheduled Jul 12 ·
+            Completed Jul 15" so the user can see at a glance when
+            they'd planned to do it vs. when they actually did. */}
+        {isPast && isSingle && (
+          <span className="truncate text-xs text-zinc-500">
+            Scheduled {formatCompactDate(activity.start_date)}
+            {completedAt
+              ? ` · Completed ${formatCompactDate(completedAt)}`
+              : ""}
+          </span>
+        )}
         {activity.default_skill_tags.length > 0 && (
           <span className="mt-1 flex flex-wrap gap-1">
             <TagChipList
@@ -271,6 +320,19 @@ function ActivityCard({
       </button>
     </li>
   );
+}
+
+// "Jul 12" / "Jul 12, 2025" if not current year. Works for both YMD
+// strings (activity.start_date) and full ISO timestamps.
+function formatCompactDate(input: string): string {
+  const d = new Date(input.length === 10 ? `${input}T00:00:00` : input);
+  if (Number.isNaN(d.getTime())) return input;
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: sameYear ? undefined : "numeric",
+  });
 }
 
 function ControlRow({

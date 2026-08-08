@@ -100,6 +100,10 @@ export function ActivityForm({
   // there the checked meaning is "insert a make-up on the next day."
   const [rolloverMissedDays, setRolloverMissedDays] = useState(true);
   const [rolloverChangeRhythm, setRolloverChangeRhythm] = useState(false);
+  // Auto-archive on completion (migration 0026). Default true because
+  // the initial rhythm kind is single — completed one-offs move to
+  // the "Past" filter in Total View so "Active" stays useful.
+  const [autoArchive, setAutoArchive] = useState(true);
 
   function handleSaveForLater() {
     const form = formRef.current;
@@ -801,6 +805,75 @@ export function ActivityForm({
               Show on Grid
             </button>
           </div>
+        </fieldset>
+      )}
+
+      {/* --- 7b. Auto-archive when done (migration 0026) -------------- */}
+      {/* Sits right below Grid for visual symmetry — same "toggle
+          the activity's post-completion behavior" idea. Default true
+          for the initial single rhythm; user flips to Keep on Active
+          if they want the completed task to remain reusable. */}
+      <input
+        type="hidden"
+        name="autoArchive"
+        value={autoArchive ? "true" : "false"}
+      />
+      {isCompact ? (
+        <div className="flex gap-1">
+          <button
+            type="button"
+            onClick={() => setAutoArchive(false)}
+            className={`flex-1 touch-manipulation rounded-md border px-2 py-1 text-center text-xs font-medium transition-colors ${
+              !autoArchive
+                ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            }`}
+          >
+            Keep on Active
+          </button>
+          <button
+            type="button"
+            onClick={() => setAutoArchive(true)}
+            className={`flex-1 touch-manipulation rounded-md border px-2 py-1 text-center text-xs font-medium transition-colors ${
+              autoArchive
+                ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            }`}
+          >
+            Auto-archive
+          </button>
+        </div>
+      ) : (
+        <fieldset className="flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+          <legend className="px-1 text-sm font-medium">When done</legend>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setAutoArchive(false)}
+              className={`flex-1 touch-manipulation rounded-md border px-3 py-2 text-center text-sm font-medium transition-colors ${
+                !autoArchive
+                  ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                  : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+              }`}
+            >
+              Keep on Active
+            </button>
+            <button
+              type="button"
+              onClick={() => setAutoArchive(true)}
+              className={`flex-1 touch-manipulation rounded-md border px-3 py-2 text-center text-sm font-medium transition-colors ${
+                autoArchive
+                  ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                  : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+              }`}
+            >
+              Auto-archive when done
+            </button>
+          </div>
+          <p className="text-xs text-zinc-500">
+            Keep on Active if you may reuse this activity. Auto-archive
+            moves it to Total View → Past as soon as it completes.
+          </p>
         </fieldset>
       )}
 

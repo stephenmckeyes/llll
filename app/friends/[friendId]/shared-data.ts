@@ -71,6 +71,9 @@ export function toDayInstance(
       // (no missInstance calls), so these are pure defaults.
       rollover_missed_days: false,
       rollover_change_rhythm: false,
+      // auto_archive is a personal setting that isn't shared. False
+      // is a safe default for the friend-side read-only view.
+      auto_archive: false,
     },
   };
 }

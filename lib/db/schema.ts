@@ -203,6 +203,12 @@ export const activities = pgTable(
     rolloverChangeRhythm: boolean("rollover_change_rhythm")
       .notNull()
       .default(false),
+    // Auto-archive on completion (migration 0026). When true, the
+    // parent activity is archived (archived_at = now) as soon as an
+    // instance completes or is finalised as missed. Singles use this
+    // to keep Total View's Active filter uncluttered; the archived
+    // rows still appear under the Past filter with completion dates.
+    autoArchive: boolean("auto_archive").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

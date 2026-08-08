@@ -84,6 +84,10 @@ export type ActivityFormInitial = {
    *  Both default false (legacy: just mark missed). Hidden on single. */
   rollover_missed_days: boolean;
   rollover_change_rhythm: boolean;
+  /** Migration 0026. When true, the activity archives itself as soon
+   *  as its instance completes (or is finalised as missed for a
+   *  single). Default true for new singles, false for recurring. */
+  auto_archive: boolean;
 };
 
 export function ActivityFormFields({
@@ -139,6 +143,9 @@ export function ActivityFormFields({
   const [rolloverChangeRhythm, setRolloverChangeRhythm] = useState<boolean>(
     initialValues.rollover_change_rhythm
   );
+  const [autoArchive, setAutoArchive] = useState<boolean>(
+    initialValues.auto_archive
+  );
 
   function toggleWeekday(day: DayOfWeek) {
     setWeekdays((prev) =>
@@ -181,6 +188,11 @@ export function ActivityFormFields({
         type="hidden"
         name="rolloverChangeRhythm"
         value={rolloverChangeRhythm ? "true" : "false"}
+      />
+      <input
+        type="hidden"
+        name="autoArchive"
+        value={autoArchive ? "true" : "false"}
       />
 
       {/* --- Activity name ----------------------------------------- */}
@@ -690,6 +702,72 @@ export function ActivityFormFields({
               Show on Grid
             </button>
           </div>
+        </fieldset>
+      )}
+
+      {/* --- Auto-archive on completion (migration 0026) -------------- */}
+      {/* Same button-pair pattern as Grid. When ON, the activity moves
+          to Total View's "Past" filter as soon as it completes (or is
+          finalised as missed for singles) — keeping the "Active"
+          filter free of one-off tasks the user already finished.
+          Default is set by the caller (new singles = true, recurring
+          = false); user can override either way. */}
+      {isCompact ? (
+        <div className="mt-2 flex gap-1">
+          <button
+            type="button"
+            onClick={() => setAutoArchive(false)}
+            className={`flex-1 touch-manipulation rounded-md border px-2 py-1 text-center text-xs font-medium transition-colors ${
+              !autoArchive
+                ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            }`}
+          >
+            Keep on Active
+          </button>
+          <button
+            type="button"
+            onClick={() => setAutoArchive(true)}
+            className={`flex-1 touch-manipulation rounded-md border px-2 py-1 text-center text-xs font-medium transition-colors ${
+              autoArchive
+                ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            }`}
+          >
+            Auto-archive
+          </button>
+        </div>
+      ) : (
+        <fieldset className="mt-4 flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+          <legend className="px-1 text-sm font-medium">When done</legend>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setAutoArchive(false)}
+              className={`flex-1 touch-manipulation rounded-md border px-3 py-2 text-center text-sm font-medium transition-colors ${
+                !autoArchive
+                  ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                  : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+              }`}
+            >
+              Keep on Active
+            </button>
+            <button
+              type="button"
+              onClick={() => setAutoArchive(true)}
+              className={`flex-1 touch-manipulation rounded-md border px-3 py-2 text-center text-sm font-medium transition-colors ${
+                autoArchive
+                  ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                  : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+              }`}
+            >
+              Auto-archive when done
+            </button>
+          </div>
+          <p className="text-xs text-zinc-500">
+            Keep on Active if you may reuse this activity. Auto-archive
+            moves it to Total View → Past as soon as it completes.
+          </p>
         </fieldset>
       )}
 

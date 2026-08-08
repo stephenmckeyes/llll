@@ -41,6 +41,12 @@ function blankActivity(startDate: string): ActivityFormInitial {
     // last state, so users can still opt into either interpretation.
     rollover_missed_days: true,
     rollover_change_rhythm: false,
+    // Default rhythm is single, and singles default to auto-archive
+    // so completed tasks don't clutter Total View → Active (migration
+    // 0026). Recurring rhythms typically stay Active — the user can
+    // switch to Keep on Active from the toggle if they'd rather
+    // reuse a completed single.
+    auto_archive: true,
   };
 }
 

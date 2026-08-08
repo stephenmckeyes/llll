@@ -721,7 +721,8 @@ async function DayView({
         reminders,
         track_on_grid,
         rollover_missed_days,
-        rollover_change_rhythm
+        rollover_change_rhythm,
+        auto_archive
       ),
       completion_instances (
         completion_id,
@@ -1412,6 +1413,7 @@ async function GridView({
     track_on_grid: boolean;
     rollover_missed_days: boolean;
     rollover_change_rhythm: boolean;
+    auto_archive: boolean;
   };
   // Grid only DISPLAYS activities the user opted into (track_on_grid).
   // Everything is still tracked elsewhere; this is a display filter.
@@ -1936,6 +1938,7 @@ function toDayInstance(
     track_on_grid: boolean;
     rollover_missed_days?: boolean;
     rollover_change_rhythm?: boolean;
+    auto_archive?: boolean;
   }
 ): DayInstance {
   return {
@@ -1972,6 +1975,7 @@ function toDayInstance(
       // the Edit Rhythm form just reflects the last-saved state.
       rollover_missed_days: act.rollover_missed_days ?? false,
       rollover_change_rhythm: act.rollover_change_rhythm ?? false,
+      auto_archive: act.auto_archive ?? false,
     },
   };
 }

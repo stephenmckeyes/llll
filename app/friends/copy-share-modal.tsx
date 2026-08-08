@@ -62,6 +62,9 @@ export function CopyShareModal({
     track_on_grid: false,
     rollover_missed_days: false,
     rollover_change_rhythm: false,
+    // Default true for singles, false for recurring — same rule as
+    // the create modal so copies feel consistent.
+    auto_archive: shared.rhythm.type === "single",
   };
 
   function submit() {

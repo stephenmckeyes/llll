@@ -59,6 +59,7 @@ export type ActivityRow = ActivityFormInitial & {
   track_on_grid: boolean;
   rollover_missed_days: boolean;
   rollover_change_rhythm: boolean;
+  auto_archive: boolean;
 };
 
 type Mode = "details" | "edit-rhythm";
