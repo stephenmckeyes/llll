@@ -22,6 +22,7 @@ import type {
 } from "@/lib/validators/rhythm";
 
 import { RemindersField } from "@/app/_components/reminders-field";
+import { RolloverButtonGroup } from "@/app/_components/rollover-button-group";
 import { TagPicker } from "@/app/_components/tag-picker";
 import {
   DENSITY_PRESETS,
@@ -621,51 +622,96 @@ export function ActivityForm({
                 as-is; multi-times are stored on scheduled_times[].
                 The Grid view's Type column annotates "Multi {rhythm}"
                 whenever scheduled_times.length > 1. */}
-        <FieldLabel
-          label={
-            <>
-              Times of day{" "}
-              <span className="font-normal text-zinc-500">
-                {scheduledTimes.length > 0
-                  ? `(${scheduledTimes.length} per day)`
-                  : "(optional)"}
-              </span>
-            </>
-          }
-        >
-          {!isCompact && scheduledTimes.length === 0 && (
-            <p className="text-xs text-zinc-500">
-              No set time — this sorts to the end of the day.
-            </p>
-          )}
-          <ul className="flex flex-col gap-2">
-            {scheduledTimes.map((t, i) => (
-              <li key={i} className="flex items-center gap-2">
-                <input
-                  type="time"
-                  name="scheduledTime"
-                  value={t}
-                  onChange={(e) => updateScheduledTime(i, e.target.value)}
-                  className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-                />
-                <button
-                  type="button"
-                  onClick={() => removeScheduledTime(i)}
-                  className="rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
-                >
-                  Remove
-                </button>
-              </li>
-            ))}
-          </ul>
-          <button
-            type="button"
-            onClick={addScheduledTime}
-            className="mt-2 self-start rounded-md border border-zinc-300 px-3 py-1 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+        {isCompact ? (
+          /* Compact: Times + Reminders share one flex-wrap row with a
+             vertical divider. The section-6 Reminders below renders
+             nothing in Compact so it isn't duplicated. */
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1">
+              {scheduledTimes.map((t, i) => (
+                <span key={i} className="flex items-center gap-1">
+                  <input
+                    type="time"
+                    name="scheduledTime"
+                    value={t}
+                    onChange={(e) => updateScheduledTime(i, e.target.value)}
+                    className="rounded-md border border-zinc-300 bg-white px-1.5 py-0.5 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeScheduledTime(i)}
+                    aria-label="Remove time"
+                    className="rounded-md border border-zinc-300 px-1.5 py-0.5 text-xs text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              <button
+                type="button"
+                onClick={addScheduledTime}
+                className="rounded-md border border-zinc-300 px-2 py-0.5 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+              >
+                + Add time
+              </button>
+            </div>
+            <span
+              aria-hidden
+              className="h-4 w-px shrink-0 bg-zinc-300 dark:bg-zinc-700"
+            />
+            <RemindersField
+              reminders={reminders}
+              setReminders={setReminders}
+              compact
+            />
+          </div>
+        ) : (
+          <FieldLabel
+            label={
+              <>
+                Times of day{" "}
+                <span className="font-normal text-zinc-500">
+                  {scheduledTimes.length > 0
+                    ? `(${scheduledTimes.length} per day)`
+                    : "(optional)"}
+                </span>
+              </>
+            }
           >
-            + Add time
-          </button>
-        </FieldLabel>
+            {scheduledTimes.length === 0 && (
+              <p className="text-xs text-zinc-500">
+                No set time — this sorts to the end of the day.
+              </p>
+            )}
+            <ul className="flex flex-col gap-2">
+              {scheduledTimes.map((t, i) => (
+                <li key={i} className="flex items-center gap-2">
+                  <input
+                    type="time"
+                    name="scheduledTime"
+                    value={t}
+                    onChange={(e) => updateScheduledTime(i, e.target.value)}
+                    className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeScheduledTime(i)}
+                    className="rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              onClick={addScheduledTime}
+              className="mt-2 self-start rounded-md border border-zinc-300 px-3 py-1 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            >
+              + Add time
+            </button>
+          </FieldLabel>
+        )}
 
         {!isSingleLike && (
           <p className="text-xs text-zinc-500">
@@ -693,11 +739,12 @@ export function ActivityForm({
       )}
 
       {/* --- 6. Reminders ---------------------------------------------- */}
-      <RemindersField
-        reminders={reminders}
-        setReminders={setReminders}
-        compact={isCompact}
-      />
+      {/* Compact renders Reminders inline with Times above (one
+          combined "when this fires" row). Default keeps the full
+          RemindersField block here. */}
+      {!isCompact && (
+        <RemindersField reminders={reminders} setReminders={setReminders} />
+      )}
 
       {/* --- 7. Show on Grid (moved to bottom per user request) ------- */}
       {/* Compact: drop the "Grid" legend + fieldset border, keep just
@@ -797,50 +844,16 @@ export function ActivityForm({
           )}
         </div>
       ) : (
-      <fieldset className="flex flex-col gap-3 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
-        <legend className="px-1 text-sm font-medium">On missed</legend>
-        <p className="text-xs text-zinc-500">
-          {isSingleLike
-            ? "What should happen when you tap Missed on this task? Default: roll it forward instead of finalising as missed."
-            : "What should happen when you tap Missed on an occurrence of this rhythm? Both off = just record the miss."}
-        </p>
-        <RolloverCheckbox
-          checked={rolloverMissedDays}
-          onChange={setRolloverMissedDays}
-          title="Rollover missed days"
-          hint={
-            isSingleLike
-              ? "Move this task to today (or tomorrow if it's today's) instead of finalising as missed."
-              : "Also add a make-up occurrence on the next day. Main schedule stays put."
-          }
-          warning={
-            isSingleLike
-              ? ""
-              : rolloverMissedDays && rhythmKind === "daily"
-                ? "Daily activities already generate an instance every day — a make-up won't add anything visible."
-                : rolloverMissedDays && rhythmKind === "frequency"
-                  ? "For N-times-per-period rhythms, the make-up counts as an extra slot inside the same period."
-                  : ""
-          }
+        <RolloverButtonGroup
+          // The standalone form's RhythmKind adds "selection" (Pick Dates)
+          // which the shared type doesn't; treat it as single for the
+          // button-group purposes since it too is a fixed set of dates.
+          rhythmKind={isSelection ? "single" : rhythmKind}
+          rolloverMissedDays={rolloverMissedDays}
+          setRolloverMissedDays={setRolloverMissedDays}
+          rolloverChangeRhythm={rolloverChangeRhythm}
+          setRolloverChangeRhythm={setRolloverChangeRhythm}
         />
-        {!isSingleLike && (
-          <RolloverCheckbox
-            checked={rolloverChangeRhythm}
-            onChange={setRolloverChangeRhythm}
-            title="Rollover and change rhythm"
-            hint="Shift the whole rhythm forward by 1 day starting from the missed date. Best for “every N days.”"
-            warning={
-              rolloverChangeRhythm && rhythmKind === "daily"
-                ? "Every day is already scheduled — shifting a daily rhythm has no visible effect."
-                : rolloverChangeRhythm && rhythmKind === "weekdays"
-                  ? "Shifts every selected weekday by 1 (Mon → Tue, Wed → Thu, …). May change which days the activity lands on."
-                  : rolloverChangeRhythm && rhythmKind === "frequency"
-                    ? "Shifts the whole period start by 1 day; progress on the current period stays put but future periods move."
-                    : ""
-            }
-          />
-        )}
-      </fieldset>
       )}
 
       {/* --- Calendar preview ------------------------------------------ */}
@@ -1068,44 +1081,6 @@ function ConfigBox({
     >
       {children}
     </div>
-  );
-}
-
-// Local copy of the same widget used by ActivityFormFields — same visual
-// layout so Edit Rhythm and the create page look identical when either
-// toggle is checked. Kept private to this file rather than exported to
-// avoid a client-component cross-import chain during build.
-function RolloverCheckbox({
-  checked,
-  onChange,
-  title,
-  hint,
-  warning,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  title: string;
-  hint: string;
-  warning: string;
-}) {
-  return (
-    <label className="flex cursor-pointer items-start gap-3">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="mt-0.5 h-5 w-5 shrink-0 accent-zinc-900 dark:accent-zinc-50"
-      />
-      <span className="min-w-0 flex-1">
-        <span className="block text-sm font-medium">{title}</span>
-        <span className="mt-0.5 block text-xs text-zinc-500">{hint}</span>
-        {warning && (
-          <span className="mt-1 block rounded-md bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-200">
-            Heads up: {warning}
-          </span>
-        )}
-      </span>
-    </label>
   );
 }
 

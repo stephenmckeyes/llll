@@ -38,6 +38,7 @@ import {
 } from "@/lib/validators/rhythm";
 
 import { RemindersField } from "./reminders-field";
+import { RolloverButtonGroup } from "./rollover-button-group";
 import { TagPicker } from "./tag-picker";
 
 // Locally-scoped rhythm kind (same shape as the legacy one inside
@@ -435,33 +436,52 @@ export function ActivityFormFields({
 
       {/* --- Times of day (optional, multi-row list for every rhythm) - */}
       {isCompact ? (
-        <div className="mt-2 flex flex-wrap items-center gap-1">
-          {scheduledTimes.map((t, i) => (
-            <span key={i} className="flex items-center gap-1">
-              <input
-                type="time"
-                name="scheduledTime"
-                value={t}
-                onChange={(e) => updateScheduledTime(i, e.target.value)}
-                className="rounded-md border border-zinc-300 bg-white px-1.5 py-0.5 text-xs dark:border-zinc-700 dark:bg-zinc-900"
-              />
-              <button
-                type="button"
-                onClick={() => removeScheduledTime(i)}
-                aria-label="Remove time"
-                className="rounded-md border border-zinc-300 px-1.5 py-0.5 text-xs text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
-              >
-                ×
-              </button>
-            </span>
-          ))}
-          <button
-            type="button"
-            onClick={addScheduledTime}
-            className="rounded-md border border-zinc-300 px-2 py-0.5 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-          >
-            + Add time
-          </button>
+        /* Compact merges Times + Reminders onto a single flex-wrap
+           row separated by a vertical divider — the two are
+           semantically related (both "when this fires") and each is
+           tiny on its own, so combining them reclaims a whole line
+           on phones. The Reminders section further down renders
+           nothing in Compact to avoid duplication. */
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1">
+            {scheduledTimes.map((t, i) => (
+              <span key={i} className="flex items-center gap-1">
+                <input
+                  type="time"
+                  name="scheduledTime"
+                  value={t}
+                  onChange={(e) => updateScheduledTime(i, e.target.value)}
+                  className="rounded-md border border-zinc-300 bg-white px-1.5 py-0.5 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeScheduledTime(i)}
+                  aria-label="Remove time"
+                  className="rounded-md border border-zinc-300 px-1.5 py-0.5 text-xs text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+            <button
+              type="button"
+              onClick={addScheduledTime}
+              className="rounded-md border border-zinc-300 px-2 py-0.5 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            >
+              + Add time
+            </button>
+          </div>
+          {/* Vertical hairline splits the two groups so it reads as
+              "times | reminders" even when both wrap. */}
+          <span
+            aria-hidden
+            className="h-4 w-px shrink-0 bg-zinc-300 dark:bg-zinc-700"
+          />
+          <RemindersField
+            reminders={reminders}
+            setReminders={setReminders}
+            compact
+          />
         </div>
       ) : (
         <fieldset className="mt-4">
@@ -606,13 +626,14 @@ export function ActivityFormFields({
       )}
 
       {/* --- Reminders ---------------------------------------------- */}
-      <div className={isCompact ? "mt-2" : "mt-4"}>
-        <RemindersField
-          reminders={reminders}
-          setReminders={setReminders}
-          compact={isCompact}
-        />
-      </div>
+      {/* Compact renders Reminders inline with Times above (one
+          combined "when this fires" row). Default/Expanded keep the
+          full RemindersField section here. */}
+      {!isCompact && (
+        <div className="mt-4">
+          <RemindersField reminders={reminders} setReminders={setReminders} />
+        </div>
+      )}
 
       {/* --- Show on Grid (moved to bottom per user request) --------- */}
       {/* Compact drops the "Grid" legend and the fieldset border; just
@@ -702,7 +723,7 @@ export function ActivityFormFields({
           )}
         </div>
       ) : (
-        <RolloverToggles
+        <RolloverButtonGroup
           rhythmKind={rhythmKind}
           rolloverMissedDays={rolloverMissedDays}
           setRolloverMissedDays={setRolloverMissedDays}
@@ -711,124 +732,6 @@ export function ActivityFormFields({
         />
       )}
     </>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// RolloverToggles — two independent per-activity opt-ins for what should
-// happen when a recurring occurrence gets marked missed. Each toggle
-// carries a short warning when the current rhythm makes its behavior
-// unusual (e.g. Daily + rollover-missed-days is a no-op; Frequency +
-// change-rhythm shifts the whole period).
-// ---------------------------------------------------------------------------
-
-function RolloverToggles({
-  rhythmKind,
-  rolloverMissedDays,
-  setRolloverMissedDays,
-  rolloverChangeRhythm,
-  setRolloverChangeRhythm,
-}: {
-  rhythmKind: RhythmKind;
-  rolloverMissedDays: boolean;
-  setRolloverMissedDays: (v: boolean) => void;
-  rolloverChangeRhythm: boolean;
-  setRolloverChangeRhythm: (v: boolean) => void;
-}) {
-  const isSingleKind = rhythmKind === "single";
-
-  // Warnings surface when the toggle would do something odd for the
-  // chosen rhythm — text is deliberately narrow ("what this will do")
-  // so the user can decide whether they meant it. Empty string → no
-  // warning rendered. Singles get no warnings — the reschedule
-  // behavior is unambiguous.
-  const missedWarning = ((): string => {
-    if (!rolloverMissedDays || isSingleKind) return "";
-    if (rhythmKind === "daily")
-      return "Daily activities already generate an instance every day — a make-up won't add anything visible.";
-    if (rhythmKind === "frequency")
-      return "For N-times-per-period rhythms, the make-up counts as an extra slot inside the same period.";
-    return "";
-  })();
-  const changeWarning = ((): string => {
-    if (!rolloverChangeRhythm) return "";
-    if (rhythmKind === "daily")
-      return "Every day is already scheduled — shifting a daily rhythm has no visible effect.";
-    if (rhythmKind === "weekdays")
-      return "Shifts every selected weekday by 1 (Mon → Tue, Wed → Thu, …). May change which days the activity lands on.";
-    if (rhythmKind === "frequency")
-      return "Shifts the whole period start by 1 day; progress on the current period stays put but future periods move.";
-    return "";
-  })();
-
-  return (
-    <fieldset className="mt-4 flex flex-col gap-3 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
-      <legend className="px-1 text-sm font-medium">On missed</legend>
-      <p className="text-xs text-zinc-500">
-        {isSingleKind
-          ? "What should happen when you tap Missed on this task? Default: roll it forward instead of finalising as missed."
-          : "What should happen when you tap Missed on an occurrence of this rhythm? Both off = just record the miss."}
-      </p>
-      <RolloverCheckbox
-        checked={rolloverMissedDays}
-        onChange={setRolloverMissedDays}
-        title="Rollover missed days"
-        hint={
-          isSingleKind
-            ? "Move this task to today (or tomorrow if it's today's) instead of finalising as missed."
-            : "Also add a make-up occurrence on the next day. Main schedule stays put."
-        }
-        warning={missedWarning}
-      />
-      {/* "Change rhythm" applies only to recurring rhythms — there's
-          nothing to shift on a one-off single. */}
-      {!isSingleKind && (
-        <RolloverCheckbox
-          checked={rolloverChangeRhythm}
-          onChange={setRolloverChangeRhythm}
-          title="Rollover and change rhythm"
-          hint="Shift the whole rhythm forward by 1 day starting from the missed date. Best for “every N days.”"
-          warning={changeWarning}
-        />
-      )}
-    </fieldset>
-  );
-}
-
-function RolloverCheckbox({
-  checked,
-  onChange,
-  title,
-  hint,
-  warning,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  title: string;
-  hint: string;
-  warning: string;
-}) {
-  return (
-    <label className="flex cursor-pointer items-start gap-3">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        // 20px box aligns with the ~20px cap-height of the title line
-        // above so the check sits centered on the first line even when
-        // hint text wraps below.
-        className="mt-0.5 h-5 w-5 shrink-0 accent-zinc-900 dark:accent-zinc-50"
-      />
-      <span className="min-w-0 flex-1">
-        <span className="block text-sm font-medium">{title}</span>
-        <span className="mt-0.5 block text-xs text-zinc-500">{hint}</span>
-        {warning && (
-          <span className="mt-1 block rounded-md bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-200">
-            Heads up: {warning}
-          </span>
-        )}
-      </span>
-    </label>
   );
 }
 
