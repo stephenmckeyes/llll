@@ -24,6 +24,8 @@ import { TagChipList } from "@/app/_components/tag-chip";
 
 import { type AddActivityDensity } from "@/lib/domain/add-activity-density";
 
+import { ControlRow, Segmented } from "@/app/_components/segmented";
+
 import { ActivityDetailModal, type ActivityRow } from "./activity-detail-modal";
 
 type GroupBy = "status" | "tag" | "rhythm";
@@ -57,21 +59,28 @@ export function TotalView({
   // most useful "what am I actively working on, organized by area" view.
   const [groupBy, setGroupBy] = useState<GroupBy>("tag");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
+  const [search, setSearch] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
-    if (statusFilter === "active")
-      return activities.filter((a) => a.archived_at === null);
-    if (statusFilter === "past")
-      return activities.filter(
-        (a) => a.archived_at !== null && a.auto_archive
-      );
-    if (statusFilter === "archived")
-      return activities.filter(
-        (a) => a.archived_at !== null && !a.auto_archive
-      );
-    return activities;
-  }, [activities, statusFilter]);
+    const q = search.trim().toLowerCase();
+    const base =
+      statusFilter === "active"
+        ? activities.filter((a) => a.archived_at === null)
+        : statusFilter === "past"
+          ? activities.filter(
+              (a) => a.archived_at !== null && a.auto_archive
+            )
+          : statusFilter === "archived"
+            ? activities.filter(
+                (a) => a.archived_at !== null && !a.auto_archive
+              )
+            : activities;
+    if (!q) return base;
+    // Case-insensitive substring match on name — the smallest useful
+    // scope. Tag / notes search can follow if the ask surfaces.
+    return base.filter((a) => a.name.toLowerCase().includes(q));
+  }, [activities, statusFilter, search]);
 
   const groups = useMemo(
     () => buildGroups(filtered, groupBy),
@@ -85,6 +94,27 @@ export function TotalView({
     <div className="flex flex-col gap-4">
       {/* Controls */}
       <div className="flex flex-col gap-3 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+        <ControlRow label="Search">
+          <div className="relative min-w-0 flex-1">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by name…"
+              className="w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-1.5 pr-7 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                aria-label="Clear search"
+                className="absolute right-1 top-1/2 -translate-y-1/2 rounded-md p-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              >
+                ×
+              </button>
+            )}
+          </div>
+        </ControlRow>
         <ControlRow label="Group by">
           <Segmented
             options={[
@@ -335,51 +365,3 @@ function formatCompactDate(input: string): string {
   });
 }
 
-function ControlRow({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span className="w-16 shrink-0 text-xs font-medium uppercase tracking-wide text-zinc-500">
-        {label}
-      </span>
-      {children}
-    </div>
-  );
-}
-
-function Segmented({
-  options,
-  value,
-  onChange,
-}: {
-  options: ReadonlyArray<readonly [string, string]>;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <div className="flex flex-wrap gap-1">
-      {options.map(([val, label]) => {
-        const active = val === value;
-        return (
-          <button
-            key={val}
-            type="button"
-            onClick={() => onChange(val)}
-            className={`touch-manipulation rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
-              active
-                ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
-                : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-            }`}
-          >
-            {label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}

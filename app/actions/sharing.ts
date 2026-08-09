@@ -34,6 +34,16 @@ export type ShareableActivity = {
   shared: boolean;
   /** When shared, whether the owner's progress is included. */
   shareProgress: boolean;
+  /** Fields below are for the share modal's Group by / Search
+   *  controls (matching Total View). Rhythm feeds "Group by rhythm";
+   *  default_skill_tags feeds "Group by tag"; track_on_grid feeds
+   *  "Group by status" (Active · On grid vs Active · Off grid).
+   *  scheduled_times is passed alongside rhythm so the group's label
+   *  matches how the activity appears elsewhere (e.g. "Multi Daily"). */
+  rhythm: Rhythm;
+  defaultSkillTags: string[];
+  scheduledTimes: string[];
+  trackOnGrid: boolean;
 };
 
 // getShareState — the caller's active (non-archived) activities annotated
@@ -51,7 +61,9 @@ export async function getShareState(
   const [{ data: activities }, { data: shares }] = await Promise.all([
     supabase
       .from("activities")
-      .select("id, name")
+      .select(
+        "id, name, rhythm, default_skill_tags, scheduled_times, track_on_grid"
+      )
       .eq("user_id", user.id)
       .is("archived_at", null)
       .order("name", { ascending: true }),
@@ -68,14 +80,24 @@ export async function getShareState(
     )
   );
 
-  return ((activities ?? []) as Array<{ id: string; name: string }>).map(
-    (a) => ({
-      id: a.id,
-      name: a.name,
-      shared: shareMap.has(a.id),
-      shareProgress: shareMap.get(a.id) ?? true,
-    })
-  );
+  type Row = {
+    id: string;
+    name: string;
+    rhythm: Rhythm;
+    default_skill_tags: string[] | null;
+    scheduled_times: string[] | null;
+    track_on_grid: boolean;
+  };
+  return ((activities ?? []) as Row[]).map((a) => ({
+    id: a.id,
+    name: a.name,
+    shared: shareMap.has(a.id),
+    shareProgress: shareMap.get(a.id) ?? true,
+    rhythm: a.rhythm,
+    defaultSkillTags: a.default_skill_tags ?? [],
+    scheduledTimes: a.scheduled_times ?? [],
+    trackOnGrid: a.track_on_grid,
+  }));
 }
 
 // shareActivity — share one activity with a friend. `shareProgress`
