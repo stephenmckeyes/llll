@@ -30,7 +30,18 @@ export type IncompleteInfo = {
   oldestDate: string | null;
 };
 
-export function IncompleteButton({ info }: { info: IncompleteInfo }) {
+export function IncompleteButton({
+  info,
+  onJump,
+}: {
+  info: IncompleteInfo;
+  /** Optional override for the click behavior. When set, the chip
+   *  renders as a plain button that calls `onJump(oldestDate)` instead
+   *  of navigating to /?view=day. Used by the friend calendar, whose
+   *  sub-view + date are client state on one page rather than URL
+   *  params. */
+  onJump?: (date: string) => void;
+}) {
   // Local count starts at the server-provided value. We mirror the
   // prop into state during render via the snapshot pattern (React 19
   // lints the equivalent useEffect form). Every new server prop wins
@@ -57,20 +68,45 @@ export function IncompleteButton({ info }: { info: IncompleteInfo }) {
   }, []);
 
   if (count === 0 || !info.oldestDate) return null;
+
+  const commonClass =
+    "relative inline-flex shrink-0 items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200 dark:hover:bg-amber-900";
+  const title = `${count} past-due activities still need a verdict — jump to oldest on ${info.oldestDate}`;
+  const label = `${count} unlabeled — jump to oldest on ${info.oldestDate}`;
+  const badge = (
+    // Red circle badge — matches the inline UnlabeledBadge that appears
+    // next to activity names in the grid view, so the two surfaces feel
+    // like the same warning.
+    <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+
+  if (onJump) {
+    const oldest = info.oldestDate;
+    return (
+      <button
+        type="button"
+        onClick={() => onJump(oldest)}
+        title={title}
+        aria-label={label}
+        className={commonClass}
+      >
+        Unlabeled
+        {badge}
+      </button>
+    );
+  }
+
   return (
     <Link
       href={`/?view=day&date=${info.oldestDate}`}
-      title={`${count} past-due activities still need a verdict — jump to oldest on ${info.oldestDate}`}
-      aria-label={`${count} unlabeled — jump to oldest on ${info.oldestDate}`}
-      className="relative inline-flex shrink-0 items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200 dark:hover:bg-amber-900"
+      title={title}
+      aria-label={label}
+      className={commonClass}
     >
       Unlabeled
-      {/* Red circle badge — matches the inline UnlabeledBadge that
-          appears next to activity names in the grid view, so the two
-          surfaces feel like the same warning. */}
-      <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
-        {count > 99 ? "99+" : count}
-      </span>
+      {badge}
     </Link>
   );
 }

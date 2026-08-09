@@ -134,6 +134,7 @@ export function DayList({
   tagMap,
   readOnly = false,
   onReadOnlyOpen,
+  onUnlabeledJump,
   density = "default",
 }: {
   initialDate: string;
@@ -151,6 +152,11 @@ export function DayList({
    *  owner-only mutation modal) so the friend view can show its own
    *  read-only detail. */
   onReadOnlyOpen?: (inst: DayInstance) => void;
+  /** In read-only mode, wiring this makes the "Unlabeled (N)" chip
+   *  show and jump to the friend's oldest past-due date via a client
+   *  callback (their friend view keeps sub + date as client state
+   *  rather than URL params, so a Link won't reach it). */
+  onUnlabeledJump?: (date: string) => void;
   /** Add Activity form density (migration 0023). Applied to the two
    *  mutation modals below (NewActivityModal + ActivityModal's edit
    *  bodies) so a user who picked Compact sees the condensed form
@@ -387,9 +393,21 @@ export function DayList({
           >
             Today
           </button>
-          {/* The Unlabeled chip links to the user's OWN day view, so it's
-              meaningless (and wrong) in a friend's read-only calendar. */}
-          {!readOnly && <IncompleteButton info={incompleteInfo} />}
+          {/* The Unlabeled chip's default Link points at the user's OWN
+              day view. In read-only friend mode the chip only shows
+              when the friend calendar wires up an `onUnlabeledJump`
+              callback — which replaces the Link with a client-side
+              jump into that friend's Day sub-view. */}
+          {readOnly ? (
+            onUnlabeledJump && (
+              <IncompleteButton
+                info={incompleteInfo}
+                onJump={onUnlabeledJump}
+              />
+            )
+          ) : (
+            <IncompleteButton info={incompleteInfo} />
+          )}
         </div>
       </div>
 

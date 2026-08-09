@@ -21,6 +21,11 @@ import { useMemo, useState } from "react";
 
 import type { SharedActivity, SharedInstance } from "@/app/actions/sharing";
 import { DayList as DashboardDayList } from "@/app/_components/day-list";
+import { IncompleteButton } from "@/app/_components/incomplete-button";
+import {
+  isPastDuePending,
+  unlabeledLandingDay,
+} from "@/lib/domain/frequency-period";
 import type { TagMap } from "@/lib/domain/tags";
 
 import {
@@ -60,40 +65,77 @@ export function FriendCalendar({
     [shares, instances]
   );
 
+  // Unlabeled chip data — mirrors fetchIncompleteInfo on the dashboard,
+  // computed here from the already-shared instances + shares. Non-
+  // frequency: past-due if scheduledFor < today AND status='pending'.
+  // Frequency: past-due only once the whole period has closed
+  // (isPastDuePending handles both). For frequency, the "landing day"
+  // (where we should jump) is the period end, not scheduledFor.
+  const incompleteInfo = useMemo(() => {
+    let count = 0;
+    let oldest: string | null = null;
+    for (const inst of instances) {
+      if (inst.status !== "pending") continue;
+      if (inst.scheduledFor >= todayStr) continue;
+      const rh = byId.get(inst.activityId)?.rhythm;
+      if (!rh) continue;
+      if (!isPastDuePending(inst.scheduledFor, rh, todayStr)) continue;
+      const landing = unlabeledLandingDay(inst.scheduledFor, rh);
+      count += 1;
+      if (oldest === null || landing < oldest) oldest = landing;
+    }
+    return { count, oldestDate: oldest };
+  }, [instances, byId, todayStr]);
+
+  const jumpToDay = (date: string) => {
+    setSub("day");
+    setRefDate(date);
+  };
+
   return (
     <div className="flex flex-col gap-3">
-      <nav className="flex gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800">
-        {(
-          [
-            ["day", "Day"],
-            ["week", "Week"],
-            ["month", "Month"],
-            ["year", "Year"],
-          ] as const
-        ).map(([val, label]) => (
-          <button
-            key={val}
-            type="button"
-            onClick={() => setSub(val)}
-            className={`flex flex-1 items-center justify-center rounded px-3 py-0.5 text-center text-xs font-medium transition-colors ${
-              sub === val
-                ? "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
-                : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </nav>
+      <div className="flex items-center gap-2">
+        <nav className="flex flex-1 gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800">
+          {(
+            [
+              ["day", "Day"],
+              ["week", "Week"],
+              ["month", "Month"],
+              ["year", "Year"],
+            ] as const
+          ).map(([val, label]) => (
+            <button
+              key={val}
+              type="button"
+              onClick={() => setSub(val)}
+              className={`flex flex-1 items-center justify-center rounded px-3 py-0.5 text-center text-xs font-medium transition-colors ${
+                sub === val
+                  ? "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
+                  : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
+        {/* Unlabeled chip — same styling as the personal view. Clicking
+            jumps into THIS friend's Day sub-view at their oldest past-
+            due date. On the Day sub-view the DayList renders its own
+            chip inside its date navigator, so skip this outer copy to
+            avoid the duplicate. */}
+        {sub !== "day" && (
+          <IncompleteButton info={incompleteInfo} onJump={jumpToDay} />
+        )}
+      </div>
 
       {sub === "day" && (
         <DashboardDayList
-          initialDate={todayStr}
+          initialDate={refDate}
           instances={dayData.instances}
           completedByDate={dayData.completedByDate}
           missedByDate={dayData.missedByDate}
           todayStr={todayStr}
-          incompleteInfo={{ count: 0, oldestDate: null }}
+          incompleteInfo={incompleteInfo}
           tagMap={tagMap}
           readOnly
           onReadOnlyOpen={(inst) =>
@@ -107,6 +149,7 @@ export function FriendCalendar({
               comment: inst.comment,
             })
           }
+          onUnlabeledJump={jumpToDay}
         />
       )}
       {sub === "week" && (
