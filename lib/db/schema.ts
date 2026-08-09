@@ -29,6 +29,7 @@ import {
   boolean,
   date,
   index,
+  integer,
   jsonb,
   pgEnum,
   pgTable,
@@ -128,6 +129,10 @@ export const friendships = pgTable(
       .notNull()
       .defaultNow(),
     respondedAt: timestamp("responded_at", { withTimezone: true }),
+    // User-controlled ordering for the Friends page list (migration
+    // 0027). NULL = no explicit order — those rows sort by created_at
+    // DESC after any rows with a concrete sort_order.
+    sortOrder: integer("sort_order"),
   },
   (t) => [
     uniqueIndex("friendships_pair_unique").on(t.requesterId, t.addresseeId),
@@ -439,6 +444,10 @@ export const messages = pgTable(
     // snapshot of its state at reply time. NULL for rhythm-level quotes.
     quotedScheduledFor: date("quoted_scheduled_for"),
     quotedStatus: text("quoted_status"),
+    // Marks the message as an "Ask for help" request (migration 0028)
+    // — chat renders these as a large red panel with the activity's
+    // history + shortcuts to the sender's calendar/grid/total views.
+    isHelpRequest: boolean("is_help_request").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

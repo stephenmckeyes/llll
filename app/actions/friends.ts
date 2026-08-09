@@ -29,6 +29,9 @@ export type SocialEntry = {
   status: "pending" | "accepted" | "declined";
   direction: "incoming" | "outgoing";
   createdAt: string;
+  /** User-set order on the Friends list (migration 0027). NULL means
+   *  no explicit order — those rows sort last, by created_at DESC. */
+  sortOrder: number | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -235,6 +238,7 @@ export async function getSocialOverview(): Promise<SocialEntry[]> {
     status: string;
     direction: string;
     created_at: string;
+    sort_order: number | null;
   }>;
   return rows.map((r) => ({
     friendshipId: r.friendship_id,
@@ -244,5 +248,42 @@ export async function getSocialOverview(): Promise<SocialEntry[]> {
     status: r.status as SocialEntry["status"],
     direction: r.direction as SocialEntry["direction"],
     createdAt: r.created_at,
+    sortOrder: r.sort_order ?? null,
   }));
+}
+
+// ---------------------------------------------------------------------------
+// reorderFriends — persist a new sort_order for the friends list.
+//
+// Takes an ARRAY of friendshipIds in the desired final order and writes
+// sort_order = 0..N for each. Simpler + less error-prone than swap-with-
+// neighbor: the UI holds the reordered list in state and posts it in one
+// shot when the user taps Save.
+// ---------------------------------------------------------------------------
+
+export async function reorderFriends(
+  orderedFriendshipIds: string[]
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  if (orderedFriendshipIds.length === 0) return { ok: true };
+
+  // Write each row with its new sort_order. RLS already restricts the
+  // update to rows the caller owns (requester_id OR addressee_id ==
+  // auth.uid()), so foreign friendship ids in the payload silently fail
+  // to update — no need for a WHERE user_id = ... layer here.
+  for (let i = 0; i < orderedFriendshipIds.length; i++) {
+    const { error } = await supabase
+      .from("friendships")
+      .update({ sort_order: i })
+      .eq("id", orderedFriendshipIds[i]);
+    if (error) return { error: error.message };
+  }
+
+  revalidatePath("/friends");
+  return { ok: true };
 }

@@ -21,6 +21,7 @@ import type { TagMap } from "@/lib/domain/tags";
 import { CopyShareModal } from "../../copy-share-modal";
 import type { Occurrence } from "../shared-data";
 import { SharedActivityModal } from "../shared-activity-modal";
+import { HelpRequestPanel } from "./help-request-panel";
 
 export type WatchMap = Record<
   string,
@@ -121,12 +122,37 @@ export function ChatThread({
           <ul className="flex flex-col gap-2">
             {messages.map((m) => {
               const activityId = m.quotedActivityId;
+              const mine = m.senderId === currentUserId;
+              // Help-request messages take over the whole row with a
+              // distinct panel instead of the standard chat bubble —
+              // the whole point of Ask-for-help is that it's
+              // visually louder than a passing note.
+              if (m.isHelpRequest) {
+                return (
+                  <li
+                    key={m.id}
+                    className={`flex ${mine ? "justify-end" : "justify-start"}`}
+                  >
+                    <div className="max-w-[92%]">
+                      <HelpRequestPanel
+                        mine={mine}
+                        senderName={friendName}
+                        friendId={friendId}
+                        activityId={activityId}
+                        activityName={m.quotedActivityName}
+                        note={m.body}
+                      />
+                    </div>
+                  </li>
+                );
+              }
+
               const canOpenQuote =
                 activityId !== null && Boolean(sharedById[activityId]);
               return (
                 <MessageBubble
                   key={m.id}
-                  mine={m.senderId === currentUserId}
+                  mine={mine}
                   body={m.body}
                   quotedName={m.quotedActivityName}
                   quotedDate={m.quotedScheduledFor}

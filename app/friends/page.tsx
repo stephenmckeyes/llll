@@ -16,23 +16,30 @@ import { PendingLink } from "@/app/_components/pending-link";
 
 import { AskForHelpButton } from "./ask-for-help";
 import { FriendRowButton, FriendSearch } from "./friends-client";
-import { ShareRhythmsButton } from "./share-modal";
+import { FriendsList } from "./friends-list";
 
 function nameOf(e: SocialEntry): string {
   return e.otherDisplayName || (e.otherUsername ? `@${e.otherUsername}` : "Someone");
 }
 
 export default async function FriendsPage() {
-  const { supabase } = await requireOnboardedUser();
-  const [entries, unread, { data: activityRows }] = await Promise.all([
-    getSocialOverview(),
-    getUnreadCounts(),
-    supabase
-      .from("activities")
-      .select("id, name")
-      .is("archived_at", null)
-      .order("name", { ascending: true }),
-  ]);
+  const { supabase, user } = await requireOnboardedUser();
+  const [entries, unread, { data: activityRows }, { data: shareRows }] =
+    await Promise.all([
+      getSocialOverview(),
+      getUnreadCounts(),
+      supabase
+        .from("activities")
+        .select("id, name")
+        .is("archived_at", null)
+        .order("name", { ascending: true }),
+      // Existing shares so the Ask-for-help modal can highlight which
+      // friends will get auto-shared when they're picked.
+      supabase
+        .from("activity_shares")
+        .select("activity_id, shared_with_id")
+        .eq("owner_id", user.id),
+    ]);
 
   const friends = entries.filter((e) => e.status === "accepted");
   const outgoing = entries.filter(
@@ -50,6 +57,18 @@ export default async function FriendsPage() {
     name: nameOf(f),
   }));
 
+  // Build a friendId → activityId[] map from the flat share rows. The
+  // Ask-for-help modal rebuilds each into a Set client-side; we can't
+  // send Sets across the RSC boundary. This feeds the "N of your
+  // selected friends don't have this shared yet" auto-share note.
+  const sharedActivityIdsByFriendId: Record<string, string[]> = {};
+  for (const s of (shareRows ?? []) as Array<{
+    activity_id: string;
+    shared_with_id: string;
+  }>) {
+    (sharedActivityIdsByFriendId[s.shared_with_id] ??= []).push(s.activity_id);
+  }
+
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-8 bg-white p-6 dark:bg-zinc-950">
       <header className="flex flex-col gap-1">
@@ -62,7 +81,11 @@ export default async function FriendsPage() {
         <h1 className="text-3xl font-semibold tracking-tight">Friends</h1>
       </header>
 
-      <AskForHelpButton friends={friendOptions} activities={myActivities} />
+      <AskForHelpButton
+        friends={friendOptions}
+        activities={myActivities}
+        sharedActivityIdsByFriendId={sharedActivityIdsByFriendId}
+      />
 
       {incomingCount > 0 && (
         <Link
@@ -86,62 +109,10 @@ export default async function FriendsPage() {
         <FriendSearch />
       </section>
 
-      {/* Friends list */}
+      {/* Friends list — client component so it can host the search
+          field and the Edit-order mode without a round-trip. */}
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-          Your friends ({friends.length})
-        </h2>
-        {friends.length === 0 ? (
-          <p className="rounded-md border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700">
-            No friends yet. Find someone above to get started.
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {friends.map((f) => (
-              <li
-                key={f.friendshipId}
-                className="flex items-center justify-between gap-3 rounded-md border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-950"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{nameOf(f)}</p>
-                  {f.otherUsername && (
-                    <p className="truncate text-xs text-zinc-500">
-                      @{f.otherUsername}
-                    </p>
-                  )}
-                </div>
-                <div className="flex shrink-0 flex-wrap justify-end gap-2">
-                  <Link
-                    href={`/friends/${f.otherId}/chat`}
-                    className="relative inline-flex items-center rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-                  >
-                    Chat
-                    {(unread[f.otherId] ?? 0) > 0 && (
-                      <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
-                        {unread[f.otherId] > 99 ? "99+" : unread[f.otherId]}
-                      </span>
-                    )}
-                  </Link>
-                  <Link
-                    href={`/friends/${f.otherId}`}
-                    className="inline-flex items-center rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-                  >
-                    View
-                  </Link>
-                  <ShareRhythmsButton
-                    friendId={f.otherId}
-                    friendName={nameOf(f)}
-                  />
-                  <FriendRowButton
-                    friendshipId={f.friendshipId}
-                    label="Remove"
-                    confirmText={`Remove ${nameOf(f)} from your friends?`}
-                  />
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+        <FriendsList friends={friends} unread={unread} nameOf={nameOf} />
       </section>
 
       {/* Sent (pending) requests */}
