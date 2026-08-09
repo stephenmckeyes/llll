@@ -109,7 +109,7 @@ export function FriendView({
         {(
           [
             ["calendar", "Calendar"],
-            ["grid", "Grid"],
+            ["grid", "Streaks"],
             ["total", "Total"],
           ] as const
         ).map(([val, label]) => (

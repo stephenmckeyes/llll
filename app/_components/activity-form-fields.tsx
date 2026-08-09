@@ -22,7 +22,7 @@
 //   - Showing any action-state error message.
 // ---------------------------------------------------------------------------
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { type AddActivityDensity } from "@/lib/domain/add-activity-density";
 import type { TagMap } from "@/lib/domain/tags";
@@ -146,6 +146,15 @@ export function ActivityFormFields({
   const [autoArchive, setAutoArchive] = useState<boolean>(
     initialValues.auto_archive
   );
+  // Uncontrolled end-date input needs a ref so the Clear button can
+  // reset it to "" (which the server treats as "no end date" →
+  // indefinite rhythm). Same for the compact copy of the input.
+  const endDateRef = useRef<HTMLInputElement | null>(null);
+  const endDateCompactRef = useRef<HTMLInputElement | null>(null);
+  function clearEndDate(which: "default" | "compact") {
+    const el = which === "default" ? endDateRef.current : endDateCompactRef.current;
+    if (el) el.value = "";
+  }
 
   function toggleWeekday(day: DayOfWeek) {
     setWeekdays((prev) =>
@@ -553,13 +562,30 @@ export function ActivityFormFields({
             defaultValue={blankStartDate ? "" : initialValues.start_date}
             className={inputClasses}
           />
-          <input
-            type="date"
-            name="endDate"
-            defaultValue={initialValues.end_date ?? ""}
-            disabled={isSingle}
-            className={inputClasses}
-          />
+          {/* End-date + tiny "no end date" clear button. Native
+              <input type="date"> on iOS has no built-in clear, so the
+              explicit × makes going back to "indefinite" obvious. */}
+          <div className="relative">
+            <input
+              ref={endDateCompactRef}
+              type="date"
+              name="endDate"
+              defaultValue={initialValues.end_date ?? ""}
+              disabled={isSingle}
+              className={`${inputClasses} pr-7`}
+            />
+            {!isSingle && (
+              <button
+                type="button"
+                onClick={() => clearEndDate("compact")}
+                aria-label="Clear end date (indefinite)"
+                title="No end date"
+                className="absolute right-1 top-1/2 -translate-y-1/2 rounded-md p-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              >
+                ×
+              </button>
+            )}
+          </div>
         </div>
       ) : (
         <fieldset className="mt-4">
@@ -590,13 +616,36 @@ export function ActivityFormFields({
                   {isSingle ? "(n/a for Once)" : "(optional)"}
                 </span>
               </span>
-              <input
-                type="date"
-                name="endDate"
-                defaultValue={initialValues.end_date ?? ""}
-                disabled={isSingle}
-                className={`${inputClasses} mt-1`}
-              />
+              <div className="relative mt-1">
+                <input
+                  ref={endDateRef}
+                  type="date"
+                  name="endDate"
+                  defaultValue={initialValues.end_date ?? ""}
+                  disabled={isSingle}
+                  className={`${inputClasses} pr-8`}
+                />
+                {!isSingle && (
+                  <button
+                    type="button"
+                    onClick={() => clearEndDate("default")}
+                    aria-label="Clear end date (indefinite)"
+                    title="No end date"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 rounded-md p-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+              {!isSingle && (
+                <button
+                  type="button"
+                  onClick={() => clearEndDate("default")}
+                  className="mt-1 text-xs text-zinc-500 underline underline-offset-2 hover:text-zinc-700 dark:hover:text-zinc-300"
+                >
+                  No end date (indefinite)
+                </button>
+              )}
             </label>
           </div>
         </fieldset>
@@ -647,9 +696,10 @@ export function ActivityFormFields({
         </div>
       )}
 
-      {/* --- Show on Grid (moved to bottom per user request) --------- */}
-      {/* Compact drops the "Grid" legend and the fieldset border; just
-          the two toggle buttons on one row. */}
+      {/* --- Show on Streaks (moved to bottom per user request) ------ */}
+      {/* Compact drops the "Streaks" legend and the fieldset border;
+          just the two toggle buttons on one row. Internal column stays
+          `track_on_grid` — only the label is renamed. */}
       {isCompact ? (
         <div className="mt-2 flex gap-1">
           <button
@@ -661,7 +711,7 @@ export function ActivityFormFields({
                 : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
             }`}
           >
-            Off Grid
+            Off Streaks
           </button>
           <button
             type="button"
@@ -672,12 +722,12 @@ export function ActivityFormFields({
                 : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
             }`}
           >
-            On Grid
+            On Streaks
           </button>
         </div>
       ) : (
         <fieldset className="mt-4 flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
-          <legend className="px-1 text-sm font-medium">Grid</legend>
+          <legend className="px-1 text-sm font-medium">Streaks</legend>
           <div className="flex gap-2">
             <button
               type="button"
@@ -688,7 +738,7 @@ export function ActivityFormFields({
                   : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
               }`}
             >
-              Don&rsquo;t show on grid
+              Don&rsquo;t show on Streaks
             </button>
             <button
               type="button"
@@ -699,7 +749,7 @@ export function ActivityFormFields({
                   : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
               }`}
             >
-              Show on Grid
+              Show on Streaks
             </button>
           </div>
         </fieldset>

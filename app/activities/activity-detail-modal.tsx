@@ -193,12 +193,13 @@ export function ActivityDetailModal({
                 </DetailRow>
               </dl>
 
-              {/* Grid display toggle — everything is tracked regardless. */}
+              {/* Streaks-display toggle — everything is tracked regardless. */}
               <div className="mt-4 flex items-center justify-between gap-3 rounded-md border border-zinc-200 px-3 py-2 dark:border-zinc-800">
                 <div className="min-w-0">
-                  <p className="text-sm font-medium">Show on Grid</p>
+                  <p className="text-sm font-medium">Show on Streaks</p>
                   <p className="text-xs text-zinc-500">
-                    Tracked either way — this only controls grid display.
+                    Tracked either way — this only controls the Streaks
+                    view.
                   </p>
                 </div>
                 <button

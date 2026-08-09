@@ -203,26 +203,26 @@ function buildGroups(rows: ActivityRow[], groupBy: GroupBy): Group[] {
     };
     bucket(
       "active-on",
-      "Active · On grid",
+      "Active · On Streaks",
       (a) => a.archived_at === null && a.track_on_grid
     );
     bucket(
       "active-off",
-      "Active · Off grid",
+      "Active · Off Streaks",
       (a) => a.archived_at === null && !a.track_on_grid
     );
     bucket(
       "archived-on",
-      "Archived · On grid",
+      "Archived · On Streaks",
       (a) => a.archived_at !== null && a.track_on_grid
     );
     bucket(
       "archived-off",
-      "Archived · Off grid",
+      "Archived · Off Streaks",
       (a) => a.archived_at !== null && !a.track_on_grid
     );
     if (out.length === 0)
-      out.push({ key: "active-off", label: "Active · Off grid", items: [] });
+      out.push({ key: "active-off", label: "Active · Off Streaks", items: [] });
     return out;
   }
 
@@ -318,7 +318,7 @@ function ActivityCard({
           )}
           {activity.track_on_grid && (
             <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-              On grid
+              On Streaks
             </span>
           )}
         </div>

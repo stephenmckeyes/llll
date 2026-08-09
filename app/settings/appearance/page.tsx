@@ -13,9 +13,14 @@ import {
   isAddActivityDensity,
   type AddActivityDensity,
 } from "@/lib/domain/add-activity-density";
+import {
+  isStreaksRange,
+  type StreaksRange,
+} from "@/lib/domain/streaks-range";
 import { isTimeFormat, type TimeFormat } from "@/lib/ui/format-time";
 import { AddActivityDensityPicker } from "./add-activity-density-picker";
 import { CalendarSync } from "./calendar-sync";
+import { DefaultStreaksRangePicker } from "./default-streaks-range-picker";
 import { TimeFormatPicker } from "./time-format-picker";
 import { ThemeToggle } from "../theme-toggle";
 
@@ -24,7 +29,9 @@ export default async function AppearanceSettingsPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("add_activity_density, time_format, ics_token")
+    .select(
+      "add_activity_density, time_format, ics_token, default_streaks_range"
+    )
     .eq("id", user.id)
     .maybeSingle();
   const rawDensity =
@@ -40,6 +47,12 @@ export default async function AppearanceSettingsPage() {
     : "auto";
   const initialIcsToken =
     (profile as { ics_token?: string | null } | null)?.ics_token ?? null;
+  const rawRange =
+    (profile as { default_streaks_range?: string } | null)?.default_streaks_range ??
+    "total";
+  const initialStreaksRange: StreaksRange = isStreaksRange(rawRange)
+    ? rawRange
+    : "total";
 
   return (
     <SettingsShell title="Appearance">
@@ -66,6 +79,17 @@ export default async function AppearanceSettingsPage() {
           activity modal, week/month banners.
         </p>
         <TimeFormatPicker initialFormat={initialFormat} />
+      </div>
+
+      <hr className="my-2 border-zinc-200 dark:border-zinc-800" />
+
+      <div className="flex flex-col gap-2">
+        <h2 className="text-sm font-medium">Streaks default range</h2>
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          Which range tab opens when you tap Streaks with no explicit
+          range in the URL.
+        </p>
+        <DefaultStreaksRangePicker initialRange={initialStreaksRange} />
       </div>
 
       <hr className="my-2 border-zinc-200 dark:border-zinc-800" />

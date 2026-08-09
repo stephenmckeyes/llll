@@ -107,6 +107,14 @@ export const profiles = pgTable("profiles", {
   // NULL until the user enables sync in Settings. Rotating it
   // invalidates every subscribed calendar app.
   icsToken: text("ics_token"),
+  // Default range tab for the Streaks (Grid) view when the URL has
+  // no explicit ?range param (migration 0029). One of
+  // 'week' | 'month' | 'total' | 'custom'; 'total' is the initial
+  // default because whole-record heatmaps are more useful than a
+  // 7-day slice on first open.
+  defaultStreaksRange: text("default_streaks_range")
+    .notNull()
+    .default("total"),
 });
 
 // ===========================================================================

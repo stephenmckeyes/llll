@@ -16,6 +16,10 @@ import {
   isAddActivityDensity,
   type AddActivityDensity,
 } from "@/lib/domain/add-activity-density";
+import {
+  isStreaksRange,
+  type StreaksRange,
+} from "@/lib/domain/streaks-range";
 import { createClient } from "@/lib/supabase/server";
 import { isTimeFormat, type TimeFormat } from "@/lib/ui/format-time";
 
@@ -95,6 +99,28 @@ export async function disableIcsToken(): Promise<
   if (error) return { error: error.message };
 
   revalidatePath("/settings/appearance");
+  return { ok: true };
+}
+
+export async function updateDefaultStreaksRange(
+  range: StreaksRange
+): Promise<{ error: string } | { ok: true }> {
+  if (!isStreaksRange(range)) return { error: "Invalid range." };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({ default_streaks_range: range })
+    .eq("id", user.id);
+  if (error) return { error: error.message };
+
+  revalidatePath("/settings/appearance");
+  revalidatePath("/"); // Home reads it in parseGridRange fallback.
   return { ok: true };
 }
 

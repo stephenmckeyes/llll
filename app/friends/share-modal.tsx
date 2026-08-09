@@ -390,14 +390,14 @@ function buildShareGroups(
     if (onGrid.length > 0) {
       out.push({
         key: "on-grid",
-        label: "On grid",
+        label: "On Streaks",
         items: sortByName(onGrid),
       });
     }
     if (offGrid.length > 0) {
       out.push({
         key: "off-grid",
-        label: "Off grid",
+        label: "Off Streaks",
         items: sortByName(offGrid),
       });
     }

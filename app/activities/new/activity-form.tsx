@@ -529,14 +529,27 @@ export function ActivityForm({
                 onChange={(e) => setStartDate(e.target.value)}
                 className={inputClasses}
               />
-              <input
-                type="date"
-                name="endDate"
-                value={isSingleLike ? "" : endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                disabled={isSingleLike}
-                className={inputClasses}
-              />
+              <div className="relative">
+                <input
+                  type="date"
+                  name="endDate"
+                  value={isSingleLike ? "" : endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  disabled={isSingleLike}
+                  className={`${inputClasses} pr-7`}
+                />
+                {!isSingleLike && endDate && (
+                  <button
+                    type="button"
+                    onClick={() => setEndDate("")}
+                    aria-label="Clear end date (indefinite)"
+                    title="No end date"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 rounded-md p-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
             </>
           ) : (
             <>
@@ -559,14 +572,37 @@ export function ActivityForm({
                   </>
                 }
               >
-                <input
-                  type="date"
-                  name="endDate"
-                  value={isSingleLike ? "" : endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  disabled={isSingleLike}
-                  className={inputClasses}
-                />
+                <div className="relative">
+                  <input
+                    type="date"
+                    name="endDate"
+                    value={isSingleLike ? "" : endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    disabled={isSingleLike}
+                    className={`${inputClasses} pr-8`}
+                  />
+                  {!isSingleLike && endDate && (
+                    <button
+                      type="button"
+                      onClick={() => setEndDate("")}
+                      aria-label="Clear end date (indefinite)"
+                      title="No end date"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 rounded-md p-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+                {!isSingleLike && (
+                  <button
+                    type="button"
+                    onClick={() => setEndDate("")}
+                    disabled={!endDate}
+                    className="mt-1 text-xs text-zinc-500 underline underline-offset-2 hover:text-zinc-700 disabled:opacity-40 disabled:no-underline dark:hover:text-zinc-300"
+                  >
+                    No end date (indefinite)
+                  </button>
+                )}
               </FieldLabel>
             </>
           )}
@@ -750,9 +786,9 @@ export function ActivityForm({
         <RemindersField reminders={reminders} setReminders={setReminders} />
       )}
 
-      {/* --- 7. Show on Grid (moved to bottom per user request) ------- */}
-      {/* Compact: drop the "Grid" legend + fieldset border, keep just
-          two tight toggle buttons on one row. */}
+      {/* --- 7. Show on Streaks (moved to bottom per user request) ---- */}
+      {/* Compact: drop the "Streaks" legend + fieldset border, keep
+          just two tight toggle buttons on one row. */}
       {isCompact ? (
         <div className="flex gap-1">
           <button
@@ -764,7 +800,7 @@ export function ActivityForm({
                 : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
             }`}
           >
-            Off Grid
+            Off Streaks
           </button>
           <button
             type="button"
@@ -775,12 +811,12 @@ export function ActivityForm({
                 : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
             }`}
           >
-            On Grid
+            On Streaks
           </button>
         </div>
       ) : (
         <fieldset className="flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
-          <legend className="px-1 text-sm font-medium">Grid</legend>
+          <legend className="px-1 text-sm font-medium">Streaks</legend>
           <div className="flex gap-2">
             <button
               type="button"
@@ -791,7 +827,7 @@ export function ActivityForm({
                   : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
               }`}
             >
-              Don&rsquo;t show on grid
+              Don&rsquo;t show on Streaks
             </button>
             <button
               type="button"
@@ -802,7 +838,7 @@ export function ActivityForm({
                   : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
               }`}
             >
-              Show on Grid
+              Show on Streaks
             </button>
           </div>
         </fieldset>

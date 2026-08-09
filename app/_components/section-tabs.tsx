@@ -38,9 +38,13 @@ export function SectionTabs({
         href={`/?view=day&date=${date}`}
         active={active === "calendar"}
       />
+      {/* Internal name stays `grid` (URL param + SectionKind) — only the
+          user-facing label is "Streaks". The default range is elided
+          so page.tsx can honor the user's default_streaks_range
+          preference (Settings → Appearance). */}
       <SectionTab
-        label="Grid"
-        href={`/?view=grid&range=week&date=${date}`}
+        label="Streaks"
+        href={`/?view=grid&date=${date}`}
         active={active === "grid"}
       />
       <SectionTab label="Total View" href="/activities" active={active === "total"} />

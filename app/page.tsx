@@ -29,6 +29,7 @@ import {
   isAddActivityDensity,
   type AddActivityDensity,
 } from "@/lib/domain/add-activity-density";
+import { isStreaksRange } from "@/lib/domain/streaks-range";
 import { ensureInstancesBackfilled } from "@/lib/domain/backfill";
 import {
   frequencyDueDay,
@@ -169,7 +170,10 @@ export default async function HomePage({
   if (isColdOpen && hasStaleParams) redirect("/");
 
   const view = parseView(params.view);
-  const range = parseGridRange(params.range);
+  // Note: `range` gets its FINAL value AFTER the profile fetch below,
+  // because when the URL doesn't carry ?range we fall back to the
+  // user's default_streaks_range preference (migration 0029).
+  let range = parseGridRange(params.range);
   // Custom range params — only meaningful when range==="custom" but we
   // parse them up here so the GridView signature stays simple.
   const customFrom = parseOptionalDateParam(params.from);
@@ -183,7 +187,9 @@ export default async function HomePage({
   const [profileResult, tagFetch] = await Promise.all([
     supabase
       .from("profiles")
-      .select("timezone, onboarded_at, add_activity_density")
+      .select(
+        "timezone, onboarded_at, add_activity_density, default_streaks_range"
+      )
       .eq("id", user.id)
       .maybeSingle(),
     Promise.all([
@@ -204,6 +210,17 @@ export default async function HomePage({
   const profile = profileResult.data;
   if (!profile || !profile.onboarded_at) {
     redirect("/onboarding");
+  }
+
+  // If the URL had no explicit ?range, honor the user's
+  // default_streaks_range preference (Settings → Appearance → Streaks
+  // default range). Defaults to 'total' both in the schema and here in
+  // case the column reads back as something unexpected.
+  if (params.range === undefined) {
+    const stored = (profile as { default_streaks_range?: string })
+      .default_streaks_range;
+    if (isStreaksRange(stored)) range = stored;
+    else range = "total";
   }
 
   // "Today" in the USER'S timezone — NOT the server's UTC clock. This is
@@ -481,11 +498,15 @@ function parseView(raw: string | undefined): ViewKind {
   return "day";
 }
 
-function parseGridRange(raw: string | undefined): GridRange {
+function parseGridRange(
+  raw: string | undefined,
+  fallback: GridRange = "week"
+): GridRange {
+  if (raw === "week") return "week";
   if (raw === "month") return "month";
   if (raw === "total") return "total";
   if (raw === "custom") return "custom";
-  return "week";
+  return fallback;
 }
 
 function parseDateParam(raw: string | undefined, todayStr: string): string {
@@ -589,7 +610,7 @@ function ViewSwitcher({
       ) : (
         <nav
           className="flex gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800"
-          aria-label="Grid range"
+          aria-label="Streaks range"
         >
           {GRID_SUB_OPTIONS.map((opt) => (
             <SubTab

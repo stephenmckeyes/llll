@@ -120,7 +120,7 @@ export function HelpRequestPanel({
           />
           <QuickLink
             href={`${base}?view=grid&highlight=${encodeURIComponent(activityId)}`}
-            label="Grid"
+            label="Streaks"
           />
           <QuickLink
             href={`${base}?view=total&highlight=${encodeURIComponent(activityId)}`}
