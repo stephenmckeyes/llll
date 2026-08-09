@@ -32,12 +32,19 @@ type Props = {
   friends: SocialEntry[];
   /** Per-friend unread-message count for the badge on Chat. */
   unread: Record<string, number>;
-  /** Turns "Steve Smith" / "@steves" into the display label. Passed in
-   *  so it matches whatever the parent page uses. */
-  nameOf: (e: SocialEntry) => string;
 };
 
-export function FriendsList({ friends, unread, nameOf }: Props) {
+// Server components can't pass functions into client components (RSC
+// only serializes plain data), so the display-label rule lives inside
+// this client module. Same shape the /friends page had before.
+function nameOf(e: SocialEntry): string {
+  return (
+    e.otherDisplayName ||
+    (e.otherUsername ? `@${e.otherUsername}` : "Someone")
+  );
+}
+
+export function FriendsList({ friends, unread }: Props) {
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState(false);
   // Local copy the user reorders in edit mode. Reset when the server
@@ -66,7 +73,7 @@ export function FriendsList({ friends, unread, nameOf }: Props) {
       const uname = (f.otherUsername ?? "").toLowerCase();
       return label.includes(q) || uname.includes(q);
     });
-  }, [order, search, editing, nameOf]);
+  }, [order, search, editing]);
 
   function move(index: number, direction: -1 | 1) {
     const next = order.slice();

@@ -112,7 +112,7 @@ export default async function FriendsPage() {
       {/* Friends list — client component so it can host the search
           field and the Edit-order mode without a round-trip. */}
       <section className="flex flex-col gap-3">
-        <FriendsList friends={friends} unread={unread} nameOf={nameOf} />
+        <FriendsList friends={friends} unread={unread} />
       </section>
 
       {/* Sent (pending) requests */}
