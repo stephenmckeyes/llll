@@ -121,7 +121,7 @@ export function SharedNotifications({ shares }: { shares: SharedActivity[] }) {
                 className="h-4 w-4 shrink-0"
               />
               <Link
-                href={`/friends/${s.ownerId}`}
+                href={`/friends/${s.ownerId}/chat`}
                 className="min-w-0 flex-1"
               >
                 <p className="truncate text-sm">
@@ -129,7 +129,7 @@ export function SharedNotifications({ shares }: { shares: SharedActivity[] }) {
                   <span className="font-medium">“{s.name}”</span>
                 </p>
                 <p className="truncate text-xs text-zinc-500">
-                  Tap to view their shared rhythms
+                  Tap to open chat — the shared rhythm is linked there
                 </p>
               </Link>
               <button

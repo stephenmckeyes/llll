@@ -456,6 +456,13 @@ export const messages = pgTable(
     // — chat renders these as a large red panel with the activity's
     // history + shortcuts to the sender's calendar/grid/total views.
     isHelpRequest: boolean("is_help_request").notNull().default(false),
+    // Marks the message as a "shared with you" notification (migration
+    // 0030) — chat renders these as the same panel structure but neutral
+    // (no red urgency). Only set by shareActivity when it creates a NEW
+    // share; toggling share_progress does NOT create another one.
+    isShareNotification: boolean("is_share_notification")
+      .notNull()
+      .default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

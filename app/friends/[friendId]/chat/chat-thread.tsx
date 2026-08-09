@@ -123,11 +123,11 @@ export function ChatThread({
             {messages.map((m) => {
               const activityId = m.quotedActivityId;
               const mine = m.senderId === currentUserId;
-              // Help-request messages take over the whole row with a
-              // distinct panel instead of the standard chat bubble —
-              // the whole point of Ask-for-help is that it's
-              // visually louder than a passing note.
-              if (m.isHelpRequest) {
+              // Help-request AND share-notification messages take over
+              // the whole row with the panel instead of the standard
+              // chat bubble. Same layout, different `kind` — help is
+              // urgent red, share is neutral.
+              if (m.isHelpRequest || m.isShareNotification) {
                 return (
                   <li
                     key={m.id}
@@ -135,6 +135,7 @@ export function ChatThread({
                   >
                     <div className="max-w-[92%]">
                       <HelpRequestPanel
+                        kind={m.isHelpRequest ? "help" : "share"}
                         mine={mine}
                         senderName={friendName}
                         friendId={friendId}

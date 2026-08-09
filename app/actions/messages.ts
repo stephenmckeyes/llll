@@ -29,6 +29,10 @@ export type Message = {
   quotedStatus: string | null;
   /** Marks the message as an Ask-for-help request (migration 0028). */
   isHelpRequest: boolean;
+  /** Marks the message as a "shared with you" notification
+   *  (migration 0030). Renders the same panel as help-request, minus
+   *  the red urgency. */
+  isShareNotification: boolean;
   createdAt: string;
   readAt: string | null;
 };
@@ -203,7 +207,7 @@ export async function getConversation(friendId: string): Promise<Message[]> {
   const { data } = await supabase
     .from("messages")
     .select(
-      "id, sender_id, recipient_id, body, quoted_activity_id, quoted_activity_name, quoted_scheduled_for, quoted_status, is_help_request, created_at, read_at"
+      "id, sender_id, recipient_id, body, quoted_activity_id, quoted_activity_name, quoted_scheduled_for, quoted_status, is_help_request, is_share_notification, created_at, read_at"
     )
     .or(
       `and(sender_id.eq.${user.id},recipient_id.eq.${friendId}),and(sender_id.eq.${friendId},recipient_id.eq.${user.id})`
@@ -220,6 +224,7 @@ export async function getConversation(friendId: string): Promise<Message[]> {
     quoted_scheduled_for: string | null;
     quoted_status: string | null;
     is_help_request: boolean;
+    is_share_notification: boolean;
     created_at: string;
     read_at: string | null;
   }>;
@@ -247,6 +252,7 @@ export async function getConversation(friendId: string): Promise<Message[]> {
     quotedScheduledFor: r.quoted_scheduled_for,
     quotedStatus: r.quoted_status,
     isHelpRequest: r.is_help_request,
+    isShareNotification: r.is_share_notification,
     createdAt: r.created_at,
     readAt: r.read_at,
   }));
@@ -260,10 +266,15 @@ export async function getUnreadCounts(): Promise<Record<string, number>> {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  // Share notifications are already surfaced via the "Shared with you"
+  // section (rows on activity_shares) — counting them here too would
+  // double-notify the recipient. is_help_request and plain messages
+  // still count.
   const { data } = await supabase
     .from("messages")
     .select("sender_id")
     .eq("recipient_id", user.id)
+    .eq("is_share_notification", false)
     .is("read_at", null);
 
   const counts: Record<string, number> = {};

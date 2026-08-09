@@ -9,6 +9,7 @@
 //   Row 3:  Friends (left)                  ·  Notifications (far right)
 // ---------------------------------------------------------------------------
 
+import { NotificationsBadge } from "./notifications-badge";
 import { PendingLink } from "./pending-link";
 import { TimeChip } from "./time-chip";
 
@@ -66,9 +67,10 @@ export function DashboardHeader({ userEmail }: { userEmail: string }) {
         <PendingLink
           href="/notifications"
           aria-label="Notifications"
-          className={navClasses}
+          className={`${navClasses} relative`}
         >
           Notifications
+          <NotificationsBadge />
         </PendingLink>
       </div>
     </div>

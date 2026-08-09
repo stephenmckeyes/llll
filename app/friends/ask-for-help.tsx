@@ -4,9 +4,19 @@
 // AskForHelpButton — pick one of YOUR activities you're struggling with,
 // choose which friends to ask, write an optional note, and send it as a
 // quoted message into each chosen friend's chat.
+//
+// UI notes (per user spec):
+//   - Activity picker is a searchable single-select dropdown (combobox).
+//     Only ever ONE activity per help request — sendHelpRequest is a
+//     single-activity server action.
+//   - Friend picker is a highlight-to-toggle list (no visible checkboxes).
+//     Multi-select is preserved — you can ask multiple friends at once —
+//     it's just expressed as row selection state rather than checkbox ticks.
+//   - Friend list is capped at 60svh with a persistent scrollbar and a
+//     gradient bottom fade so it's obvious there's more below the fold.
 // ---------------------------------------------------------------------------
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import { sendHelpRequest } from "@/app/actions/messages";
 import { useBodyScrollLock } from "@/lib/ui/body-scroll-lock";
@@ -76,19 +86,9 @@ function AskForHelpModal({
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
   const [isPending, startTransition] = useTransition();
-  // Two independent search boxes: one for the activity picker, one for
-  // the friend picker. Client-side substring match — the lists are
-  // small enough that it's not worth going to the server.
-  const [activitySearch, setActivitySearch] = useState("");
   const [friendSearch, setFriendSearch] = useState("");
 
   useBodyScrollLock();
-
-  const filteredActivities = useMemo(() => {
-    const q = activitySearch.trim().toLowerCase();
-    if (!q) return activities;
-    return activities.filter((a) => a.name.toLowerCase().includes(q));
-  }, [activities, activitySearch]);
 
   const filteredFriends = useMemo(() => {
     const q = friendSearch.trim().toLowerCase();
@@ -189,53 +189,30 @@ function AskForHelpModal({
             </p>
           ) : (
             <>
-              {/* Activity picker: search box + radio list (radio, not
-                  select, so users can see all options + which one's
-                  selected without opening a native dropdown). */}
+              {/* Activity picker: searchable single-select combobox.
+                  One activity per request (server takes one activityId). */}
               <div>
                 <p className="text-sm font-medium">
                   Which activity are you struggling with?
                 </p>
-                {activities.length > 5 && (
-                  <SearchInput
-                    value={activitySearch}
-                    onChange={setActivitySearch}
-                    placeholder="Search activities…"
-                    className="mt-2"
-                  />
-                )}
-                <ul className="mt-2 flex max-h-40 flex-col gap-1 overflow-y-auto rounded-md border border-zinc-200 p-1 dark:border-zinc-800">
-                  {filteredActivities.length === 0 ? (
-                    <li className="px-2 py-1 text-xs italic text-zinc-500">
-                      No activities match &ldquo;{activitySearch}&rdquo;.
-                    </li>
-                  ) : (
-                    filteredActivities.map((a) => (
-                      <li key={a.id}>
-                        <label
-                          className={`flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-sm ${
-                            activityId === a.id
-                              ? "bg-zinc-100 dark:bg-zinc-900"
-                              : "hover:bg-zinc-100 dark:hover:bg-zinc-900"
-                          }`}
-                        >
-                          <input
-                            type="radio"
-                            name="askForHelpActivity"
-                            checked={activityId === a.id}
-                            onChange={() => setActivityId(a.id)}
-                            className="h-4 w-4"
-                          />
-                          <span className="truncate">{a.name}</span>
-                        </label>
-                      </li>
-                    ))
-                  )}
-                </ul>
+                <ActivityCombobox
+                  activities={activities}
+                  value={activityId}
+                  onChange={setActivityId}
+                />
               </div>
 
               <div className="mt-4">
-                <p className="text-sm font-medium">Ask which friends?</p>
+                <div className="flex items-baseline justify-between gap-2">
+                  <p className="text-sm font-medium">
+                    Ask which friends?
+                  </p>
+                  <p className="text-xs text-zinc-500">
+                    {chosen.size > 0
+                      ? `${chosen.size} selected`
+                      : "Tap a name to select"}
+                  </p>
+                </div>
                 {friends.length > 5 && (
                   <SearchInput
                     value={friendSearch}
@@ -244,27 +221,55 @@ function AskForHelpModal({
                     className="mt-2"
                   />
                 )}
-                <ul className="mt-2 flex max-h-40 flex-col gap-1 overflow-y-auto rounded-md border border-zinc-200 p-1 dark:border-zinc-800">
-                  {filteredFriends.length === 0 ? (
-                    <li className="px-2 py-1 text-xs italic text-zinc-500">
-                      No friends match &ldquo;{friendSearch}&rdquo;.
-                    </li>
-                  ) : (
-                    filteredFriends.map((f) => (
-                      <li key={f.id}>
-                        <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-900">
-                          <input
-                            type="checkbox"
-                            checked={chosen.has(f.id)}
-                            onChange={() => toggleFriend(f.id)}
-                            className="h-4 w-4"
-                          />
-                          <span className="truncate">{f.name}</span>
-                        </label>
+                {/* Fixed scroll container + persistent scrollbar + soft
+                    bottom fade so it's obvious the list scrolls when
+                    there are more friends than fit. */}
+                <div className="relative mt-2">
+                  <ul
+                    className="flex max-h-60 flex-col gap-1 overflow-y-scroll rounded-md border border-zinc-200 p-1 dark:border-zinc-800"
+                    style={{ scrollbarGutter: "stable" }}
+                  >
+                    {filteredFriends.length === 0 ? (
+                      <li className="px-2 py-1 text-xs italic text-zinc-500">
+                        No friends match &ldquo;{friendSearch}&rdquo;.
                       </li>
-                    ))
+                    ) : (
+                      filteredFriends.map((f) => {
+                        const isChosen = chosen.has(f.id);
+                        return (
+                          <li key={f.id}>
+                            <button
+                              type="button"
+                              onClick={() => toggleFriend(f.id)}
+                              aria-pressed={isChosen}
+                              className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm transition-colors ${
+                                isChosen
+                                  ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                                  : "hover:bg-zinc-100 dark:hover:bg-zinc-900"
+                              }`}
+                            >
+                              <span className="truncate">{f.name}</span>
+                              {isChosen && (
+                                <span
+                                  aria-hidden
+                                  className="shrink-0 text-xs font-semibold"
+                                >
+                                  ✓
+                                </span>
+                              )}
+                            </button>
+                          </li>
+                        );
+                      })
+                    )}
+                  </ul>
+                  {/* Fade to hint at more content below when the list
+                      overflows. Purely decorative — pointer-events:none
+                      so it never eats a click on the last row. */}
+                  {filteredFriends.length > 4 && (
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-6 rounded-b-md bg-gradient-to-t from-white to-transparent dark:from-zinc-950" />
                   )}
-                </ul>
+                </div>
               </div>
 
               <label className="mt-4 block">
@@ -344,9 +349,9 @@ function toSharedMap(input: SharedArrayMap): SharedMap {
   return out;
 }
 
-// Small controlled input used by the two search boxes above. Same
-// styling as the search on Total View so the modal feels consistent
-// with the rest of the app.
+// Small controlled input used by the friend search box. Same styling
+// as the search on Total View so the modal feels consistent with the
+// rest of the app.
 function SearchInput({
   value,
   onChange,
@@ -376,6 +381,121 @@ function SearchInput({
         >
           ×
         </button>
+      )}
+    </div>
+  );
+}
+
+// Searchable single-select dropdown for the activity picker. Behaves
+// like a lightweight combobox — button opens a popover with a search
+// input + filtered results; clicking a result selects it and closes.
+// No third-party dependency; the popover positions itself absolutely
+// under the trigger button.
+function ActivityCombobox({
+  activities,
+  value,
+  onChange,
+}: {
+  activities: ActivityOption[];
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const searchRef = useRef<HTMLInputElement | null>(null);
+
+  const selected = activities.find((a) => a.id === value);
+
+  const filtered = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    if (!s) return activities;
+    return activities.filter((a) => a.name.toLowerCase().includes(s));
+  }, [activities, q]);
+
+  // Close on outside click.
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      if (!rootRef.current) return;
+      if (!rootRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  // Auto-focus the search box when opening.
+  useEffect(() => {
+    if (open) searchRef.current?.focus();
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className="relative mt-2">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-2 rounded-md border border-zinc-300 bg-white px-3 py-2 text-left text-sm dark:border-zinc-700 dark:bg-zinc-900"
+      >
+        <span className={selected ? "truncate" : "truncate text-zinc-500"}>
+          {selected?.name ?? "Choose an activity…"}
+        </span>
+        <span aria-hidden className="shrink-0 text-xs text-zinc-500">
+          ▾
+        </span>
+      </button>
+      {open && (
+        <div
+          role="listbox"
+          className="absolute left-0 right-0 top-full z-10 mt-1 flex max-h-64 flex-col overflow-hidden rounded-md border border-zinc-300 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-950"
+        >
+          <div className="border-b border-zinc-200 p-2 dark:border-zinc-800">
+            <input
+              ref={searchRef}
+              type="text"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search activities…"
+              className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+            />
+          </div>
+          <ul className="flex-1 overflow-y-auto p-1">
+            {filtered.length === 0 ? (
+              <li className="px-2 py-1.5 text-xs italic text-zinc-500">
+                No activities match &ldquo;{q}&rdquo;.
+              </li>
+            ) : (
+              filtered.map((a) => {
+                const isSelected = a.id === value;
+                return (
+                  <li key={a.id}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onChange(a.id);
+                        setOpen(false);
+                        setQ("");
+                      }}
+                      className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm ${
+                        isSelected
+                          ? "bg-zinc-100 font-medium dark:bg-zinc-900"
+                          : "hover:bg-zinc-100 dark:hover:bg-zinc-900"
+                      }`}
+                    >
+                      <span className="truncate">{a.name}</span>
+                      {isSelected && (
+                        <span aria-hidden className="shrink-0 text-xs">
+                          ✓
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })
+            )}
+          </ul>
+        </div>
       )}
     </div>
   );

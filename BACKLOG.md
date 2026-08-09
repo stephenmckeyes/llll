@@ -6,6 +6,36 @@ startup.
 
 ## Pending features (asked for, deferred on purpose)
 
+### AI-assistant pairing
+
+Asked for. Allow the user to pair Mission with an AI assistant (Claude
+or similar) that would:
+
+- Ingest the user's goals + current rhythms and **create activities
+  for them** (drafts they approve before commit — never silent writes).
+- **Check in** on schedules and past-due items; nudge in-app + optional
+  push/email.
+- **Coach** based on completion patterns — surface which rhythms are
+  slipping, suggest cadence adjustments, celebrate streaks.
+- Optionally act as a chat participant on shared activities (behave
+  like a friend for the "ask for help" flow).
+
+Design notes for whenever this ships:
+- Add an "Assistants" tab on /settings with an opt-in toggle + scope
+  picker (read-only insights, or write-new-activity, or full agent
+  access). Default OFF; agent scopes are least-privilege.
+- Store the assistant identity (name, avatar, provider) on a new
+  `profiles.assistant_*` set of columns OR a dedicated
+  `assistants` table if we support multiple.
+- All AI-created rows carry a `created_by_assistant boolean` audit
+  flag so the user can filter/undo.
+- The provider integration is a separate concern — pick a single
+  vendor at build time (Anthropic first-party is the obvious pick),
+  but keep the surface `sendToAssistant(prompt) -> response` so
+  swapping is easy.
+
+Meaningful build — not a one-off. Pick up as a contained phase.
+
 ### Multi-time reminders verification
 
 Asked for. After the multi-time refactor (every rhythm can now have

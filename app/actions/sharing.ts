@@ -104,6 +104,12 @@ export async function getShareState(
 // defaults to true (friend can follow along). Idempotent on the unique
 // (activity_id, shared_with_id) constraint. RLS enforces that the caller
 // owns the activity and has an accepted friendship with the recipient.
+//
+// When the INSERT actually creates a row (i.e. not a re-share of
+// something the friend already had), we also drop a
+// `is_share_notification=true` message into the chat so the friend
+// sees the same "check-in panel" the ask-for-help flow uses, minus
+// the red urgency. Re-shares don't spam.
 export async function shareActivity(
   activityId: string,
   friendId: string,
@@ -121,8 +127,33 @@ export async function shareActivity(
     shared_with_id: friendId,
     share_progress: shareProgress,
   });
+  const wasNew = !error;
   // 23505 = unique violation (already shared) → treat as success.
   if (error && error.code !== "23505") return { error: error.message };
+
+  if (wasNew) {
+    // Best-effort: look up the activity name to embed in the chat
+    // notification. If the lookup fails for any reason (RLS, deleted
+    // in a race) we just skip the message — the share still counts.
+    const { data: act } = await supabase
+      .from("activities")
+      .select("name")
+      .eq("id", activityId)
+      .maybeSingle();
+    const name = (act as { name?: string } | null)?.name;
+    if (name) {
+      await supabase.from("messages").insert({
+        sender_id: user.id,
+        recipient_id: friendId,
+        body: "",
+        quoted_activity_id: activityId,
+        quoted_activity_name: name,
+        is_share_notification: true,
+      });
+      revalidatePath(`/friends/${friendId}/chat`);
+      revalidatePath("/notifications");
+    }
+  }
 
   revalidatePath("/friends");
   return { ok: true };
