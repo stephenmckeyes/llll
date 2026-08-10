@@ -314,48 +314,22 @@ export default async function HomePage({
   );
 
   return (
-    <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col bg-white p-6 dark:bg-zinc-950">
-      {/* bg-white on <main> is what prevents the sticky header from
-          showing a transparent strip during scroll: previously the
-          gap between sections was a see-through band, and scrolled-up
-          rows were visible passing through it. Solid bg on the
-          container hides them.
-
-          Note: no `gap` on <main>. The header gets its own `mb-6`
-          for breathing room, but ViewSwitcher → view-body abut with
-          zero gap — matching the natural "stuck" appearance when the
-          user scrolls and these two stickies (top-0 and top-[5rem])
-          end up touching. Before this, the unscrolled state showed a
-          32px gap that the scrolled state didn't, which looked like
-          the layout "compressed" on scroll. Now both states match. */}
-      {/* Header — shared with Total View via DashboardHeader. mb-3 (down
-          from mb-6) tightens the gap to the section tabs below per user
-          request. */}
-      <header className="mb-3">
+    <main className="mx-auto flex h-full w-full max-w-2xl flex-col bg-white px-6 pt-6 dark:bg-zinc-950">
+      {/* App-shell: this <main> is bounded to the app-shell scroll
+          region in layout.tsx (viewport minus BottomNav). Vertical
+          layout is:
+            [header]
+            [scrollable view body — flex-1 min-h-0 overflow-y-auto]
+            [tabs at the bottom, above the global BottomNav]
+          Per user spec: "move the calendar/streaks/total view and
+          day/week/month/year and other such options to the bottom of
+          the screen and invert them bottom to top and left to right."
+          The ViewSwitcher itself owns the inversion — see its impl. */}
+      <header className="mb-3 shrink-0">
         <DashboardHeader userEmail={user.email ?? ""} />
       </header>
 
-      {/* ViewSwitcher and each view's date navigator stay pinned at the
-          top while the user scrolls through the grid (or any long
-          view). The two stack via a fixed offset: ViewSwitcher at
-          top-0, navigator at top-[6.5rem] below it. The -mx-6 + px-6
-          lets the background extend across the page padding so
-          scrolled content doesn't show through their edges.
-          Per user spec: "make the grid view like the calendar view
-          where the date and view selections do not move/go out of
-          view as you scroll." */}
-      <div className="sticky top-0 z-30 -mx-6 bg-white px-6 py-2 dark:bg-zinc-950">
-        <ViewSwitcher
-          section={view === "grid" ? "grid" : "calendar"}
-          currentView={view}
-          range={range}
-          date={date}
-          timelineOn={timelineOn}
-          allTagNames={Object.keys(tagMap).sort()}
-          activeHiddenTags={activeHiddenTags}
-        />
-      </div>
-
+      <div className="flex flex-1 min-h-0 flex-col overflow-y-auto">
       {view === "day" && !timelineOn && (
         <DayView
           startDate={date}
@@ -413,6 +387,26 @@ export default async function HomePage({
           tagMap={tagMap}
         />
       )}
+      </div>
+
+      {/* Bottom-anchored view controls — section tabs / sub-tabs /
+          modifier chips, all rendered "flipped": modifier chips first
+          (top of the block), then sub-tabs, then section tabs at the
+          very bottom just above the global BottomNav. ViewSwitcher
+          also reverses each row's left-to-right order when the
+          `bottomAnchored` prop is set. */}
+      <div className="shrink-0 border-t border-zinc-200 bg-white pt-2 dark:border-zinc-800 dark:bg-zinc-950 pb-3">
+        <ViewSwitcher
+          section={view === "grid" ? "grid" : "calendar"}
+          currentView={view}
+          range={range}
+          date={date}
+          timelineOn={timelineOn}
+          allTagNames={Object.keys(tagMap).sort()}
+          activeHiddenTags={activeHiddenTags}
+          bottomAnchored
+        />
+      </div>
     </main>
   );
 }
@@ -641,6 +635,7 @@ function ViewSwitcher({
   timelineOn,
   allTagNames,
   activeHiddenTags,
+  bottomAnchored = false,
 }: {
   section: Section;
   currentView: ViewKind;
@@ -651,29 +646,34 @@ function ViewSwitcher({
   allTagNames: string[];
   /** Currently-hidden tag NAMES (URL param OR profile default fallback). */
   activeHiddenTags: string[];
+  /** When true, render as a bottom-anchored control strip: the row
+   *  order and each row's inner order are reversed (per user spec:
+   *  "invert them bottom to top and left to right"). Left-to-right
+   *  reversal is done with `flex-row-reverse` so the visual order
+   *  flips but tab order + click semantics stay the same. */
+  bottomAnchored?: boolean;
 }) {
+  const flipRow = bottomAnchored ? "flex-row-reverse" : "";
+  // flex-col-reverse renders children BOTTOM to TOP. Combined with
+  // per-row flip above, the whole block reads inverted both axes.
+  const outerCol = bottomAnchored
+    ? "flex flex-col-reverse gap-1"
+    : "flex flex-col gap-1";
   return (
-    // Tighter vertical rhythm: gap-2 → gap-1 between the section row
-    // and the sub-tab row, and the wrapping nav uses p-0.5 instead of
-    // p-1. Saves ~16px of header height — enough to keep the grid view
-    // visible on shorter laptop windows even with the filter button
-    // now living inside the navigator.
-    <div className="flex flex-col gap-1">
-      {/* Row 1: section tabs (Calendar / Grid / Total View) — shared with
-          the Total View page via SectionTabs. */}
-      <SectionTabs active={section} date={date} />
+    <div className={outerCol}>
+      {/* Section tabs (Calendar / Streaks / Total View) — shared with
+          the Total View page via SectionTabs. In bottom-anchored mode
+          this row ends up VISUALLY at the very bottom of the block
+          (because of flex-col-reverse above) and its inner items also
+          flip via `flipRow`. */}
+      <SectionTabs active={section} date={date} flipRow={bottomAnchored} />
 
-      {/* Row 2: sub-tabs (Calendar's day/week/month/year, or Grid's
-          week/month/total ranges). Calendar also carries a separate
-          Timeline toggle chip on the right — flipping it renders the
-          vertical hour-grid overlay ON TOP OF whichever sub-view is
-          active (currently just Day; Week/Month/Year variants are
-          future work). Toggle is URL-driven (`?timeline=1`) so
-          bookmarks + browser back respect the state. */}
+      {/* Sub-tabs row + calendar's modifier chips. flipRow reverses
+          Day/Week/Month/Year visually when bottom-anchored. */}
       {section === "calendar" ? (
         <>
           <nav
-            className="flex gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800"
+            className={`flex gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800 ${flipRow}`}
             aria-label="Calendar view"
           >
             {CALENDAR_SUB_OPTIONS.map((opt) => (
@@ -687,14 +687,16 @@ function ViewSwitcher({
               />
             ))}
           </nav>
-          {/* Row 2b — Modifier chips stacked vertically + right-aligned,
-              each carrying a small check-square that fills in when the
-              option is active. Per user spec: "add a small picture with
-              it with a checkbox when you click on it to help
-              differentiate it even more." The check + icon combo makes
-              it obvious these are toggle controls, not more view
-              options like the tab strip above. */}
-          <div className="flex flex-col items-end gap-1 pt-1">
+          {/* Modifier chips (Timeline / Filters) stack vertically. In
+              bottom-anchored mode the whole outer block is flipped, so
+              these VISUALLY end up ABOVE the sub-tabs; leaving the
+              inner alignment left→right (items-start when flipped)
+              matches the "invert left to right" spec. */}
+          <div
+            className={`flex flex-col gap-1 pt-1 ${
+              bottomAnchored ? "items-start" : "items-end"
+            }`}
+          >
             <Link
               href={`/?view=${currentView}&date=${date}${
                 timelineOn ? "" : "&timeline=1"
@@ -720,7 +722,7 @@ function ViewSwitcher({
         </>
       ) : (
         <nav
-          className="flex gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800"
+          className={`flex gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800 ${flipRow}`}
           aria-label="Streaks range"
         >
           {GRID_SUB_OPTIONS.map((opt) => (

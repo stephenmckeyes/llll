@@ -87,30 +87,37 @@ export default function RootLayout({
       // mutates <html>'s className before React hydrates, which would
       // otherwise trigger a mismatch warning.
       suppressHydrationWarning
-      // Intentionally NO `h-full` / `min-h-full` / `flex` here. Past
-      // versions constrained <html> and <body> to viewport height and
-      // made <body> a flex container; combined with `overflow-x:
-      // hidden` in globals.css that turned <body> into a sized scroll
-      // container instead of letting the viewport scroll naturally.
-      // Result: page-level scroll silently broke everywhere except
-      // views that used their OWN internal scroll container (Day view).
-      // Keeping the markup minimal here lets the browser handle
-      // viewport scroll by default. Each page's `<main>` carries its
-      // own `min-h-svh` so short pages still look full.
+      // App-shell layout: viewport is bounded (h-svh + overflow-hidden).
+      // BottomNav sits at the bottom of the flex column, an in-flow
+      // sibling of `{children}`; only the {children} wrapper scrolls, so
+      // the outer chrome (header + BottomNav) stays put while page
+      // content moves. Per user spec: "the screen fits the device's
+      // screen where the bottom is located at the top of the schedule/
+      // friends/levels/etc buttons so that if there is a section that
+      // is supposed to scroll, that section scrolls, but the outlying
+      // parts of the app do not move."
       className={`${geistSans.variable} ${geistMono.variable} antialiased`}
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
-      <body>
+      <body className="flex h-svh flex-col overflow-hidden">
         {/* Startup schema check — red strip if any migration listed in
             lib/db/schema-check.ts hasn't been applied yet. Silent when
             everything's caught up. */}
         <MigrationCheckBanner />
-        {children}
-        {/* Persistent 5-slot bottom nav. Self-hides on auth pages
-            (login / signup / onboarding) via usePathname; renders its
-            own spacer so nothing gets clipped by the fixed bar. */}
+        {/* The scroll container. Every page's content lives inside
+            this bounded region; the outer chrome (BottomNav below)
+            stays fixed to the viewport. Individual pages may nest
+            their own scroll containers (e.g. Day view). min-h-0 is
+            required so the flex child can actually shrink below its
+            content's natural height. */}
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+          {children}
+        </div>
+        {/* Persistent 5-slot bottom nav. Now an in-flow flex sibling
+            (was fixed before the app-shell refactor) so it always sits
+            at the bottom of the viewport without needing a spacer. */}
         <BottomNav />
         {/* Vercel Speed Insights — collects real-user Core Web Vitals
             (load time, interaction latency) from production visitors.

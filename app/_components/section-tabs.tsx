@@ -22,15 +22,21 @@ export type SectionKind = "calendar" | "grid" | "total";
 export function SectionTabs({
   active,
   date,
+  flipRow = false,
 }: {
   active: SectionKind;
   /** YYYY-MM-DD carried into the Calendar/Grid links so hopping sections
    *  keeps the user roughly where they were. */
   date: string;
+  /** Reverse the visual left→right order via `flex-row-reverse`. Used
+   *  by the dashboard's bottom-anchored ViewSwitcher per user spec
+   *  ("invert them ... left to right"). Tab order + click semantics
+   *  are unchanged. */
+  flipRow?: boolean;
 }) {
   return (
     <nav
-      className="flex gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800"
+      className={`flex gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800 ${flipRow ? "flex-row-reverse" : ""}`}
       aria-label="Section"
     >
       <SectionTab

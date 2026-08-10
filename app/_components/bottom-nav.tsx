@@ -74,29 +74,26 @@ export function BottomNav() {
   const pathname = usePathname() ?? "/";
   if (HIDDEN_PREFIXES.some((p) => pathname.startsWith(p))) return null;
 
+  // In-flow flex sibling of the scroll container in layout.tsx — sits
+  // at the very bottom of the viewport. No more spacer or fixed
+  // positioning; the bounded body + scroll wrapper handles layout.
   return (
-    <>
-      {/* Spacer so the fixed bar doesn't cover the last row of any page.
-          Matches the nav's height plus a bit of breathing room; safe-
-          area is handled by padding inside the fixed nav. */}
-      <div aria-hidden className="h-20" />
-      <nav
-        aria-label="Primary"
-        className="fixed inset-x-0 bottom-0 z-40 border-t border-zinc-200 bg-white/95 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95"
-        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
-      >
-        <ul className="mx-auto flex w-full max-w-2xl items-stretch justify-between px-2">
-          {ITEMS.map((item) => (
-            <li
-              key={item.href}
-              className={item.primary ? "flex-[1.6]" : "flex-1"}
-            >
-              <NavButton item={item} active={item.match(pathname)} />
-            </li>
-          ))}
-        </ul>
-      </nav>
-    </>
+    <nav
+      aria-label="Primary"
+      className="shrink-0 border-t border-zinc-200 bg-white/95 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95"
+      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+    >
+      <ul className="mx-auto flex w-full max-w-2xl items-stretch justify-between px-2">
+        {ITEMS.map((item) => (
+          <li
+            key={item.href}
+            className={item.primary ? "flex-[1.6]" : "flex-1"}
+          >
+            <NavButton item={item} active={item.match(pathname)} />
+          </li>
+        ))}
+      </ul>
+    </nav>
   );
 }
 

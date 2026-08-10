@@ -123,7 +123,7 @@ export default async function ActivitiesPage() {
     : "default";
 
   return (
-    <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-4 p-6">
+    <main className="mx-auto flex h-full w-full max-w-2xl flex-col gap-4 overflow-y-auto p-6">
       <DashboardHeader userEmail={user.email ?? ""} />
 
       <SectionTabs active="total" date={todayStr} />

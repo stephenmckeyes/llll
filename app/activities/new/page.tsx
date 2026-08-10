@@ -51,7 +51,7 @@ export default async function NewActivityPage() {
     : "default";
 
   return (
-    <main className="mx-auto flex min-h-svh w-full max-w-xl flex-col gap-6 p-6">
+    <main className="mx-auto flex h-full w-full max-w-xl flex-col gap-6 overflow-y-auto p-6">
       <header className="space-y-1">
         <Link
           href="/"
