@@ -20,8 +20,9 @@
 // timeline to-dos").
 // ---------------------------------------------------------------------------
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, useTransition } from "react";
 
+import { acknowledgeConflict } from "@/app/actions/conflicts";
 import type { TagMap } from "@/lib/domain/tags";
 import { formatTimeRange } from "@/lib/ui/format-time";
 import { useTimeFormat } from "@/lib/ui/format-time-client";
@@ -40,30 +41,6 @@ import {
   type Conflict,
   type TimelineEvent,
 } from "./timeline-shared";
-
-const LS_KEY = "mission-conflicts-dismissed";
-
-function loadDismissed(): Set<string> {
-  if (typeof window === "undefined") return new Set();
-  try {
-    const raw = window.localStorage.getItem(LS_KEY);
-    if (!raw) return new Set();
-    const arr = JSON.parse(raw) as unknown;
-    return Array.isArray(arr)
-      ? new Set(arr.filter((x): x is string => typeof x === "string"))
-      : new Set();
-  } catch {
-    return new Set();
-  }
-}
-
-function saveDismissed(s: Set<string>) {
-  try {
-    window.localStorage.setItem(LS_KEY, JSON.stringify(Array.from(s)));
-  } catch {
-    // best-effort
-  }
-}
 
 type DayEvent = TimelineEvent<DayInstance>;
 
@@ -101,32 +78,50 @@ export function TimelineDay({
   todayStr,
   instances,
   tagMap,
+  acknowledgedPairKeys = [],
 }: {
   date: string;
   todayStr: string;
   instances: DayInstance[];
   tagMap: TagMap;
+  /** Pair keys already acknowledged (server-persisted; migration
+   *  0036). Filtered out of the visible-conflicts list; user can add
+   *  to this set by clicking Got it (which calls acknowledgeConflict
+   *  → the next server render carries the row through). */
+  acknowledgedPairKeys?: readonly string[];
 }) {
   const timeFormat = useTimeFormat();
-  const [dismissed, setDismissed] = useState<Set<string>>(() =>
-    loadDismissed()
-  );
+  const [locallyAcked, setLocallyAcked] = useState<Set<string>>(new Set());
+  const [, startAckTransition] = useTransition();
   const [openInstance, setOpenInstance] = useState<DayInstance | null>(null);
 
   const { timed, untimed } = useMemo(() => buildEvents(instances), [instances]);
   const layout = useMemo(() => layoutEvents(timed), [timed]);
   const conflicts = useMemo(() => detectConflicts(timed), [timed]);
+
+  // Merge server-supplied acks with any acks placed in THIS render
+  // (before the server round-trip completes) for instant feedback.
+  const dismissed = useMemo(() => {
+    const s = new Set(acknowledgedPairKeys);
+    for (const k of locallyAcked) s.add(k);
+    return s;
+  }, [acknowledgedPairKeys, locallyAcked]);
+
   const visibleConflicts = conflicts.filter(
     (c) => !dismissed.has(conflictKey(date, c.a, c.b))
   );
 
   const acknowledge = useCallback(
     (c: Conflict<DayInstance>) => {
-      setDismissed((prev) => {
+      const key = conflictKey(date, c.a, c.b);
+      setLocallyAcked((prev) => {
+        if (prev.has(key)) return prev;
         const next = new Set(prev);
-        next.add(conflictKey(date, c.a, c.b));
-        saveDismissed(next);
+        next.add(key);
         return next;
+      });
+      startAckTransition(async () => {
+        await acknowledgeConflict(key);
       });
     },
     [date]

@@ -94,6 +94,11 @@ export const EXPECTATIONS: ReadonlyArray<MigrationExpectation> = [
     label: "Pinned activities",
     checks: [{ table: "activities", column: "pinned" }],
   },
+  {
+    migration: "0036_conflict_acknowledgements.sql",
+    label: "Timeline conflict acknowledgements (cross-device)",
+    checks: [{ table: "conflict_acknowledgements", column: "pair_key" }],
+  },
 ];
 
 export type MissingMigration = {

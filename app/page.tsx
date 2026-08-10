@@ -68,6 +68,7 @@ import { DashboardHeader } from "./_components/dashboard-header";
 import { SectionTabs } from "./_components/section-tabs";
 import { TagDotRow } from "./_components/tag-chip";
 import { TabPending } from "./_components/tab-pending";
+import { listAcknowledgedPairKeys } from "./actions/conflicts";
 import { TimelineDay } from "./_components/timeline-day";
 import { TimelineWeek } from "./_components/timeline-week";
 
@@ -1161,12 +1162,15 @@ async function TimelineView({
     completionCount: liveCompletionCount(r.completion_instances),
   }));
 
+  const acknowledgedPairKeys = await listAcknowledgedPairKeys();
+
   return (
     <TimelineDay
       date={date}
       todayStr={todayStr}
       instances={instances}
       tagMap={tagMap}
+      acknowledgedPairKeys={acknowledgedPairKeys}
     />
   );
 }

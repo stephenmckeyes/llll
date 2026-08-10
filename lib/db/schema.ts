@@ -596,3 +596,21 @@ export const communityAutoAddPrefs = pgTable("community_auto_add_prefs", {
   userId: uuid("user_id").notNull(),
   autoAdd: boolean("auto_add").notNull().default(false),
 });
+
+// ===========================================================================
+// Timeline conflict acknowledgements (migration 0036)
+// ---------------------------------------------------------------------------
+// Cross-device replacement for the localStorage "conflicts-dismissed"
+// set. Key format: `${date}|${eventKey1}|${eventKey2}` with the two
+// event keys ordered lexicographically so A×B and B×A collapse.
+export const conflictAcknowledgements = pgTable(
+  "conflict_acknowledgements",
+  {
+    userId: uuid("user_id").notNull(),
+    pairKey: text("pair_key").notNull(),
+    acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("conflict_acknowledgements_user_idx").on(t.userId)]
+);

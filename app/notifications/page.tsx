@@ -9,6 +9,7 @@
 import { startOfWeek, format } from "date-fns";
 import Link from "next/link";
 
+import { getUnacknowledgedConflictsForDate } from "@/app/actions/conflicts";
 import { getSocialOverview, type SocialEntry } from "@/app/actions/friends";
 import { getUnreadCounts } from "@/app/actions/messages";
 import { getSharedInstancesWithMe, getSharedWithMe } from "@/app/actions/sharing";
@@ -23,6 +24,7 @@ import type { Rhythm } from "@/lib/validators/rhythm";
 import { PendingLink } from "@/app/_components/pending-link";
 
 import { buildFriendActivityNotifications } from "./friend-activity";
+import { ConflictsList } from "./conflicts-list";
 import { FriendActivityNotifications } from "./friend-activity-notifications";
 import { RequestActions } from "./request-actions";
 import { SharedNotifications } from "./shared-notifications";
@@ -69,13 +71,14 @@ export default async function NotificationsPage() {
     return format(d, "yyyy-MM-dd");
   })();
 
-  const [entries, shares, watches, sharedInstances, unread] =
+  const [entries, shares, watches, sharedInstances, unread, conflicts] =
     await Promise.all([
       getSocialOverview(),
       getSharedWithMe(),
       getWatches(),
       getSharedInstancesWithMe(from, todayStr),
       getUnreadCounts(),
+      getUnacknowledgedConflictsForDate(todayStr),
     ]);
   const incoming = entries.filter(
     (e) => e.status === "pending" && e.direction === "incoming"
@@ -181,6 +184,11 @@ export default async function NotificationsPage() {
         </PendingLink>
         <h1 className="text-3xl font-semibold tracking-tight">Notifications</h1>
       </header>
+
+      {/* 0. Timeline conflicts — high urgency; surfaced first so users
+          who haven't opened Timeline today still see them. Persist
+          server-side via conflict_acknowledgements (migration 0036). */}
+      <ConflictsList conflicts={conflicts} />
 
       {/* 1. Social */}
       <section className="flex flex-col gap-3">
