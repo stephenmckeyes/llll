@@ -12,7 +12,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { IncompleteButton, type IncompleteInfo } from "./incomplete-button";
 
@@ -25,6 +25,7 @@ export function DateNavigator({
   nextDate,
   label,
   incompleteInfo,
+  chipsSlot,
 }: {
   view: ViewKind;
   currentDate: string;
@@ -32,6 +33,11 @@ export function DateNavigator({
   nextDate: string;
   label: string;
   incompleteInfo: IncompleteInfo;
+  /** Optional accessory node — the Calendar's Timeline + Filters
+   *  chips get rendered here so they sit on the same visual line
+   *  as the date + Today button ("space is better used" per user
+   *  spec). Right-aligned via ml-auto within the control row. */
+  chipsSlot?: ReactNode;
 }) {
   const router = useRouter();
   // Mirror the `currentDate` prop into local state during render rather
@@ -53,7 +59,7 @@ export function DateNavigator({
         {label}
       </p>
 
-      <div className="flex items-center justify-center gap-2">
+      <div className="flex items-center gap-2">
         <Link
           href={hrefFor(view, prevDate)}
           aria-label="Previous"
@@ -86,6 +92,10 @@ export function DateNavigator({
           Today
         </Link>
         <IncompleteButton info={incompleteInfo} />
+        {/* Chips slot — right-aligned via ml-auto so the date controls
+            keep their left grouping and Timeline/Filters float to the
+            end of the same row. */}
+        {chipsSlot && <div className="ml-auto shrink-0">{chipsSlot}</div>}
       </div>
     </div>
   );

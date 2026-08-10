@@ -76,12 +76,16 @@ export function TimelineWeek({
   todayStr,
   instances,
   tagMap,
+  chipsSlot,
 }: {
   /** 7 YYYY-MM-DD strings, Monday..Sunday. */
   weekDates: string[];
   todayStr: string;
   instances: DayInstance[];
   tagMap: TagMap;
+  /** Timeline / Filters chips rendered at the top of the week grid
+   *  so they sit on the same visual line as the top control. */
+  chipsSlot?: React.ReactNode;
 }) {
   const timeFormat = useTimeFormat();
   const [openInstance, setOpenInstance] = useState<DayInstance | null>(null);
@@ -107,6 +111,9 @@ export function TimelineWeek({
 
   return (
     <div className="flex flex-col gap-3">
+      {chipsSlot && (
+        <div className="flex items-start justify-end">{chipsSlot}</div>
+      )}
       {/* Grid: hour rail on the left, then 7 narrow day columns. */}
       <div className="flex gap-1">
         <div className="w-10 shrink-0 pt-6">

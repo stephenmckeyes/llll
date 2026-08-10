@@ -331,23 +331,6 @@ export default async function HomePage({
         <DashboardHeader userEmail={user.email ?? ""} />
       </header>
 
-      {/* Calendar modifier chips — pinned toward the top of the
-          calendar surface, near the sticky Today button inside each
-          view's date navigator. Per user spec: "Keep timeline and
-          filters buttons towards the top of the screen next to the
-          'today' button rather than down at the bottom." */}
-      {view !== "grid" && (
-        <div className="mb-2 shrink-0">
-          <CalendarModifierChips
-            currentView={view}
-            date={date}
-            timelineOn={timelineOn}
-            allTagNames={Object.keys(tagMap).sort()}
-            activeHiddenTags={activeHiddenTags}
-          />
-        </div>
-      )}
-
       <div className="flex flex-1 min-h-0 flex-col overflow-y-auto">
       {view === "day" && !timelineOn && (
         <DayView
@@ -358,6 +341,15 @@ export default async function HomePage({
           tagMap={tagMap}
           density={addActivityDensity}
           hiddenTags={hiddenTagsSet}
+          chipsNode={
+            <CalendarModifierChips
+              currentView={view}
+              date={date}
+              timelineOn={timelineOn}
+              allTagNames={Object.keys(tagMap).sort()}
+              activeHiddenTags={activeHiddenTags}
+            />
+          }
         />
       )}
       {view === "day" && timelineOn && (
@@ -366,6 +358,15 @@ export default async function HomePage({
           todayStr={todayStr}
           tagMap={tagMap}
           hiddenTags={hiddenTagsSet}
+          chipsNode={
+            <CalendarModifierChips
+              currentView={view}
+              date={date}
+              timelineOn={timelineOn}
+              allTagNames={Object.keys(tagMap).sort()}
+              activeHiddenTags={activeHiddenTags}
+            />
+          }
         />
       )}
       {view === "week" && !timelineOn && (
@@ -375,6 +376,15 @@ export default async function HomePage({
           incompleteInfo={incompleteInfo}
           tagMap={tagMap}
           hiddenTags={hiddenTagsSet}
+          chipsNode={
+            <CalendarModifierChips
+              currentView={view}
+              date={date}
+              timelineOn={timelineOn}
+              allTagNames={Object.keys(tagMap).sort()}
+              activeHiddenTags={activeHiddenTags}
+            />
+          }
         />
       )}
       {view === "week" && timelineOn && (
@@ -383,6 +393,15 @@ export default async function HomePage({
           todayStr={todayStr}
           tagMap={tagMap}
           hiddenTags={hiddenTagsSet}
+          chipsNode={
+            <CalendarModifierChips
+              currentView={view}
+              date={date}
+              timelineOn={timelineOn}
+              allTagNames={Object.keys(tagMap).sort()}
+              activeHiddenTags={activeHiddenTags}
+            />
+          }
         />
       )}
       {view === "month" && (
@@ -392,6 +411,15 @@ export default async function HomePage({
           incompleteInfo={incompleteInfo}
           tagMap={tagMap}
           hiddenTags={hiddenTagsSet}
+          chipsNode={
+            <CalendarModifierChips
+              currentView={view}
+              date={date}
+              timelineOn={timelineOn}
+              allTagNames={Object.keys(tagMap).sort()}
+              activeHiddenTags={activeHiddenTags}
+            />
+          }
         />
       )}
       {view === "year" && (
@@ -400,6 +428,15 @@ export default async function HomePage({
           todayStr={todayStr}
           incompleteInfo={incompleteInfo}
           hiddenTags={hiddenTagsSet}
+          chipsNode={
+            <CalendarModifierChips
+              currentView={view}
+              date={date}
+              timelineOn={timelineOn}
+              allTagNames={Object.keys(tagMap).sort()}
+              activeHiddenTags={activeHiddenTags}
+            />
+          }
         />
       )}
       {view === "grid" && (
@@ -685,7 +722,7 @@ function ViewSwitcher({
           this row ends up VISUALLY at the very bottom of the block
           (because of flex-col-reverse above) and its inner items also
           flip via `flipRow`. */}
-      <SectionTabs active={section} date={date} flipRow={bottomAnchored} />
+      <SectionTabs active={section} date={date} />
 
       {/* Sub-tabs row + calendar's modifier chips. flipRow reverses
           Day/Week/Month/Year visually when bottom-anchored. */}
@@ -780,6 +817,7 @@ async function DayView({
   tagMap,
   density,
   hiddenTags,
+  chipsNode,
 }: {
   startDate: string;
   todayStr: string;
@@ -788,6 +826,7 @@ async function DayView({
   tagMap: TagMap;
   density: AddActivityDensity;
   hiddenTags: ReadonlySet<string>;
+  chipsNode?: React.ReactNode;
 }) {
   const supabase = await createClient();
 
@@ -976,6 +1015,7 @@ async function DayView({
       incompleteInfo={incompleteInfo}
       tagMap={tagMap}
       density={density}
+      chipsSlot={chipsNode}
     />
   );
 }
@@ -996,11 +1036,13 @@ async function TimelineView({
   todayStr,
   tagMap,
   hiddenTags,
+  chipsNode,
 }: {
   date: string;
   todayStr: string;
   tagMap: TagMap;
   hiddenTags: ReadonlySet<string>;
+  chipsNode?: React.ReactNode;
 }) {
   const supabase = await createClient();
 
@@ -1095,6 +1137,7 @@ async function TimelineView({
       instances={instances}
       tagMap={tagMap}
       acknowledgedPairKeys={acknowledgedPairKeys}
+      chipsSlot={chipsNode}
     />
   );
 }
@@ -1111,11 +1154,13 @@ async function TimelineWeekView({
   todayStr,
   tagMap,
   hiddenTags,
+  chipsNode,
 }: {
   weekDate: string;
   todayStr: string;
   tagMap: TagMap;
   hiddenTags: ReadonlySet<string>;
+  chipsNode?: React.ReactNode;
 }) {
   const supabase = await createClient();
 
@@ -1215,6 +1260,7 @@ async function TimelineWeekView({
       todayStr={todayStr}
       instances={instances}
       tagMap={tagMap}
+      chipsSlot={chipsNode}
     />
   );
 }
@@ -1230,12 +1276,14 @@ async function WeekView({
   incompleteInfo,
   tagMap,
   hiddenTags,
+  chipsNode,
 }: {
   weekDate: string;
   todayStr: string;
   incompleteInfo: IncompleteInfo;
   tagMap: TagMap;
   hiddenTags: ReadonlySet<string>;
+  chipsNode?: React.ReactNode;
 }) {
   const supabase = await createClient();
 
@@ -1330,6 +1378,7 @@ async function WeekView({
           nextDate={nextDate}
           label={`${format(weekStart, "MMM d")} – ${format(weekEnd, "MMM d, yyyy")}`}
           incompleteInfo={incompleteInfo}
+          chipsSlot={chipsNode}
         />
       </StickyNav>
 
@@ -1449,12 +1498,14 @@ async function MonthView({
   incompleteInfo,
   tagMap,
   hiddenTags,
+  chipsNode,
 }: {
   monthDate: string;
   todayStr: string;
   incompleteInfo: IncompleteInfo;
   tagMap: TagMap;
   hiddenTags: ReadonlySet<string>;
+  chipsNode?: React.ReactNode;
 }) {
   const supabase = await createClient();
 
@@ -1536,6 +1587,7 @@ async function MonthView({
           nextDate={nextDate}
           label={format(refDate, "MMMM yyyy")}
           incompleteInfo={incompleteInfo}
+          chipsSlot={chipsNode}
         />
       </StickyNav>
 
@@ -1567,11 +1619,13 @@ async function YearView({
   todayStr,
   incompleteInfo,
   hiddenTags,
+  chipsNode,
 }: {
   yearDate: string;
   todayStr: string;
   incompleteInfo: IncompleteInfo;
   hiddenTags: ReadonlySet<string>;
+  chipsNode?: React.ReactNode;
 }) {
   const supabase = await createClient();
   const refDate = parseDate(yearDate);
@@ -1626,6 +1680,7 @@ async function YearView({
           nextDate={nextDate}
           label={String(year)}
           incompleteInfo={incompleteInfo}
+          chipsSlot={chipsNode}
         />
       </StickyNav>
       <div className="grid grid-cols-3 gap-4">

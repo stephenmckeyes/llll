@@ -2,15 +2,16 @@
 // SectionTabs — the top-level section switcher shared by the dashboard
 // (Calendar / Grid live at "/") and the Total View page ("/activities").
 //
-// Three peers, in line:
-//   - Calendar   → /?view=day
-//   - Grid       → /?view=grid&range=week
+// Three peers, LEFT-to-RIGHT order per user spec:
 //   - Total View → /activities  (every activity, grouped + filterable)
+//   - Calendar   → /?view=day
+//   - Streaks    → /?view=grid&range=week
 //
-// Kept in its own file so the three tabs render identically on both
-// surfaces. The per-section SUB-tabs (Calendar's day/week/month/year,
-// Grid's week/month/total/custom) still live in the dashboard's
-// ViewSwitcher — Total View has none.
+// Calendar sits in the middle intentionally — it's the daily driver
+// with Total and Streaks on either side. Rendered at the bottom of
+// the schedule surface (bottom-anchored ViewSwitcher / TotalView),
+// but always left→right in source order so it reads the same way on
+// every surface.
 // ---------------------------------------------------------------------------
 
 import Link from "next/link";
@@ -22,23 +23,22 @@ export type SectionKind = "calendar" | "grid" | "total";
 export function SectionTabs({
   active,
   date,
-  flipRow = false,
 }: {
   active: SectionKind;
   /** YYYY-MM-DD carried into the Calendar/Grid links so hopping sections
    *  keeps the user roughly where they were. */
   date: string;
-  /** Reverse the visual left→right order via `flex-row-reverse`. Used
-   *  by the dashboard's bottom-anchored ViewSwitcher per user spec
-   *  ("invert them ... left to right"). Tab order + click semantics
-   *  are unchanged. */
-  flipRow?: boolean;
 }) {
   return (
     <nav
-      className={`flex gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800 ${flipRow ? "flex-row-reverse" : ""}`}
+      className="flex gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800"
       aria-label="Section"
     >
+      <SectionTab
+        label="Total View"
+        href="/activities"
+        active={active === "total"}
+      />
       <SectionTab
         label="Calendar"
         href={`/?view=day&date=${date}`}
@@ -53,7 +53,6 @@ export function SectionTabs({
         href={`/?view=grid&date=${date}`}
         active={active === "grid"}
       />
-      <SectionTab label="Total View" href="/activities" active={active === "total"} />
     </nav>
   );
 }

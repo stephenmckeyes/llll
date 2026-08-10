@@ -123,21 +123,34 @@ export default async function ActivitiesPage() {
     : "default";
 
   return (
-    <main className="mx-auto flex h-full w-full max-w-2xl flex-col gap-4 overflow-y-auto p-6">
-      <DashboardHeader userEmail={user.email ?? ""} />
+    <main className="mx-auto flex h-full w-full max-w-2xl flex-col bg-white px-6 pt-6 dark:bg-zinc-950">
+      {/* App-shell for Total View — mirrors Schedule's structure:
+            [header shrink-0]
+            [scrollable middle flex-1]
+            [SectionTabs shrink-0 at bottom]
+          Per user spec: "Total view still has options at the top and
+          not inverted, fix this to keep consistent with calendar and
+          streaks views." */}
+      <header className="shrink-0">
+        <DashboardHeader userEmail={user.email ?? ""} />
+      </header>
 
-      <SectionTabs active="total" date={todayStr} />
+      <div className="flex flex-1 min-h-0 flex-col gap-4 overflow-y-auto pt-4">
+        <p className="text-sm text-zinc-500">
+          {active.length} active · {archived.length} archived · {all.length} total
+        </p>
 
-      <p className="text-sm text-zinc-500">
-        {active.length} active · {archived.length} archived · {all.length} total
-      </p>
+        <TotalView
+          activities={all}
+          tagMap={tagMap}
+          density={density}
+          completedByActivityId={completedByActivityId}
+        />
+      </div>
 
-      <TotalView
-        activities={all}
-        tagMap={tagMap}
-        density={density}
-        completedByActivityId={completedByActivityId}
-      />
+      <div className="shrink-0 border-t border-zinc-200 bg-white pt-2 dark:border-zinc-800 dark:bg-zinc-950 pb-3">
+        <SectionTabs active="total" date={todayStr} />
+      </div>
     </main>
   );
 }

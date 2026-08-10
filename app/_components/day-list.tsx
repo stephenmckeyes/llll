@@ -141,6 +141,7 @@ export function DayList({
   onReadOnlyOpen,
   onUnlabeledJump,
   density = "default",
+  chipsSlot,
 }: {
   initialDate: string;
   completedByDate: Record<string, DayMarkedItem[]>;
@@ -149,6 +150,11 @@ export function DayList({
   todayStr: string;
   incompleteInfo: IncompleteInfo;
   tagMap: TagMap;
+  /** Optional accessory rendered at the far right of the date-input
+   *  row (same line as ← input → Today Unlabeled). The dashboard passes
+   *  the Calendar's Timeline + Filters chips here so they sit next to
+   *  the Today button per user spec. */
+  chipsSlot?: React.ReactNode;
   /** Read-only friend view: same infinite-scroll day list, but no
    *  Complete/Missed/Unlabel/+Add and no mutation modals — rows show a
    *  static status. Default false keeps the dashboard unchanged. */
@@ -363,7 +369,7 @@ export function DayList({
         <p className="text-center text-sm font-medium text-zinc-700 dark:text-zinc-300">
           {labelLong(currentDate)}
         </p>
-        <div className="flex items-center justify-center gap-2">
+        <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={() => shiftDays(-1)}
@@ -413,6 +419,10 @@ export function DayList({
           ) : (
             <IncompleteButton info={incompleteInfo} />
           )}
+          {/* Chips slot — right-aligned via ml-auto so the date
+              controls keep their left grouping and Timeline/Filters
+              float to the end of the same row. */}
+          {chipsSlot && <div className="ml-auto shrink-0">{chipsSlot}</div>}
         </div>
       </div>
 

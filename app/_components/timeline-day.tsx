@@ -79,6 +79,7 @@ export function TimelineDay({
   instances,
   tagMap,
   acknowledgedPairKeys = [],
+  chipsSlot,
 }: {
   date: string;
   todayStr: string;
@@ -89,6 +90,9 @@ export function TimelineDay({
    *  to this set by clicking Got it (which calls acknowledgeConflict
    *  → the next server render carries the row through). */
   acknowledgedPairKeys?: readonly string[];
+  /** Timeline / Filters chips rendered inline with the date label
+   *  header so they sit on the same visual line as the top control. */
+  chipsSlot?: React.ReactNode;
 }) {
   const timeFormat = useTimeFormat();
   const [locallyAcked, setLocallyAcked] = useState<Set<string>>(new Set());
@@ -157,20 +161,23 @@ export function TimelineDay({
 
   return (
     <div className="flex flex-col gap-3">
-      <p
-        className={`text-sm font-medium ${
-          date === todayStr
-            ? "text-zinc-900 dark:text-zinc-50"
-            : "text-zinc-600 dark:text-zinc-400"
-        }`}
-      >
-        {dateLabel}
-        {date === todayStr && (
-          <span className="ml-2 rounded-full bg-zinc-900 px-1.5 py-0.5 text-[10px] font-medium text-white dark:bg-zinc-50 dark:text-zinc-900">
-            Today
-          </span>
-        )}
-      </p>
+      <div className="flex items-start gap-2">
+        <p
+          className={`text-sm font-medium ${
+            date === todayStr
+              ? "text-zinc-900 dark:text-zinc-50"
+              : "text-zinc-600 dark:text-zinc-400"
+          }`}
+        >
+          {dateLabel}
+          {date === todayStr && (
+            <span className="ml-2 rounded-full bg-zinc-900 px-1.5 py-0.5 text-[10px] font-medium text-white dark:bg-zinc-50 dark:text-zinc-900">
+              Today
+            </span>
+          )}
+        </p>
+        {chipsSlot && <div className="ml-auto shrink-0">{chipsSlot}</div>}
+      </div>
 
       {visibleConflicts.length > 0 && (
         <ul className="flex flex-col gap-2">
