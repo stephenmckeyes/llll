@@ -445,6 +445,14 @@ Also still pending from prior rounds (defer until mobile polish):
 
 ## Wording / UX reminders
 
+- **Rollover-missed rows only surface in the origin day's dropdown.**
+  When a missed instance rolls forward and gets marked missed on a
+  later day, the Completed/Missed dropdown on the LATER day doesn't
+  show it — the row is still keyed to its original `scheduled_for`,
+  so it appears in that origin day's dropdown instead. Might be
+  worth changing so the dropdown of the day the miss was *decided
+  on* surfaces the row (or shows both). Not sure yet — leaving as a
+  potential future change.
 - **Future-date complete warning** is currently a hard `window.confirm`
   every time. Eventually add a per-user setting:
   `profiles.confirm_future_complete bool default true`. When the user

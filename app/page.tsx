@@ -63,11 +63,7 @@ import { DashboardHeader } from "./_components/dashboard-header";
 import { SectionTabs } from "./_components/section-tabs";
 import { TagDotRow } from "./_components/tag-chip";
 import { TabPending } from "./_components/tab-pending";
-import {
-  TimelineDay,
-  type TimelineEvent,
-  type UntimedEvent,
-} from "./_components/timeline-day";
+import { TimelineDay } from "./_components/timeline-day";
 
 // Force a fresh server render on every request. The dashboard is a
 // per-user personalized page anyway — nothing about it is meaningfully
@@ -78,7 +74,7 @@ import {
 // suspenders proof against future cache misconfiguration.
 export const dynamic = "force-dynamic";
 
-type ViewKind = "day" | "week" | "month" | "year" | "timeline" | "grid";
+type ViewKind = "day" | "week" | "month" | "year" | "grid";
 type GridRange = "week" | "month" | "total" | "custom";
 
 // Default lookback for the Custom range when the user hasn't yet
@@ -95,7 +91,6 @@ const CALENDAR_SUB_OPTIONS: ReadonlyArray<{ value: ViewKind; label: string }> = 
   { value: "week", label: "Week" },
   { value: "month", label: "Month" },
   { value: "year", label: "Year" },
-  { value: "timeline", label: "Timeline" },
 ];
 
 const GRID_SUB_OPTIONS: ReadonlyArray<{ value: GridRange; label: string }> = [
@@ -150,6 +145,10 @@ export default async function HomePage({
     from?: string;
     /** Custom-range end (YYYY-MM-DD). Used only when range=custom. */
     to?: string;
+    /** Timeline overlay toggle ("1" / "true"). Only meaningful on
+     *  view=day today; drives whether we render TimelineView or
+     *  DayView. Legacy ?view=timeline still resolves the same way. */
+    timeline?: string;
   }>;
 }) {
   const supabase = await createClient();
@@ -176,6 +175,7 @@ export default async function HomePage({
   if (isColdOpen && hasStaleParams) redirect("/");
 
   const view = parseView(params.view);
+  const timelineOn = parseTimelineFlag(params.view, params.timeline);
   // Note: `range` gets its FINAL value AFTER the profile fetch below,
   // because when the URL doesn't carry ?range we fall back to the
   // user's default_streaks_range preference (migration 0029).
@@ -322,10 +322,11 @@ export default async function HomePage({
           currentView={view}
           range={range}
           date={date}
+          timelineOn={timelineOn}
         />
       </div>
 
-      {view === "day" && (
+      {view === "day" && !timelineOn && (
         <DayView
           startDate={date}
           todayStr={todayStr}
@@ -334,6 +335,9 @@ export default async function HomePage({
           tagMap={tagMap}
           density={addActivityDensity}
         />
+      )}
+      {view === "day" && timelineOn && (
+        <TimelineView date={date} todayStr={todayStr} tagMap={tagMap} />
       )}
       {view === "week" && (
         <WeekView
@@ -357,9 +361,6 @@ export default async function HomePage({
           todayStr={todayStr}
           incompleteInfo={incompleteInfo}
         />
-      )}
-      {view === "timeline" && (
-        <TimelineView date={date} todayStr={todayStr} tagMap={tagMap} />
       )}
       {view === "grid" && (
         <GridView
@@ -500,12 +501,26 @@ function parseView(raw: string | undefined): ViewKind {
     raw === "month" ||
     raw === "week" ||
     raw === "year" ||
-    raw === "timeline" ||
     raw === "grid"
   ) {
     return raw;
   }
+  // Legacy "?view=timeline" from before the toggle refactor still resolves
+  // to the Day view — page.tsx pairs it with `timeline=1` in the caller
+  // so the timeline overlay renders.
+  if (raw === "timeline") return "day";
   return "day";
+}
+
+// True when the URL asks for the Timeline visualization. Only meaningful
+// when the current view is "day" for now (Week/Month/Year timeline
+// variants are not built yet).
+function parseTimelineFlag(
+  rawView: string | undefined,
+  rawTimeline: string | undefined
+): boolean {
+  if (rawView === "timeline") return true;
+  return rawTimeline === "1" || rawTimeline === "true";
 }
 
 function parseGridRange(
@@ -584,11 +599,13 @@ function ViewSwitcher({
   currentView,
   range,
   date,
+  timelineOn,
 }: {
   section: Section;
   currentView: ViewKind;
   range: GridRange;
   date: string;
+  timelineOn: boolean;
 }) {
   return (
     // Tighter vertical rhythm: gap-2 → gap-1 between the section row
@@ -602,21 +619,45 @@ function ViewSwitcher({
       <SectionTabs active={section} date={date} />
 
       {/* Row 2: sub-tabs (Calendar's day/week/month/year, or Grid's
-          week/month/total ranges). */}
+          week/month/total ranges). Calendar also carries a separate
+          Timeline toggle chip on the right — flipping it renders the
+          vertical hour-grid overlay ON TOP OF whichever sub-view is
+          active (currently just Day; Week/Month/Year variants are
+          future work). Toggle is URL-driven (`?timeline=1`) so
+          bookmarks + browser back respect the state. */}
       {section === "calendar" ? (
-        <nav
-          className="flex gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800"
-          aria-label="Calendar view"
-        >
-          {CALENDAR_SUB_OPTIONS.map((opt) => (
-            <SubTab
-              key={opt.value}
-              label={opt.label}
-              href={`/?view=${opt.value}&date=${date}`}
-              active={opt.value === currentView}
-            />
-          ))}
-        </nav>
+        <div className="flex items-center gap-1">
+          <nav
+            className="flex flex-1 gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800"
+            aria-label="Calendar view"
+          >
+            {CALENDAR_SUB_OPTIONS.map((opt) => (
+              <SubTab
+                key={opt.value}
+                label={opt.label}
+                href={`/?view=${opt.value}&date=${date}${
+                  timelineOn ? "&timeline=1" : ""
+                }`}
+                active={opt.value === currentView}
+              />
+            ))}
+          </nav>
+          <Link
+            href={`/?view=${currentView}&date=${date}${
+              timelineOn ? "" : "&timeline=1"
+            }`}
+            aria-pressed={timelineOn}
+            title="Toggle Timeline overlay"
+            className={`shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium transition-colors ${
+              timelineOn
+                ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                : "border-zinc-200 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-900"
+            }`}
+          >
+            Timeline
+            <TabPending />
+          </Link>
+        </div>
       ) : (
         <nav
           className="flex gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800"
@@ -910,22 +951,43 @@ async function TimelineView({
 }) {
   const supabase = await createClient();
 
-  // Just this day's instances (with their activity's schedule + tags for
-  // coloring). Non-frequency rhythms have 0 or 1 scheduled_times;
-  // frequency (incl. legacy Multi-Daily) can carry many — each becomes
-  // its own event on the day.
+  // Fetch the same activity + completion shape DayView uses so the
+  // Timeline blocks can open the SAME ActivityModal (per user spec:
+  // clicking Timeline blocks should behave like clicking Day rows,
+  // opening the full modal — not routing away to another view).
   const { data } = await supabase
     .from("activity_instances")
     .select(
       `
       id,
+      scheduled_for,
+      status,
+      tags,
+      name,
+      notes,
+      priority,
+      comment,
       activities (
         id,
         name,
-        default_skill_tags,
+        notes,
+        rhythm,
+        priority,
         scheduled_times,
         scheduled_end_times,
-        archived_at
+        default_skill_tags,
+        start_date,
+        end_date,
+        archived_at,
+        reminders,
+        track_on_grid,
+        rollover_missed_days,
+        rollover_change_rhythm,
+        auto_archive
+      ),
+      completion_instances (
+        completion_id,
+        completions ( occurred_at, deleted_at )
       )
     `
     )
@@ -933,58 +995,48 @@ async function TimelineView({
 
   type Row = {
     id: string;
-    activities: {
-      id: string;
-      name: string;
-      default_skill_tags: string[] | null;
-      scheduled_times: string[] | null;
-      scheduled_end_times: string[] | null;
-      archived_at: string | null;
-    } | null;
+    scheduled_for: string;
+    status: string;
+    tags: string[] | null;
+    name: string | null;
+    notes: string | null;
+    priority: number | null;
+    comment: string | null;
+    activities: DayInstance["activity"] | null;
+    completion_instances: Array<{
+      completion_id: string;
+      completions: { occurred_at: string; deleted_at: string | null } | null;
+    }> | null;
   };
+
   const rows = ((data ?? []) as unknown as Row[]).filter(
-    (r) => r.activities && !r.activities.archived_at
+    (r): r is Row & { activities: DayInstance["activity"] } => {
+      if (!r.activities) return false;
+      if (r.activities.archived_at) return false;
+      return true;
+    }
   );
 
-  const timed: TimelineEvent[] = [];
-  const untimed: UntimedEvent[] = [];
-  for (const r of rows) {
-    const a = r.activities!;
-    // Coloring by tag lands in a follow-up — TagInfo.color is a token
-    // ('amber' | 'zinc' | …) that resolves to Tailwind classes rather
-    // than a CSS color, and inline styling here would need a per-token
-    // hex table we haven't extracted yet. Leaving color=null keeps the
-    // block on the neutral zinc palette.
-    void tagMap;
-    const starts = a.scheduled_times ?? [];
-    const ends = a.scheduled_end_times ?? [];
-    if (starts.length === 0) {
-      untimed.push({
-        key: r.id,
-        activityId: a.id,
-        activityName: a.name,
-        color: null,
-      });
-      continue;
-    }
-    for (let i = 0; i < starts.length; i++) {
-      timed.push({
-        key: `${r.id}:${i}`,
-        activityId: a.id,
-        activityName: a.name,
-        start: starts[i],
-        end: ends[i] ?? "",
-        color: null,
-      });
-    }
-  }
+  const instances: DayInstance[] = rows.map((r) => ({
+    id: r.id,
+    scheduled_for: r.scheduled_for,
+    status:
+      r.status === "completed" || r.status === "missed" ? r.status : "pending",
+    tags: r.tags ?? [],
+    overrideName: r.name ?? null,
+    overrideNotes: r.notes ?? null,
+    overridePriority: r.priority ?? null,
+    comment: r.comment ?? null,
+    activity: r.activities,
+    completionCount: liveCompletionCount(r.completion_instances),
+  }));
 
   return (
     <TimelineDay
       date={date}
       todayStr={todayStr}
-      timed={timed}
-      untimed={untimed}
+      instances={instances}
+      tagMap={tagMap}
     />
   );
 }

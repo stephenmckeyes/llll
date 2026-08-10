@@ -1,60 +1,51 @@
 "use client";
 
 // ---------------------------------------------------------------------------
-// TimelineDay — the client body of the Calendar's Timeline sub-view.
+// TimelineDay — the client body of the Calendar's Timeline toggle.
 //
 // Renders a single day as a vertical hour column with each scheduled
 // activity positioned by its start-time (and sized by its end-time when
-// provided). Purpose per user spec: "you would be able to visually see
-// that you do not have anything scheduled from 1300-1400 on a certain
-// day, or that you have multiple things scheduled at the same time."
+// provided). Empty vertical windows read as unplanned time.
 //
-// Conflict handling — when two timed blocks overlap on this day, a
-// notification chip surfaces at the top with a link to both activities.
-// Once the user clicks "Got it" the notification is dismissed via
-// localStorage keyed by the specific pair + date; it doesn't reappear on
-// this day even if the conflict isn't fixed. Fixing the conflict (by
-// editing one activity) drops it from the detected set naturally.
+// Interaction — clicking a block opens the SAME ActivityModal the Day
+// list uses (per user spec) so mark complete / missed / unlabel / edit
+// all work from Timeline exactly like Day. Conflict banners at the top
+// call out overlapping timed blocks and can be dismissed with "Got it"
+// (localStorage-scoped to date + pair; fixing the schedule drops it
+// naturally from the detected set).
 //
 // Untimed activities (no scheduled start) render below the grid in an
-// "Untimed" bucket — per user spec ("do not assign it a time of day and
-// just prioritize showing it after the events that have a specific
-// time").
+// "Untimed" bucket — matches the "sort to end of day" rule.
 // ---------------------------------------------------------------------------
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import type { TagMap } from "@/lib/domain/tags";
 import { formatTimeRange } from "@/lib/ui/format-time";
 import { useTimeFormat } from "@/lib/ui/format-time-client";
 
-// One rendered event — the same activity can produce multiple entries
-// when it has multiple scheduled_times (e.g. a Multi-Daily rhythm).
-export type TimelineEvent = {
-  /** Stable per-event id: `${instanceId}:${timeIndex}`. */
+import { ActivityModal } from "./activity-modal";
+import type { DayInstance } from "./day-list";
+
+// One rendered event = one (instance, time-index) pair. An activity
+// with N scheduled_times produces N events on the day. `instance`
+// carries the full DayInstance so click-to-open-modal works.
+type TimelineEvent = {
   key: string;
-  activityId: string;
-  activityName: string;
-  /** "HH:MM" start. */
+  instance: DayInstance;
   start: string;
-  /** "HH:MM" end, or "" when no end was set (renders 30-min default). */
   end: string;
-  /** Optional tag color for the block bg. */
-  color: string | null;
 };
 
-export type UntimedEvent = {
+type UntimedEvent = {
   key: string;
-  activityId: string;
-  activityName: string;
-  color: string | null;
+  instance: DayInstance;
 };
 
-// A single conflict = pair of events whose [start, end) overlap.
 type Conflict = { a: TimelineEvent; b: TimelineEvent };
 
-const HOURS_START = 6; // Render 6 AM …
-const HOURS_END = 24; // … through midnight (exclusive). Untimed goes below.
+const HOURS_START = 6;
+const HOURS_END = 24;
 const HOUR_PX = 44;
 
 const LS_KEY = "mission-conflicts-dismissed";
@@ -82,7 +73,6 @@ function saveDismissed(s: Set<string>) {
 }
 
 function conflictKey(date: string, a: TimelineEvent, b: TimelineEvent): string {
-  // Deterministic ordering so (A,B) and (B,A) share a key.
   const [x, y] = a.key < b.key ? [a, b] : [b, a];
   return `${date}|${x.key}|${y.key}`;
 }
@@ -101,8 +91,6 @@ function effectiveEndMinutes(ev: TimelineEvent): number {
 }
 
 function detectConflicts(events: TimelineEvent[]): Conflict[] {
-  // Sort by start, sweep for overlaps. O(n²) worst case is fine here —
-  // a single day rarely has more than a handful of timed events.
   const sorted = [...events].sort(
     (a, b) => minutesFromHhmm(a.start) - minutesFromHhmm(b.start)
   );
@@ -120,20 +108,47 @@ function detectConflicts(events: TimelineEvent[]): Conflict[] {
   return conflicts;
 }
 
+function buildEvents(instances: DayInstance[]): {
+  timed: TimelineEvent[];
+  untimed: UntimedEvent[];
+} {
+  const timed: TimelineEvent[] = [];
+  const untimed: UntimedEvent[] = [];
+  for (const inst of instances) {
+    const starts = inst.activity.scheduled_times ?? [];
+    const ends = inst.activity.scheduled_end_times ?? [];
+    if (starts.length === 0) {
+      untimed.push({ key: inst.id, instance: inst });
+      continue;
+    }
+    for (let i = 0; i < starts.length; i++) {
+      timed.push({
+        key: `${inst.id}:${i}`,
+        instance: inst,
+        start: starts[i],
+        end: ends[i] ?? "",
+      });
+    }
+  }
+  return { timed, untimed };
+}
+
 export function TimelineDay({
   date,
   todayStr,
-  timed,
-  untimed,
+  instances,
+  tagMap,
 }: {
   date: string;
   todayStr: string;
-  timed: TimelineEvent[];
-  untimed: UntimedEvent[];
+  instances: DayInstance[];
+  tagMap: TagMap;
 }) {
   const timeFormat = useTimeFormat();
   const [dismissed, setDismissed] = useState<Set<string>>(() => loadDismissed());
+  const [openInstance, setOpenInstance] = useState<DayInstance | null>(null);
 
+  const { timed, untimed } = useMemo(() => buildEvents(instances), [instances]);
   const conflicts = useMemo(() => detectConflicts(timed), [timed]);
   const visibleConflicts = conflicts.filter(
     (c) => !dismissed.has(conflictKey(date, c.a, c.b))
@@ -151,9 +166,14 @@ export function TimelineDay({
     [date]
   );
 
-  // The date navigator lives on the page.tsx side (StickyNav), so this
-  // component just shows a title strip so the user knows which day
-  // they're inspecting when scrolling the tall column.
+  // Reset any stale open modal if instances change under us (e.g. a
+  // router.refresh after a Complete removes the row from the list).
+  useEffect(() => {
+    if (openInstance && !instances.some((i) => i.id === openInstance.id)) {
+      setOpenInstance(null);
+    }
+  }, [instances, openInstance]);
+
   const dateLabel = useMemo(() => {
     const [y, m, d] = date.split("-").map(Number);
     const dt = new Date(y, m - 1, d);
@@ -163,6 +183,15 @@ export function TimelineDay({
       day: "numeric",
     });
   }, [date]);
+
+  const conflictedKeys = useMemo(() => {
+    const s = new Set<string>();
+    for (const c of conflicts) {
+      s.add(c.a.key);
+      s.add(c.b.key);
+    }
+    return s;
+  }, [conflicts]);
 
   return (
     <div className="flex flex-col gap-3">
@@ -192,20 +221,22 @@ export function TimelineDay({
                 Scheduling conflict
               </p>
               <p className="mt-1 text-amber-900/90 dark:text-amber-100">
-                <Link
-                  href={`/?view=day&date=${date}`}
+                <button
+                  type="button"
+                  onClick={() => setOpenInstance(c.a.instance)}
                   className="underline underline-offset-2"
                 >
-                  {c.a.activityName}
-                </Link>{" "}
-                (
-                {formatTimeRange(c.a.start, c.a.end, timeFormat)}) overlaps with{" "}
-                <Link
-                  href={`/?view=day&date=${date}`}
+                  {activityName(c.a.instance)}
+                </button>{" "}
+                ({formatTimeRange(c.a.start, c.a.end, timeFormat)}) overlaps
+                with{" "}
+                <button
+                  type="button"
+                  onClick={() => setOpenInstance(c.b.instance)}
                   className="underline underline-offset-2"
                 >
-                  {c.b.activityName}
-                </Link>{" "}
+                  {activityName(c.b.instance)}
+                </button>{" "}
                 ({formatTimeRange(c.b.start, c.b.end, timeFormat)}).
               </p>
               <div className="mt-2 flex justify-end">
@@ -223,7 +254,6 @@ export function TimelineDay({
       )}
 
       <div className="relative flex gap-2">
-        {/* Hour rail — one row per hour with a right-side gridline. */}
         <div className="w-12 shrink-0">
           {Array.from({ length: HOURS_END - HOURS_START }, (_, i) => {
             const hour = HOURS_START + i;
@@ -240,7 +270,6 @@ export function TimelineDay({
           })}
         </div>
 
-        {/* Event column with dashed gridlines every hour. */}
         <div
           className="relative flex-1 rounded-md border border-zinc-200 dark:border-zinc-800"
           style={{ height: (HOURS_END - HOURS_START) * HOUR_PX }}
@@ -260,32 +289,39 @@ export function TimelineDay({
               18,
               ((endMin - startMin) / 60) * HOUR_PX
             );
-            // Clip events that fall outside [HOURS_START, HOURS_END).
             if (endMin <= HOURS_START * 60) return null;
             if (startMin >= HOURS_END * 60) return null;
-            const isConflicted = conflicts.some(
-              (c) => c.a.key === ev.key || c.b.key === ev.key
-            );
+            const isDone = ev.instance.status === "completed";
+            const isMissed = ev.instance.status === "missed";
+            const isConflicted = conflictedKeys.has(ev.key);
+            // Border color communicates state: amber for conflict,
+            // emerald for completed, red for missed, neutral otherwise.
             const borderClass = isConflicted
               ? "border-amber-500"
-              : "border-zinc-400 dark:border-zinc-600";
+              : isDone
+                ? "border-emerald-500"
+                : isMissed
+                  ? "border-red-500"
+                  : "border-zinc-400 dark:border-zinc-600";
             return (
-              <Link
+              <button
                 key={ev.key}
-                href={`/?view=day&date=${date}`}
-                title={`${ev.activityName} · ${formatTimeRange(ev.start, ev.end, timeFormat)}`}
+                type="button"
+                onClick={() => setOpenInstance(ev.instance)}
+                title={`${activityName(ev.instance)} · ${formatTimeRange(ev.start, ev.end, timeFormat)}`}
                 style={{
                   top: Math.max(0, gridTop),
                   height: gridHeight,
-                  backgroundColor: ev.color ?? undefined,
                 }}
-                className={`absolute inset-x-1 overflow-hidden rounded border-l-4 bg-zinc-100 px-2 py-1 text-[11px] font-medium text-zinc-900 shadow-sm transition-colors hover:brightness-95 dark:bg-zinc-800 dark:text-zinc-100 ${borderClass}`}
+                className={`absolute inset-x-1 overflow-hidden rounded border-l-4 bg-zinc-100 px-2 py-1 text-left text-[11px] font-medium text-zinc-900 shadow-sm transition-colors hover:brightness-95 dark:bg-zinc-800 dark:text-zinc-100 ${borderClass} ${
+                  isDone ? "opacity-70 line-through" : ""
+                }`}
               >
-                <div className="truncate">{ev.activityName}</div>
+                <div className="truncate">{activityName(ev.instance)}</div>
                 <div className="truncate text-[10px] text-zinc-700 dark:text-zinc-300">
                   {formatTimeRange(ev.start, ev.end, timeFormat)}
                 </div>
-              </Link>
+              </button>
             );
           })}
         </div>
@@ -297,23 +333,33 @@ export function TimelineDay({
             Untimed ({untimed.length})
           </h3>
           <ul className="flex flex-col gap-1">
-            {untimed.map((it) => (
-              <li key={it.key}>
-                <Link
-                  href={`/?view=day&date=${date}`}
-                  className="flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900"
-                >
-                  <span
-                    aria-hidden
-                    className="h-2 w-2 shrink-0 rounded-full"
-                    style={{
-                      backgroundColor: it.color ?? "rgb(161 161 170)",
-                    }}
-                  />
-                  <span className="truncate">{it.activityName}</span>
-                </Link>
-              </li>
-            ))}
+            {untimed.map((it) => {
+              const isDone = it.instance.status === "completed";
+              const isMissed = it.instance.status === "missed";
+              return (
+                <li key={it.key}>
+                  <button
+                    type="button"
+                    onClick={() => setOpenInstance(it.instance)}
+                    className={`flex w-full items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 text-left text-sm transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900 ${
+                      isDone ? "opacity-60 line-through" : ""
+                    }`}
+                  >
+                    <span
+                      aria-hidden
+                      className={`h-2 w-2 shrink-0 rounded-full ${
+                        isDone
+                          ? "bg-emerald-500"
+                          : isMissed
+                            ? "bg-red-500"
+                            : "bg-zinc-400"
+                      }`}
+                    />
+                    <span className="truncate">{activityName(it.instance)}</span>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}
@@ -323,6 +369,19 @@ export function TimelineDay({
           Nothing scheduled for this day.
         </p>
       )}
+
+      {openInstance && (
+        <ActivityModal
+          instance={openInstance}
+          todayStr={todayStr}
+          onClose={() => setOpenInstance(null)}
+          tagMap={tagMap}
+        />
+      )}
     </div>
   );
+}
+
+function activityName(inst: DayInstance): string {
+  return inst.overrideName ?? inst.activity.name;
 }
