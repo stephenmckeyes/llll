@@ -671,9 +671,9 @@ function ViewSwitcher({
           future work). Toggle is URL-driven (`?timeline=1`) so
           bookmarks + browser back respect the state. */}
       {section === "calendar" ? (
-        <div className="flex items-center gap-1">
+        <>
           <nav
-            className="flex flex-1 gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800"
+            className="flex gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800"
             aria-label="Calendar view"
           >
             {CALENDAR_SUB_OPTIONS.map((opt) => (
@@ -687,26 +687,42 @@ function ViewSwitcher({
               />
             ))}
           </nav>
-          <Link
-            href={`/?view=${currentView}&date=${date}${
-              timelineOn ? "" : "&timeline=1"
-            }`}
-            aria-pressed={timelineOn}
-            title="Toggle Timeline overlay"
-            className={`shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium transition-colors ${
-              timelineOn
-                ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
-                : "border-zinc-200 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-900"
-            }`}
-          >
-            Timeline
-            <TabPending />
-          </Link>
-          <CalendarFiltersButton
-            allTags={allTagNames}
-            activeHidden={activeHiddenTags}
-          />
-        </div>
+          {/* Row 2b — Modifier chips on their OWN row, right-aligned,
+              rounded-full to visually separate them from the square
+              tab strip above. A small leading label ("View:") ties
+              them together as controls that shape the view rather
+              than pick one. Per user spec: "make them stand out as
+              separate so that people don't mistake them for another
+              option." */}
+          <div className="flex items-center justify-end gap-1.5 pt-1">
+            <span
+              aria-hidden
+              className="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500"
+            >
+              View:
+            </span>
+            <Link
+              href={`/?view=${currentView}&date=${date}${
+                timelineOn ? "" : "&timeline=1"
+              }`}
+              aria-pressed={timelineOn}
+              title="Toggle Timeline overlay"
+              className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
+                timelineOn
+                  ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                  : "border-zinc-300 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
+              }`}
+            >
+              <ClockIcon />
+              Timeline
+              <TabPending />
+            </Link>
+            <CalendarFiltersButton
+              allTags={allTagNames}
+              activeHidden={activeHiddenTags}
+            />
+          </div>
+        </>
       ) : (
         <nav
           className="flex gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800"
@@ -767,6 +783,27 @@ function SubTab({
       {label}
       <TabPending />
     </Link>
+  );
+}
+
+// Small clock glyph for the Timeline pill — inline SVG that inherits
+// currentColor so the icon flips with the pill's active-state color.
+function ClockIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className="h-3 w-3"
+    >
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </svg>
   );
 }
 

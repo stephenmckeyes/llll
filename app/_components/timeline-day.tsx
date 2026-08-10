@@ -18,7 +18,7 @@
 // "Untimed" bucket — matches the "sort to end of day" rule.
 // ---------------------------------------------------------------------------
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import type { TagMap } from "@/lib/domain/tags";
 import { formatTimeRange } from "@/lib/ui/format-time";
@@ -168,11 +168,15 @@ export function TimelineDay({
 
   // Reset any stale open modal if instances change under us (e.g. a
   // router.refresh after a Complete removes the row from the list).
-  useEffect(() => {
-    if (openInstance && !instances.some((i) => i.id === openInstance.id)) {
-      setOpenInstance(null);
-    }
-  }, [instances, openInstance]);
+  // Snapshot pattern (React 19 rule: no setState in useEffect for this
+  // kind of prop-driven derived state) — compare during render and drop
+  // the stale reference.
+  if (
+    openInstance !== null &&
+    !instances.some((i) => i.id === openInstance.id)
+  ) {
+    setOpenInstance(null);
+  }
 
   const dateLabel = useMemo(() => {
     const [y, m, d] = date.split("-").map(Number);

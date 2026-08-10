@@ -20,7 +20,7 @@ import {
 } from "@/app/actions/activities";
 import { rhythmCategoryLabel } from "@/lib/domain/rhythm-summary";
 import type { TagMap } from "@/lib/domain/tags";
-import { formatTime, formatTimeRange } from "@/lib/ui/format-time";
+import { formatTimeRange } from "@/lib/ui/format-time";
 import { useTimeFormat } from "@/lib/ui/format-time-client";
 import { dispatchInstanceResolved } from "@/lib/ui/instance-resolved-event";
 import { normalizeReminder } from "@/lib/validators/reminder";

@@ -12,6 +12,26 @@ import { useMemo, useState } from "react";
 import { serializeHideTags } from "@/lib/domain/calendar-filter";
 import { useBodyScrollLock } from "@/lib/ui/body-scroll-lock";
 
+// Small funnel icon for the pill — inherits currentColor so it flips
+// with the button's active-state color scheme.
+function FunnelIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className="h-3 w-3"
+    >
+      <path d="M3 4h18l-7 9v6l-4 2v-8L3 4z" />
+    </svg>
+  );
+}
+
 export function CalendarFiltersButton({
   allTags,
   activeHidden,
@@ -28,15 +48,16 @@ export function CalendarFiltersButton({
         onClick={() => setOpen(true)}
         aria-pressed={activeCount > 0}
         title="Filter Calendar by tag"
-        className={`shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium transition-colors ${
+        className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
           activeCount > 0
             ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
-            : "border-zinc-200 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-900"
+            : "border-zinc-300 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
         }`}
       >
+        <FunnelIcon />
         Filters
         {activeCount > 0 && (
-          <span className="ml-1 text-[10px] font-semibold opacity-80">
+          <span className="text-[10px] font-semibold opacity-80">
             ({activeCount})
           </span>
         )}
