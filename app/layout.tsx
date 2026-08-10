@@ -4,6 +4,7 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 
 import { BottomNav } from "./_components/bottom-nav";
+import { MigrationCheckBanner } from "./_components/migration-check-banner";
 
 // Lock the viewport: no pinch / double-tap zoom, no accidental rescaling on
 // input focus. Mission is laid out for one canonical scale; zooming into the
@@ -102,6 +103,10 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body>
+        {/* Startup schema check — red strip if any migration listed in
+            lib/db/schema-check.ts hasn't been applied yet. Silent when
+            everything's caught up. */}
+        <MigrationCheckBanner />
         {children}
         {/* Persistent 5-slot bottom nav. Self-hides on auth pages
             (login / signup / onboarding) via usePathname; renders its
