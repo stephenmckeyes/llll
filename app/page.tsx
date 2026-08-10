@@ -61,7 +61,7 @@ import {
   type DayInstance,
   type DayMarkedItem,
 } from "./_components/day-list";
-import { CalendarFiltersButton } from "./_components/calendar-filters-button";
+import { CalendarModifierChips } from "./_components/calendar-modifier-chips";
 import { GridSection } from "./_components/grid-section";
 import { type IncompleteInfo } from "./_components/incomplete-button";
 import { DashboardHeader } from "./_components/dashboard-header";
@@ -331,6 +331,23 @@ export default async function HomePage({
         <DashboardHeader userEmail={user.email ?? ""} />
       </header>
 
+      {/* Calendar modifier chips — pinned toward the top of the
+          calendar surface, near the sticky Today button inside each
+          view's date navigator. Per user spec: "Keep timeline and
+          filters buttons towards the top of the screen next to the
+          'today' button rather than down at the bottom." */}
+      {view !== "grid" && (
+        <div className="mb-2 shrink-0">
+          <CalendarModifierChips
+            currentView={view}
+            date={date}
+            timelineOn={timelineOn}
+            allTagNames={Object.keys(tagMap).sort()}
+            activeHiddenTags={activeHiddenTags}
+          />
+        </div>
+      )}
+
       <div className="flex flex-1 min-h-0 flex-col overflow-y-auto">
       {view === "day" && !timelineOn && (
         <DayView
@@ -412,8 +429,6 @@ export default async function HomePage({
           range={range}
           date={date}
           timelineOn={timelineOn}
-          allTagNames={Object.keys(tagMap).sort()}
-          activeHiddenTags={activeHiddenTags}
           bottomAnchored
         />
       </div>
@@ -643,8 +658,6 @@ function ViewSwitcher({
   range,
   date,
   timelineOn,
-  allTagNames,
-  activeHiddenTags,
   bottomAnchored = false,
 }: {
   section: Section;
@@ -652,10 +665,6 @@ function ViewSwitcher({
   range: GridRange;
   date: string;
   timelineOn: boolean;
-  /** Every tag NAME in the user's palette — feeds the Filters modal. */
-  allTagNames: string[];
-  /** Currently-hidden tag NAMES (URL param OR profile default fallback). */
-  activeHiddenTags: string[];
   /** When true, render as a bottom-anchored control strip: the row
    *  order and each row's inner order are reversed (per user spec:
    *  "invert them bottom to top and left to right"). Left-to-right
@@ -681,55 +690,21 @@ function ViewSwitcher({
       {/* Sub-tabs row + calendar's modifier chips. flipRow reverses
           Day/Week/Month/Year visually when bottom-anchored. */}
       {section === "calendar" ? (
-        <>
-          <nav
-            className={`flex gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800 ${flipRow}`}
-            aria-label="Calendar view"
-          >
-            {CALENDAR_SUB_OPTIONS.map((opt) => (
-              <SubTab
-                key={opt.value}
-                label={opt.label}
-                href={`/?view=${opt.value}&date=${date}${
-                  timelineOn ? "&timeline=1" : ""
-                }`}
-                active={opt.value === currentView}
-              />
-            ))}
-          </nav>
-          {/* Modifier chips (Timeline / Filters) stack vertically. In
-              bottom-anchored mode the whole outer block is flipped, so
-              these VISUALLY end up ABOVE the sub-tabs; leaving the
-              inner alignment left→right (items-start when flipped)
-              matches the "invert left to right" spec. */}
-          <div
-            className={`flex flex-col gap-1 pt-1 ${
-              bottomAnchored ? "items-start" : "items-end"
-            }`}
-          >
-            <Link
-              href={`/?view=${currentView}&date=${date}${
-                timelineOn ? "" : "&timeline=1"
+        <nav
+          className={`flex gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800 ${flipRow}`}
+          aria-label="Calendar view"
+        >
+          {CALENDAR_SUB_OPTIONS.map((opt) => (
+            <SubTab
+              key={opt.value}
+              label={opt.label}
+              href={`/?view=${opt.value}&date=${date}${
+                timelineOn ? "&timeline=1" : ""
               }`}
-              aria-pressed={timelineOn}
-              title="Toggle Timeline overlay"
-              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-medium transition-colors ${
-                timelineOn
-                  ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
-                  : "border-zinc-300 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
-              }`}
-            >
-              <CheckSquare on={timelineOn} />
-              <ClockIcon />
-              Timeline
-              <TabPending />
-            </Link>
-            <CalendarFiltersButton
-              allTags={allTagNames}
-              activeHidden={activeHiddenTags}
+              active={opt.value === currentView}
             />
-          </div>
-        </>
+          ))}
+        </nav>
       ) : (
         <nav
           className={`flex gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800 ${flipRow}`}
@@ -790,57 +765,6 @@ function SubTab({
       {label}
       <TabPending />
     </Link>
-  );
-}
-
-// Small checkbox visual — filled square with a check when the option
-// it decorates is on, empty square otherwise. Purely visual (the parent
-// element is what actually toggles). Communicates "this is a switch,
-// not just a link" per user spec on the modifier chips.
-function CheckSquare({ on }: { on: boolean }) {
-  return (
-    <span
-      aria-hidden
-      className={`inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border transition-colors ${
-        on
-          ? "border-white bg-white text-zinc-900 dark:border-zinc-900 dark:bg-zinc-900 dark:text-zinc-50"
-          : "border-current bg-transparent text-transparent"
-      }`}
-    >
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={4}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="h-2.5 w-2.5"
-      >
-        <path d="M5 12l5 5L20 7" />
-      </svg>
-    </span>
-  );
-}
-
-// Small clock glyph for the Timeline pill — inline SVG that inherits
-// currentColor so the icon flips with the pill's active-state color.
-function ClockIcon() {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-      className="h-3 w-3"
-    >
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 7v5l3 2" />
-    </svg>
   );
 }
 
