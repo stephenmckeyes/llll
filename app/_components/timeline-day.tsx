@@ -161,7 +161,12 @@ export function TimelineDay({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-start gap-2">
+      {/* Sticky top strip — the date label + Timeline/Filters chips
+          stay pinned at the top of the outer scroll container so
+          they don't scroll off with the hour grid. `-mx-6 px-6` lets
+          the opaque background extend past the main's padding so
+          scrolled content doesn't show through the edges. */}
+      <div className="sticky top-0 z-10 -mx-6 flex items-start gap-2 bg-white px-6 py-2 dark:bg-zinc-950">
         <p
           className={`text-sm font-medium ${
             date === todayStr

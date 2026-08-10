@@ -112,7 +112,9 @@ export function TimelineWeek({
   return (
     <div className="flex flex-col gap-3">
       {chipsSlot && (
-        <div className="flex items-start justify-end">{chipsSlot}</div>
+        <div className="sticky top-0 z-10 -mx-6 flex items-start justify-end bg-white px-6 py-2 dark:bg-zinc-950">
+          {chipsSlot}
+        </div>
       )}
       {/* Grid: hour rail on the left, then 7 narrow day columns. */}
       <div className="flex gap-1">
