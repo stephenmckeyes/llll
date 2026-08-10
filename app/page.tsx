@@ -63,6 +63,11 @@ import { DashboardHeader } from "./_components/dashboard-header";
 import { SectionTabs } from "./_components/section-tabs";
 import { TagDotRow } from "./_components/tag-chip";
 import { TabPending } from "./_components/tab-pending";
+import {
+  TimelineDay,
+  type TimelineEvent,
+  type UntimedEvent,
+} from "./_components/timeline-day";
 
 // Force a fresh server render on every request. The dashboard is a
 // per-user personalized page anyway — nothing about it is meaningfully
@@ -73,7 +78,7 @@ import { TabPending } from "./_components/tab-pending";
 // suspenders proof against future cache misconfiguration.
 export const dynamic = "force-dynamic";
 
-type ViewKind = "day" | "week" | "month" | "year" | "grid";
+type ViewKind = "day" | "week" | "month" | "year" | "timeline" | "grid";
 type GridRange = "week" | "month" | "total" | "custom";
 
 // Default lookback for the Custom range when the user hasn't yet
@@ -90,6 +95,7 @@ const CALENDAR_SUB_OPTIONS: ReadonlyArray<{ value: ViewKind; label: string }> = 
   { value: "week", label: "Week" },
   { value: "month", label: "Month" },
   { value: "year", label: "Year" },
+  { value: "timeline", label: "Timeline" },
 ];
 
 const GRID_SUB_OPTIONS: ReadonlyArray<{ value: GridRange; label: string }> = [
@@ -352,6 +358,9 @@ export default async function HomePage({
           incompleteInfo={incompleteInfo}
         />
       )}
+      {view === "timeline" && (
+        <TimelineView date={date} todayStr={todayStr} tagMap={tagMap} />
+      )}
       {view === "grid" && (
         <GridView
           gridDate={date}
@@ -491,6 +500,7 @@ function parseView(raw: string | undefined): ViewKind {
     raw === "month" ||
     raw === "week" ||
     raw === "year" ||
+    raw === "timeline" ||
     raw === "grid"
   ) {
     return raw;
@@ -874,6 +884,107 @@ async function DayView({
       incompleteInfo={incompleteInfo}
       tagMap={tagMap}
       density={density}
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Timeline view — vertical hour-column layout for a single day. Positions
+// each timed activity by its scheduled_time (start) and sizes it by
+// scheduled_end_time when present. Detects overlaps and surfaces
+// acknowledge-once conflict banners at the top. Untimed activities
+// render below the grid in an "Untimed" bucket.
+//
+// The heavy fetch is server-side; the client component (TimelineDay)
+// only owns interaction (conflict acknowledgement via localStorage).
+// ---------------------------------------------------------------------------
+
+async function TimelineView({
+  date,
+  todayStr,
+  tagMap,
+}: {
+  date: string;
+  todayStr: string;
+  tagMap: TagMap;
+}) {
+  const supabase = await createClient();
+
+  // Just this day's instances (with their activity's schedule + tags for
+  // coloring). Non-frequency rhythms have 0 or 1 scheduled_times;
+  // frequency (incl. legacy Multi-Daily) can carry many — each becomes
+  // its own event on the day.
+  const { data } = await supabase
+    .from("activity_instances")
+    .select(
+      `
+      id,
+      activities (
+        id,
+        name,
+        default_skill_tags,
+        scheduled_times,
+        scheduled_end_times,
+        archived_at
+      )
+    `
+    )
+    .eq("scheduled_for", date);
+
+  type Row = {
+    id: string;
+    activities: {
+      id: string;
+      name: string;
+      default_skill_tags: string[] | null;
+      scheduled_times: string[] | null;
+      scheduled_end_times: string[] | null;
+      archived_at: string | null;
+    } | null;
+  };
+  const rows = ((data ?? []) as unknown as Row[]).filter(
+    (r) => r.activities && !r.activities.archived_at
+  );
+
+  const timed: TimelineEvent[] = [];
+  const untimed: UntimedEvent[] = [];
+  for (const r of rows) {
+    const a = r.activities!;
+    // Coloring by tag lands in a follow-up — TagInfo.color is a token
+    // ('amber' | 'zinc' | …) that resolves to Tailwind classes rather
+    // than a CSS color, and inline styling here would need a per-token
+    // hex table we haven't extracted yet. Leaving color=null keeps the
+    // block on the neutral zinc palette.
+    void tagMap;
+    const starts = a.scheduled_times ?? [];
+    const ends = a.scheduled_end_times ?? [];
+    if (starts.length === 0) {
+      untimed.push({
+        key: r.id,
+        activityId: a.id,
+        activityName: a.name,
+        color: null,
+      });
+      continue;
+    }
+    for (let i = 0; i < starts.length; i++) {
+      timed.push({
+        key: `${r.id}:${i}`,
+        activityId: a.id,
+        activityName: a.name,
+        start: starts[i],
+        end: ends[i] ?? "",
+        color: null,
+      });
+    }
+  }
+
+  return (
+    <TimelineDay
+      date={date}
+      todayStr={todayStr}
+      timed={timed}
+      untimed={untimed}
     />
   );
 }
