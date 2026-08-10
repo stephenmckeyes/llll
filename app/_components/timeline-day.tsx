@@ -1,21 +1,23 @@
 "use client";
 
 // ---------------------------------------------------------------------------
-// TimelineDay — the client body of the Calendar's Timeline toggle.
+// TimelineDay — the client body of the Calendar's Timeline toggle when
+// the day sub-view is active.
 //
 // Renders a single day as a vertical hour column with each scheduled
 // activity positioned by its start-time (and sized by its end-time when
-// provided). Empty vertical windows read as unplanned time.
+// provided). Overlapping blocks split the horizontal space via the
+// shared `layoutEvents` algorithm — clear delineation per user spec.
 //
 // Interaction — clicking a block opens the SAME ActivityModal the Day
-// list uses (per user spec) so mark complete / missed / unlabel / edit
-// all work from Timeline exactly like Day. Conflict banners at the top
-// call out overlapping timed blocks and can be dismissed with "Got it"
-// (localStorage-scoped to date + pair; fixing the schedule drops it
-// naturally from the detected set).
+// list uses so mark complete / missed / unlabel / edit all work from
+// Timeline exactly like Day. Conflict banners at the top call out
+// overlapping timed blocks and can be dismissed with "Got it"
+// (localStorage-scoped to date + pair).
 //
-// Untimed activities (no scheduled start) render below the grid in an
-// "Untimed" bucket — matches the "sort to end of day" rule.
+// Untimed activities render below the grid as an "Untimed (N)" summary
+// per user spec ("at the bottom show '# activities' for the non-
+// timeline to-dos").
 // ---------------------------------------------------------------------------
 
 import { useCallback, useMemo, useState } from "react";
@@ -26,27 +28,18 @@ import { useTimeFormat } from "@/lib/ui/format-time-client";
 
 import { ActivityModal } from "./activity-modal";
 import type { DayInstance } from "./day-list";
-
-// One rendered event = one (instance, time-index) pair. An activity
-// with N scheduled_times produces N events on the day. `instance`
-// carries the full DayInstance so click-to-open-modal works.
-type TimelineEvent = {
-  key: string;
-  instance: DayInstance;
-  start: string;
-  end: string;
-};
-
-type UntimedEvent = {
-  key: string;
-  instance: DayInstance;
-};
-
-type Conflict = { a: TimelineEvent; b: TimelineEvent };
-
-const HOURS_START = 6;
-const HOURS_END = 24;
-const HOUR_PX = 44;
+import {
+  conflictKey,
+  detectConflicts,
+  effectiveEndMinutes,
+  HOUR_PX,
+  HOURS_END,
+  HOURS_START,
+  layoutEvents,
+  minutesFromHhmm,
+  type Conflict,
+  type TimelineEvent,
+} from "./timeline-shared";
 
 const LS_KEY = "mission-conflicts-dismissed";
 
@@ -72,65 +65,35 @@ function saveDismissed(s: Set<string>) {
   }
 }
 
-function conflictKey(date: string, a: TimelineEvent, b: TimelineEvent): string {
-  const [x, y] = a.key < b.key ? [a, b] : [b, a];
-  return `${date}|${x.key}|${y.key}`;
-}
-
-function minutesFromHhmm(hhmm: string): number {
-  const [h, m] = hhmm.split(":").map(Number);
-  if (!Number.isFinite(h) || !Number.isFinite(m)) return 0;
-  return h * 60 + m;
-}
-
-// End default when the activity has no explicit end: 30 minutes past
-// start, capped at HOURS_END. Purely visual — the DB stays "".
-function effectiveEndMinutes(ev: TimelineEvent): number {
-  if (ev.end) return minutesFromHhmm(ev.end);
-  return Math.min(minutesFromHhmm(ev.start) + 30, HOURS_END * 60);
-}
-
-function detectConflicts(events: TimelineEvent[]): Conflict[] {
-  const sorted = [...events].sort(
-    (a, b) => minutesFromHhmm(a.start) - minutesFromHhmm(b.start)
-  );
-  const conflicts: Conflict[] = [];
-  for (let i = 0; i < sorted.length; i++) {
-    const a = sorted[i];
-    const aEnd = effectiveEndMinutes(a);
-    for (let j = i + 1; j < sorted.length; j++) {
-      const b = sorted[j];
-      const bStart = minutesFromHhmm(b.start);
-      if (bStart >= aEnd) break;
-      conflicts.push({ a, b });
-    }
-  }
-  return conflicts;
-}
+type DayEvent = TimelineEvent<DayInstance>;
 
 function buildEvents(instances: DayInstance[]): {
-  timed: TimelineEvent[];
-  untimed: UntimedEvent[];
+  timed: DayEvent[];
+  untimed: DayInstance[];
 } {
-  const timed: TimelineEvent[] = [];
-  const untimed: UntimedEvent[] = [];
+  const timed: DayEvent[] = [];
+  const untimed: DayInstance[] = [];
   for (const inst of instances) {
     const starts = inst.activity.scheduled_times ?? [];
     const ends = inst.activity.scheduled_end_times ?? [];
     if (starts.length === 0) {
-      untimed.push({ key: inst.id, instance: inst });
+      untimed.push(inst);
       continue;
     }
     for (let i = 0; i < starts.length; i++) {
       timed.push({
         key: `${inst.id}:${i}`,
-        instance: inst,
+        data: inst,
         start: starts[i],
         end: ends[i] ?? "",
       });
     }
   }
   return { timed, untimed };
+}
+
+function activityName(inst: DayInstance): string {
+  return inst.overrideName ?? inst.activity.name;
 }
 
 export function TimelineDay({
@@ -145,17 +108,20 @@ export function TimelineDay({
   tagMap: TagMap;
 }) {
   const timeFormat = useTimeFormat();
-  const [dismissed, setDismissed] = useState<Set<string>>(() => loadDismissed());
+  const [dismissed, setDismissed] = useState<Set<string>>(() =>
+    loadDismissed()
+  );
   const [openInstance, setOpenInstance] = useState<DayInstance | null>(null);
 
   const { timed, untimed } = useMemo(() => buildEvents(instances), [instances]);
+  const layout = useMemo(() => layoutEvents(timed), [timed]);
   const conflicts = useMemo(() => detectConflicts(timed), [timed]);
   const visibleConflicts = conflicts.filter(
     (c) => !dismissed.has(conflictKey(date, c.a, c.b))
   );
 
   const acknowledge = useCallback(
-    (c: Conflict) => {
+    (c: Conflict<DayInstance>) => {
       setDismissed((prev) => {
         const next = new Set(prev);
         next.add(conflictKey(date, c.a, c.b));
@@ -166,11 +132,8 @@ export function TimelineDay({
     [date]
   );
 
-  // Reset any stale open modal if instances change under us (e.g. a
-  // router.refresh after a Complete removes the row from the list).
-  // Snapshot pattern (React 19 rule: no setState in useEffect for this
-  // kind of prop-driven derived state) — compare during render and drop
-  // the stale reference.
+  // Snapshot pattern (React 19): if the instances list no longer
+  // contains the currently-open modal's activity, drop the reference.
   if (
     openInstance !== null &&
     !instances.some((i) => i.id === openInstance.id)
@@ -227,19 +190,19 @@ export function TimelineDay({
               <p className="mt-1 text-amber-900/90 dark:text-amber-100">
                 <button
                   type="button"
-                  onClick={() => setOpenInstance(c.a.instance)}
+                  onClick={() => setOpenInstance(c.a.data)}
                   className="underline underline-offset-2"
                 >
-                  {activityName(c.a.instance)}
+                  {activityName(c.a.data)}
                 </button>{" "}
                 ({formatTimeRange(c.a.start, c.a.end, timeFormat)}) overlaps
                 with{" "}
                 <button
                   type="button"
-                  onClick={() => setOpenInstance(c.b.instance)}
+                  onClick={() => setOpenInstance(c.b.data)}
                   className="underline underline-offset-2"
                 >
-                  {activityName(c.b.instance)}
+                  {activityName(c.b.data)}
                 </button>{" "}
                 ({formatTimeRange(c.b.start, c.b.end, timeFormat)}).
               </p>
@@ -295,11 +258,15 @@ export function TimelineDay({
             );
             if (endMin <= HOURS_START * 60) return null;
             if (startMin >= HOURS_END * 60) return null;
-            const isDone = ev.instance.status === "completed";
-            const isMissed = ev.instance.status === "missed";
+
+            const slot = layout.get(ev.key) ?? { col: 0, cols: 1 };
+            const widthPct = 100 / slot.cols;
+            const leftPct = slot.col * widthPct;
+
+            const inst = ev.data;
+            const isDone = inst.status === "completed";
+            const isMissed = inst.status === "missed";
             const isConflicted = conflictedKeys.has(ev.key);
-            // Border color communicates state: amber for conflict,
-            // emerald for completed, red for missed, neutral otherwise.
             const borderClass = isConflicted
               ? "border-amber-500"
               : isDone
@@ -307,21 +274,32 @@ export function TimelineDay({
                 : isMissed
                   ? "border-red-500"
                   : "border-zinc-400 dark:border-zinc-600";
+            // Alternate a subtle background shade per column so
+            // side-by-side overlapping blocks read as clearly
+            // separate cards even though they share a rect.
+            const bgClass =
+              slot.col % 2 === 0
+                ? "bg-zinc-100 dark:bg-zinc-800"
+                : "bg-white dark:bg-zinc-900";
             return (
               <button
                 key={ev.key}
                 type="button"
-                onClick={() => setOpenInstance(ev.instance)}
-                title={`${activityName(ev.instance)} · ${formatTimeRange(ev.start, ev.end, timeFormat)}`}
+                onClick={() => setOpenInstance(inst)}
+                title={`${activityName(inst)} · ${formatTimeRange(ev.start, ev.end, timeFormat)}`}
                 style={{
                   top: Math.max(0, gridTop),
                   height: gridHeight,
+                  // 2px inset from each side keeps a visible gutter
+                  // between neighboring overlap columns.
+                  left: `calc(${leftPct}% + 2px)`,
+                  width: `calc(${widthPct}% - 4px)`,
                 }}
-                className={`absolute inset-x-1 overflow-hidden rounded border-l-4 bg-zinc-100 px-2 py-1 text-left text-[11px] font-medium text-zinc-900 shadow-sm transition-colors hover:brightness-95 dark:bg-zinc-800 dark:text-zinc-100 ${borderClass} ${
+                className={`absolute overflow-hidden rounded border-l-4 px-2 py-1 text-left text-[11px] font-medium text-zinc-900 shadow-sm ring-1 ring-black/5 transition-colors hover:brightness-95 dark:text-zinc-100 dark:ring-white/10 ${bgClass} ${borderClass} ${
                   isDone ? "opacity-70 line-through" : ""
                 }`}
               >
-                <div className="truncate">{activityName(ev.instance)}</div>
+                <div className="truncate">{activityName(inst)}</div>
                 <div className="truncate text-[10px] text-zinc-700 dark:text-zinc-300">
                   {formatTimeRange(ev.start, ev.end, timeFormat)}
                 </div>
@@ -334,17 +312,18 @@ export function TimelineDay({
       {untimed.length > 0 && (
         <section className="flex flex-col gap-2">
           <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-            Untimed ({untimed.length})
+            Untimed ({untimed.length} activit
+            {untimed.length === 1 ? "y" : "ies"})
           </h3>
           <ul className="flex flex-col gap-1">
-            {untimed.map((it) => {
-              const isDone = it.instance.status === "completed";
-              const isMissed = it.instance.status === "missed";
+            {untimed.map((inst) => {
+              const isDone = inst.status === "completed";
+              const isMissed = inst.status === "missed";
               return (
-                <li key={it.key}>
+                <li key={inst.id}>
                   <button
                     type="button"
-                    onClick={() => setOpenInstance(it.instance)}
+                    onClick={() => setOpenInstance(inst)}
                     className={`flex w-full items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 text-left text-sm transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900 ${
                       isDone ? "opacity-60 line-through" : ""
                     }`}
@@ -359,7 +338,7 @@ export function TimelineDay({
                             : "bg-zinc-400"
                       }`}
                     />
-                    <span className="truncate">{activityName(it.instance)}</span>
+                    <span className="truncate">{activityName(inst)}</span>
                   </button>
                 </li>
               );
@@ -384,8 +363,4 @@ export function TimelineDay({
       )}
     </div>
   );
-}
-
-function activityName(inst: DayInstance): string {
-  return inst.overrideName ?? inst.activity.name;
 }

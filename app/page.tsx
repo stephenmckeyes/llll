@@ -69,6 +69,7 @@ import { SectionTabs } from "./_components/section-tabs";
 import { TagDotRow } from "./_components/tag-chip";
 import { TabPending } from "./_components/tab-pending";
 import { TimelineDay } from "./_components/timeline-day";
+import { TimelineWeek } from "./_components/timeline-week";
 
 // Force a fresh server render on every request. The dashboard is a
 // per-user personalized page anyway — nothing about it is meaningfully
@@ -349,11 +350,19 @@ export default async function HomePage({
           hiddenTags={hiddenTagsSet}
         />
       )}
-      {view === "week" && (
+      {view === "week" && !timelineOn && (
         <WeekView
           weekDate={date}
           todayStr={todayStr}
           incompleteInfo={incompleteInfo}
+          tagMap={tagMap}
+          hiddenTags={hiddenTagsSet}
+        />
+      )}
+      {view === "week" && timelineOn && (
+        <TimelineWeekView
+          weekDate={date}
+          todayStr={todayStr}
           tagMap={tagMap}
           hiddenTags={hiddenTagsSet}
         />
@@ -1155,6 +1164,126 @@ async function TimelineView({
   return (
     <TimelineDay
       date={date}
+      todayStr={todayStr}
+      instances={instances}
+      tagMap={tagMap}
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Timeline (Week) — 7 side-by-side day columns, each a mini vertical
+// hour grid. Fetches instances across the whole visible week and hands
+// them to the client TimelineWeek component to render + own the
+// ActivityModal + overlap layout.
+// ---------------------------------------------------------------------------
+
+async function TimelineWeekView({
+  weekDate,
+  todayStr,
+  tagMap,
+  hiddenTags,
+}: {
+  weekDate: string;
+  todayStr: string;
+  tagMap: TagMap;
+  hiddenTags: ReadonlySet<string>;
+}) {
+  const supabase = await createClient();
+
+  const refDate = parseDate(weekDate);
+  const weekStart = startOfWeek(refDate, { weekStartsOn: 1 });
+  const weekEnd = endOfWeek(refDate, { weekStartsOn: 1 });
+  const weekStartStr = format(weekStart, "yyyy-MM-dd");
+  const weekEndStr = format(weekEnd, "yyyy-MM-dd");
+  const weekDates = Array.from({ length: 7 }, (_, i) =>
+    format(addDays(weekStart, i), "yyyy-MM-dd")
+  );
+
+  // Fetch the same shape DayView uses, scoped to the week window,
+  // so TimelineWeek can pass full DayInstances to the ActivityModal.
+  const { data } = await supabase
+    .from("activity_instances")
+    .select(
+      `
+      id,
+      scheduled_for,
+      status,
+      tags,
+      name,
+      notes,
+      priority,
+      comment,
+      activities (
+        id,
+        name,
+        notes,
+        rhythm,
+        priority,
+        scheduled_times,
+        scheduled_end_times,
+        default_skill_tags,
+        start_date,
+        end_date,
+        archived_at,
+        reminders,
+        track_on_grid,
+        rollover_missed_days,
+        rollover_change_rhythm,
+        auto_archive
+      ),
+      completion_instances (
+        completion_id,
+        completions ( occurred_at, deleted_at )
+      )
+    `
+    )
+    .gte("scheduled_for", weekStartStr)
+    .lte("scheduled_for", weekEndStr);
+
+  type Row = {
+    id: string;
+    scheduled_for: string;
+    status: string;
+    tags: string[] | null;
+    name: string | null;
+    notes: string | null;
+    priority: number | null;
+    comment: string | null;
+    activities: DayInstance["activity"] | null;
+    completion_instances: Array<{
+      completion_id: string;
+      completions: { occurred_at: string; deleted_at: string | null } | null;
+    }> | null;
+  };
+
+  const rows = ((data ?? []) as unknown as Row[]).filter(
+    (r): r is Row & { activities: DayInstance["activity"] } => {
+      if (!r.activities) return false;
+      if (r.activities.archived_at) return false;
+      if (!keepForCalendar(r.activities.default_skill_tags ?? [], hiddenTags))
+        return false;
+      return true;
+    }
+  );
+
+  const instances: DayInstance[] = rows.map((r) => ({
+    id: r.id,
+    scheduled_for: r.scheduled_for,
+    status:
+      r.status === "completed" || r.status === "missed" ? r.status : "pending",
+    tags: r.tags ?? [],
+    overrideName: r.name ?? null,
+    overrideNotes: r.notes ?? null,
+    overridePriority: r.priority ?? null,
+    comment: r.comment ?? null,
+    activity: r.activities,
+    completionCount: liveCompletionCount(r.completion_instances),
+  }));
+
+  return (
+    <TimelineWeek
+      weekDates={weekDates}
       todayStr={todayStr}
       instances={instances}
       tagMap={tagMap}
