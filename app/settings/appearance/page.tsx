@@ -20,6 +20,7 @@ import {
 import { isTimeFormat, type TimeFormat } from "@/lib/ui/format-time";
 import { AddActivityDensityPicker } from "./add-activity-density-picker";
 import { CalendarSync } from "./calendar-sync";
+import { DefaultCalendarFilterPicker } from "./default-calendar-filter-picker";
 import { DefaultStreaksRangePicker } from "./default-streaks-range-picker";
 import { TimeFormatPicker } from "./time-format-picker";
 import { ThemeToggle } from "../theme-toggle";
@@ -27,13 +28,16 @@ import { ThemeToggle } from "../theme-toggle";
 export default async function AppearanceSettingsPage() {
   const { supabase, user } = await requireOnboardedUser();
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select(
-      "add_activity_density, time_format, ics_token, default_streaks_range"
-    )
-    .eq("id", user.id)
-    .maybeSingle();
+  const [{ data: profile }, { data: tagRows }] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select(
+        "add_activity_density, time_format, ics_token, default_streaks_range, default_calendar_hidden_tags"
+      )
+      .eq("id", user.id)
+      .maybeSingle(),
+    supabase.from("tags").select("name").order("name", { ascending: true }),
+  ]);
   const rawDensity =
     (profile as { add_activity_density?: string } | null)?.add_activity_density ??
     "default";
@@ -53,6 +57,16 @@ export default async function AppearanceSettingsPage() {
   const initialStreaksRange: StreaksRange = isStreaksRange(rawRange)
     ? rawRange
     : "total";
+  const initialHiddenTags: string[] = Array.isArray(
+    (profile as { default_calendar_hidden_tags?: string[] } | null)
+      ?.default_calendar_hidden_tags
+  )
+    ? ((profile as { default_calendar_hidden_tags: string[] })
+        .default_calendar_hidden_tags)
+    : [];
+  const allTags: string[] = ((tagRows ?? []) as Array<{ name: string }>).map(
+    (r) => r.name
+  );
 
   return (
     <SettingsShell title="Appearance">
@@ -90,6 +104,22 @@ export default async function AppearanceSettingsPage() {
           range in the URL.
         </p>
         <DefaultStreaksRangePicker initialRange={initialStreaksRange} />
+      </div>
+
+      <hr className="my-2 border-zinc-200 dark:border-zinc-800" />
+
+      <div className="flex flex-col gap-2">
+        <h2 className="text-sm font-medium">Calendar default filter</h2>
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          Tags picked here are hidden from Calendar (Day / Week / Month /
+          Year / Timeline) on cold-open. You can still change the filter
+          in the moment via the &ldquo;Filters&rdquo; button on the
+          Calendar — cold-open resets to this default.
+        </p>
+        <DefaultCalendarFilterPicker
+          allTags={allTags}
+          initialHidden={initialHiddenTags}
+        />
       </div>
 
       <hr className="my-2 border-zinc-200 dark:border-zinc-800" />

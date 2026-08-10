@@ -124,6 +124,34 @@ export async function updateDefaultStreaksRange(
   return { ok: true };
 }
 
+export async function updateDefaultCalendarHiddenTags(
+  tags: string[]
+): Promise<{ error: string } | { ok: true }> {
+  const cleaned = Array.from(
+    new Set(
+      (Array.isArray(tags) ? tags : [])
+        .map((t) => String(t).trim())
+        .filter((t) => t.length > 0 && t.length <= 60)
+    )
+  );
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({ default_calendar_hidden_tags: cleaned })
+    .eq("id", user.id);
+  if (error) return { error: error.message };
+
+  revalidatePath("/settings/appearance");
+  revalidatePath("/"); // Home reads it as the cold-open filter default.
+  return { ok: true };
+}
+
 export async function updateTimeFormat(
   format: TimeFormat
 ): Promise<{ error: string } | { ok: true }> {

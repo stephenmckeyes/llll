@@ -115,6 +115,12 @@ export const profiles = pgTable("profiles", {
   defaultStreaksRange: text("default_streaks_range")
     .notNull()
     .default("total"),
+  // Tag NAMES the Calendar hides on cold-open (migration 0034).
+  // Any URL ?hideTags= param overrides this per navigation.
+  defaultCalendarHiddenTags: text("default_calendar_hidden_tags")
+    .array()
+    .notNull()
+    .default(sql`'{}'::text[]`),
 });
 
 // ===========================================================================

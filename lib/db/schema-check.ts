@@ -82,6 +82,13 @@ export const EXPECTATIONS: ReadonlyArray<MigrationExpectation> = [
     label: "Optional per-slot end times",
     checks: [{ table: "activities", column: "scheduled_end_times" }],
   },
+  {
+    migration: "0034_default_calendar_hidden_tags.sql",
+    label: "Default Calendar tag filter",
+    checks: [
+      { table: "profiles", column: "default_calendar_hidden_tags" },
+    ],
+  },
 ];
 
 export type MissingMigration = {

@@ -29,6 +29,10 @@ import {
   isAddActivityDensity,
   type AddActivityDensity,
 } from "@/lib/domain/add-activity-density";
+import {
+  keepForCalendar,
+  parseHideTags as parseHideTagsParam,
+} from "@/lib/domain/calendar-filter";
 import { isStreaksRange } from "@/lib/domain/streaks-range";
 import { ensureInstancesBackfilled } from "@/lib/domain/backfill";
 import {
@@ -57,6 +61,7 @@ import {
   type DayInstance,
   type DayMarkedItem,
 } from "./_components/day-list";
+import { CalendarFiltersButton } from "./_components/calendar-filters-button";
 import { GridSection } from "./_components/grid-section";
 import { type IncompleteInfo } from "./_components/incomplete-button";
 import { DashboardHeader } from "./_components/dashboard-header";
@@ -149,6 +154,11 @@ export default async function HomePage({
      *  view=day today; drives whether we render TimelineView or
      *  DayView. Legacy ?view=timeline still resolves the same way. */
     timeline?: string;
+    /** Calendar tag filter (migration 0034). Comma-separated tag
+     *  names to hide; empty string / absent = use user's profile
+     *  default. The special sentinel "none" means "user explicitly
+     *  cleared, don't apply the default". */
+    hideTags?: string;
   }>;
 }) {
   const supabase = await createClient();
@@ -176,6 +186,7 @@ export default async function HomePage({
 
   const view = parseView(params.view);
   const timelineOn = parseTimelineFlag(params.view, params.timeline);
+
   // Note: `range` gets its FINAL value AFTER the profile fetch below,
   // because when the URL doesn't carry ?range we fall back to the
   // user's default_streaks_range preference (migration 0029).
@@ -194,7 +205,7 @@ export default async function HomePage({
     supabase
       .from("profiles")
       .select(
-        "timezone, onboarded_at, add_activity_density, default_streaks_range"
+        "timezone, onboarded_at, add_activity_density, default_streaks_range, default_calendar_hidden_tags"
       )
       .eq("id", user.id)
       .maybeSingle(),
@@ -228,6 +239,23 @@ export default async function HomePage({
     if (isStreaksRange(stored)) range = stored;
     else range = "total";
   }
+
+  // Calendar tag filter — URL wins; if the URL has no ?hideTags at all
+  // (which is the state right after a cold-open strips params, or on a
+  // fresh visit), fall back to the profile default. The special value
+  // ?hideTags=none means "user explicitly cleared" and skips the
+  // default. Applied to Day / Week / Month / Year / Timeline data on
+  // the fetch path below; Grid has its own tag filter.
+  const activeHiddenTags: string[] = (() => {
+    const raw = params.hideTags;
+    if (raw !== undefined) {
+      return Array.from(parseHideTagsParam(raw));
+    }
+    const stored = (profile as { default_calendar_hidden_tags?: string[] })
+      .default_calendar_hidden_tags;
+    return Array.isArray(stored) ? stored : [];
+  })();
+  const hiddenTagsSet = new Set(activeHiddenTags);
 
   // "Today" in the USER'S timezone — NOT the server's UTC clock. This is
   // the fix for the "today is a day ahead" bug: Vercel runs in UTC, so
@@ -323,6 +351,8 @@ export default async function HomePage({
           range={range}
           date={date}
           timelineOn={timelineOn}
+          allTagNames={Object.keys(tagMap).sort()}
+          activeHiddenTags={activeHiddenTags}
         />
       </div>
 
@@ -334,10 +364,16 @@ export default async function HomePage({
           incompleteInfo={incompleteInfo}
           tagMap={tagMap}
           density={addActivityDensity}
+          hiddenTags={hiddenTagsSet}
         />
       )}
       {view === "day" && timelineOn && (
-        <TimelineView date={date} todayStr={todayStr} tagMap={tagMap} />
+        <TimelineView
+          date={date}
+          todayStr={todayStr}
+          tagMap={tagMap}
+          hiddenTags={hiddenTagsSet}
+        />
       )}
       {view === "week" && (
         <WeekView
@@ -345,6 +381,7 @@ export default async function HomePage({
           todayStr={todayStr}
           incompleteInfo={incompleteInfo}
           tagMap={tagMap}
+          hiddenTags={hiddenTagsSet}
         />
       )}
       {view === "month" && (
@@ -353,6 +390,7 @@ export default async function HomePage({
           todayStr={todayStr}
           incompleteInfo={incompleteInfo}
           tagMap={tagMap}
+          hiddenTags={hiddenTagsSet}
         />
       )}
       {view === "year" && (
@@ -360,6 +398,7 @@ export default async function HomePage({
           yearDate={date}
           todayStr={todayStr}
           incompleteInfo={incompleteInfo}
+          hiddenTags={hiddenTagsSet}
         />
       )}
       {view === "grid" && (
@@ -600,12 +639,18 @@ function ViewSwitcher({
   range,
   date,
   timelineOn,
+  allTagNames,
+  activeHiddenTags,
 }: {
   section: Section;
   currentView: ViewKind;
   range: GridRange;
   date: string;
   timelineOn: boolean;
+  /** Every tag NAME in the user's palette — feeds the Filters modal. */
+  allTagNames: string[];
+  /** Currently-hidden tag NAMES (URL param OR profile default fallback). */
+  activeHiddenTags: string[];
 }) {
   return (
     // Tighter vertical rhythm: gap-2 → gap-1 between the section row
@@ -657,6 +702,10 @@ function ViewSwitcher({
             Timeline
             <TabPending />
           </Link>
+          <CalendarFiltersButton
+            allTags={allTagNames}
+            activeHidden={activeHiddenTags}
+          />
         </div>
       ) : (
         <nav
@@ -732,6 +781,7 @@ async function DayView({
   incompleteInfo,
   tagMap,
   density,
+  hiddenTags,
 }: {
   startDate: string;
   todayStr: string;
@@ -739,6 +789,7 @@ async function DayView({
   incompleteInfo: IncompleteInfo;
   tagMap: TagMap;
   density: AddActivityDensity;
+  hiddenTags: ReadonlySet<string>;
 }) {
   const supabase = await createClient();
 
@@ -830,6 +881,8 @@ async function DayView({
     (r): r is RawInstance & { activities: DayInstance["activity"] } => {
       if (!r.activities) return false;
       if (r.activities.archived_at) return false;
+      if (!keepForCalendar(r.activities.default_skill_tags ?? [], hiddenTags))
+        return false;
       return true;
     }
   );
@@ -944,10 +997,12 @@ async function TimelineView({
   date,
   todayStr,
   tagMap,
+  hiddenTags,
 }: {
   date: string;
   todayStr: string;
   tagMap: TagMap;
+  hiddenTags: ReadonlySet<string>;
 }) {
   const supabase = await createClient();
 
@@ -1013,6 +1068,8 @@ async function TimelineView({
     (r): r is Row & { activities: DayInstance["activity"] } => {
       if (!r.activities) return false;
       if (r.activities.archived_at) return false;
+      if (!keepForCalendar(r.activities.default_skill_tags ?? [], hiddenTags))
+        return false;
       return true;
     }
   );
@@ -1051,11 +1108,13 @@ async function WeekView({
   todayStr,
   incompleteInfo,
   tagMap,
+  hiddenTags,
 }: {
   weekDate: string;
   todayStr: string;
   incompleteInfo: IncompleteInfo;
   tagMap: TagMap;
+  hiddenTags: ReadonlySet<string>;
 }) {
   const supabase = await createClient();
 
@@ -1104,6 +1163,10 @@ async function WeekView({
   const byDate: Record<string, WeekInstance[]> = {};
   for (const i of all) {
     if (!i.activities || i.activities.archived_at) continue;
+    if (
+      !keepForCalendar(i.activities.default_skill_tags ?? [], hiddenTags)
+    )
+      continue;
     (byDate[i.scheduled_for] ??= []).push(i);
   }
   for (const list of Object.values(byDate)) {
@@ -1264,11 +1327,13 @@ async function MonthView({
   todayStr,
   incompleteInfo,
   tagMap,
+  hiddenTags,
 }: {
   monthDate: string;
   todayStr: string;
   incompleteInfo: IncompleteInfo;
   tagMap: TagMap;
+  hiddenTags: ReadonlySet<string>;
 }) {
   const supabase = await createClient();
 
@@ -1286,7 +1351,7 @@ async function MonthView({
   const { data } = await supabase
     .from("activity_instances")
     .select(
-      "id, scheduled_for, status, tags, activities!inner(name, archived_at)"
+      "id, scheduled_for, status, tags, activities!inner(name, archived_at, default_skill_tags)"
     )
     .gte("scheduled_for", format(gridStart, "yyyy-MM-dd"))
     .lte("scheduled_for", format(gridEnd, "yyyy-MM-dd"))
@@ -1307,8 +1372,8 @@ async function MonthView({
     // PostgREST returns the inner-join as either an object or an
     // array-of-one depending on the version — normalize below.
     activities:
-      | { name: string; archived_at: string | null }
-      | Array<{ name: string; archived_at: string | null }>
+      | { name: string; archived_at: string | null; default_skill_tags: string[] | null }
+      | Array<{ name: string; archived_at: string | null; default_skill_tags: string[] | null }>
       | null;
   };
   for (const i of (data ?? []) as MonthRow[]) {
@@ -1316,6 +1381,7 @@ async function MonthView({
       ? i.activities[0]
       : i.activities;
     if (!act) continue;
+    if (!keepForCalendar(act.default_skill_tags ?? [], hiddenTags)) continue;
     (byDate[i.scheduled_for] ??= []).push({
       id: i.id,
       name: act.name,
@@ -1379,10 +1445,12 @@ async function YearView({
   yearDate,
   todayStr,
   incompleteInfo,
+  hiddenTags,
 }: {
   yearDate: string;
   todayStr: string;
   incompleteInfo: IncompleteInfo;
+  hiddenTags: ReadonlySet<string>;
 }) {
   const supabase = await createClient();
   const refDate = parseDate(yearDate);
@@ -1394,17 +1462,25 @@ async function YearView({
   const { data } = await supabase
     .from("activity_instances")
     .select(
-      "scheduled_for, status, activities!inner(archived_at)"
+      "scheduled_for, status, activities!inner(archived_at, default_skill_tags)"
     )
     .gte("scheduled_for", yearStart)
     .lte("scheduled_for", yearEnd)
     .is("activities.archived_at", null);
 
   const byDate: Record<string, { pending: number; completed: number }> = {};
-  for (const i of (data ?? []) as Array<{
+  type YearRow = {
     scheduled_for: string;
     status: string;
-  }>) {
+    activities:
+      | { default_skill_tags: string[] | null }
+      | Array<{ default_skill_tags: string[] | null }>
+      | null;
+  };
+  for (const i of (data ?? []) as YearRow[]) {
+    const act = Array.isArray(i.activities) ? i.activities[0] : i.activities;
+    if (!act) continue;
+    if (!keepForCalendar(act.default_skill_tags ?? [], hiddenTags)) continue;
     const d = (byDate[i.scheduled_for] ??= { pending: 0, completed: 0 });
     if (i.status === "pending") d.pending++;
     else if (i.status === "completed") d.completed++;
