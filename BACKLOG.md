@@ -6,6 +6,176 @@ startup.
 
 ## Pending features (asked for, deferred on purpose)
 
+### Communities (Groups / Clubs / Guilds)
+
+Asked for. Three community types live inside the Friends surface as
+sibling sub-tabs (Friends / Groups / Clubs / Guilds), mirroring the
+Schedule surface's Calendar / Streaks / Total pattern. The
+scaffolding — sub-tab strip + empty per-type pages — is already in
+place (see `app/friends/_friends-tabs.tsx`, `groups/page.tsx`,
+`clubs/page.tsx`, `guilds/page.tsx`). This entry captures everything
+those placeholders will eventually grow into.
+
+**A user can belong to MANY of each type.** Each tab is a multi-
+community shell: dropdown at the top to pick which one you're viewing,
++ New button to create one, and the body renders that community's
+overall page / calendar / leadership settings.
+
+**Schema shape — one shared `communities` table.**
+```
+communities (
+  id uuid PK,
+  kind text NOT NULL,           -- 'group' | 'club' | 'guild'
+  name text NOT NULL,
+  handle text UNIQUE,           -- for group's "special search"
+  description text,
+  visibility text NOT NULL,     -- 'private' | 'public'
+  join_policy text NOT NULL,    -- 'open' | 'application' | 'invite'
+                                --   groups default 'invite',
+                                --   clubs configurable,
+                                --   guilds configurable.
+  outsider_visibility jsonb,    -- clubs: what non-members see
+                                --   { showMembers, showActivities, ... }
+  created_by uuid FK auth.users,
+  created_at timestamptz,
+  updated_at timestamptz
+)
+
+community_members (
+  community_id uuid FK,
+  user_id uuid FK auth.users,
+  role text NOT NULL,           -- 'leader' | 'co_leader' | 'rank_<id>' | 'member'
+  joined_at timestamptz,
+  PRIMARY KEY (community_id, user_id)
+)
+
+community_ranks (
+  id uuid PK,
+  community_id uuid FK,
+  name text NOT NULL,           -- e.g. "officer", "moderator"
+  sort_order int,
+  permissions jsonb NOT NULL    -- bitmap-ish:
+                                -- { can_invite, can_approve_requests,
+                                --   can_add_activities, can_edit_settings,
+                                --   can_promote, can_demote, can_kick }
+)
+
+community_join_requests (
+  id uuid PK,
+  community_id uuid FK,
+  user_id uuid FK,
+  note text,
+  status text,                  -- 'pending' | 'approved' | 'declined'
+  handled_by uuid FK auth.users,
+  created_at timestamptz
+)
+
+community_activities (
+  community_id uuid FK,
+  activity_id uuid FK activities,
+  added_by uuid FK,
+  added_at timestamptz,
+  PRIMARY KEY (community_id, activity_id)
+)
+
+community_auto_add_prefs (
+  community_id uuid FK,
+  user_id uuid FK,
+  auto_add boolean,
+  PRIMARY KEY (community_id, user_id)
+)
+```
+
+**Per-type behavior (all one table + policies):**
+
+- **Groups** — `visibility='private'`, `join_policy='invite'` by
+  default. Discovery is by exact `handle` or invite link only; the
+  search endpoint filters `visibility='public'` out. Joining is
+  request-then-approve or direct invite.
+- **Clubs** — `visibility='public'`. Leadership sets
+  `outsider_visibility` (name only / member count / full feed) and
+  picks `join_policy` between open / application / invite. Public
+  search endpoint returns clubs; filters exist for tag / activity /
+  size.
+- **Guilds** — like clubs but with skill/adventure progression baked
+  in. Add two more tables when guilds ship:
+  ```
+  guild_tracks (id, community_id, name, kind='skill'|'adventure', tiers jsonb)
+  guild_progress (guild_id, user_id, track_id, tier, updated_at)
+  ```
+  Guild activities pair to tiers; completions can advance a member on
+  a track. Mentor pairing: `guild_mentors (guild_id, user_id)` + a
+  `mentor_requests` table for newcomer-→-mentor asks.
+- Guilds also feed the **Levels tab** — a member's overall Levels
+  view aggregates skill progress across every guild they're in.
+
+**UI per tab (same shape for all three, differs in policy widgets):**
+
+- **Dropdown** at the top listing communities the user belongs to,
+  most-recent-visited first. Empty state = "You're not in any {kind}
+  yet — join one or create one."
+- **+ New modal** — name, description, visibility (fixed for groups),
+  join policy, initial rank names (auto-generates a "member" rank +
+  a "leader" rank on the creator).
+- **Overall page** for the selected community: members list,
+  activity feed (each member's completions of the community's
+  shared activities), rhythms shared into the community.
+- **Calendar view** — the community's shared activities laid out in
+  Calendar style (Day / Week / Month, same components as personal
+  Calendar). Two toggles per activity: **Add to my calendar** (one-
+  off insert into the member's activities via a copy-from-shared
+  path — the CopyShareModal already exists) and **Auto-add new
+  activities** (a `community_auto_add_prefs` row per (community,
+  user) — when a leadership add-activity mutation runs, fan out
+  copies to everyone who has auto-add=true).
+- **Leadership settings** — visible to leader + anyone whose rank
+  carries `can_edit_settings`. Ranks table: add rank, name it, tick
+  the per-permission checkboxes, save. Members list with a
+  per-member "promote / demote" rank picker for anyone whose rank
+  carries `can_promote`. Kick / ban with `can_kick`.
+- **Discovery** — public search page (clubs / guilds only; groups
+  are handle-only) with tag + size filters. Application flow:
+  applicant writes a note; leadership sees a pending list; approve
+  writes a `community_members` row, decline notifies the applicant.
+
+**RLS + SECURITY DEFINER surface:**
+- Read a community's basic row: anyone if `visibility='public'`;
+  members-only if `visibility='private'`.
+- Read `community_members`: gated by `outsider_visibility.showMembers`
+  for non-members of public clubs, always OK for members.
+- Read `community_activities`: same gating pattern.
+- Mutations (insert/update/delete on activities, ranks, member
+  roles) go through a SECURITY DEFINER RPC that checks
+  `has_permission(auth.uid(), community_id, 'can_add_activities')`
+  etc.
+- Join requests: any authenticated user can INSERT a request into a
+  public / handle-discovered community; only permitted members can
+  UPDATE the status.
+
+**Notifications integration:**
+- New join request → notifies members with `can_approve_requests`
+  (Notifications page + BottomNav badge).
+- Approved / declined → notifies the requester.
+- Invite → notifies the invitee.
+- New auto-added activity → optional per-user notification
+  (respect the auto_add pref — the whole point is it's silent).
+
+**Phasing (biggest → smallest):**
+1. **Schema + RLS** — all tables above, plus the SECURITY DEFINER
+   permission helpers. Ship as a single migration once designed.
+2. **Groups end-to-end** — dropdown, create modal, overall page,
+   members, basic invite/request. No calendar or auto-add yet.
+3. **Calendar + auto-add** — shared component so all three types
+   inherit it.
+4. **Leadership settings** — ranks, per-permission checkboxes,
+   member role picker.
+5. **Clubs discovery** — public search, application flow,
+   outsider_visibility widget.
+6. **Guild tracks** — the guild-specific progression + Levels feed.
+
+Meaningful build — pick up one phase per session, don't try to land
+it all at once.
+
 ### AI-assistant pairing
 
 Asked for. Allow the user to pair Mission with an AI assistant (Claude

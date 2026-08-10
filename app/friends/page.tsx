@@ -15,6 +15,7 @@ import { requireOnboardedUser } from "@/lib/auth/require-onboarded-user";
 import { PendingLink } from "@/app/_components/pending-link";
 
 import { AskForHelpButton } from "./ask-for-help";
+import { FriendsTabs } from "./_friends-tabs";
 import { FriendRowButton, FriendSearch } from "./friends-client";
 import { FriendsList } from "./friends-list";
 
@@ -80,6 +81,8 @@ export default async function FriendsPage() {
         </PendingLink>
         <h1 className="text-3xl font-semibold tracking-tight">Friends</h1>
       </header>
+
+      <FriendsTabs active="friends" />
 
       <AskForHelpButton
         friends={friendOptions}
