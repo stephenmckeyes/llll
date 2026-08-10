@@ -1,18 +1,38 @@
 // ---------------------------------------------------------------------------
-// /friends/groups — Groups tab (placeholder).
-//
-// The tab strip is real; the tab body is a coming-soon shell. Full spec
-// lives in BACKLOG.md → "Communities (Groups / Clubs / Guilds)".
+// /friends/groups — Groups tab. Real end-to-end for phase 1: list + create
+// + view. Calendar / leadership rank editor / activity auto-add land in
+// follow-up phases (see BACKLOG.md → "Communities").
 // ---------------------------------------------------------------------------
 
 import { PendingLink } from "@/app/_components/pending-link";
+import {
+  getCommunity,
+  listMyCommunities,
+} from "@/app/actions/communities";
 import { requireOnboardedUser } from "@/lib/auth/require-onboarded-user";
 
-import { CommunityPlaceholder } from "../_community-placeholder";
+import { CommunityTab } from "../_community-tab";
 import { FriendsTabs } from "../_friends-tabs";
 
-export default async function GroupsTabPage() {
+export default async function GroupsTabPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   await requireOnboardedUser();
+  const params = await searchParams;
+  const rawId = params.id;
+  const id = typeof rawId === "string" ? rawId : null;
+
+  const communities = await listMyCommunities("group");
+  // Fall back to the first community when ?id is missing or stale (the
+  // client mirrors the same rule and nudges the URL to match).
+  const effectiveId =
+    id && communities.some((c) => c.id === id)
+      ? id
+      : (communities[0]?.id ?? null);
+  const detail = effectiveId ? await getCommunity(effectiveId) : null;
+
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-6 bg-white p-6 dark:bg-zinc-950">
       <header className="flex flex-col gap-1">
@@ -27,26 +47,7 @@ export default async function GroupsTabPage() {
 
       <FriendsTabs active="groups" />
 
-      <CommunityPlaceholder
-        title="Groups"
-        tagline="Private circles of friends · invite / request only"
-        whatItIs={
-          <p>
-            Groups are <strong>private</strong>. They don&rsquo;t show up in
-            public search — you find one via a special search / share
-            link, and joining always goes through a request that the
-            group has to approve, or a direct invite from a member.
-          </p>
-        }
-        planned={[
-          "Dropdown to pick which of YOUR groups you're viewing (you can be in many).",
-          "Create-group modal (+ New) — name, description, invite policy.",
-          "Overall page per group: members, activity feed, shared rhythms.",
-          "Group calendar — members can add its activities to their own calendar, or turn on auto-add so new group activities appear automatically.",
-          "Leadership settings: leader + co-leaders can grant ranks with per-permission powers (invite, approve requests, add activities, edit settings, kick).",
-          "Discovery is intentionally NOT public — search requires the group's exact handle or an invite link.",
-        ]}
-      />
+      <CommunityTab kind="group" communities={communities} detail={detail} />
     </main>
   );
 }

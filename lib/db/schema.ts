@@ -473,3 +473,106 @@ export const messages = pgTable(
     index("messages_recipient_idx").on(t.recipientId, t.createdAt),
   ]
 );
+
+// ===========================================================================
+// Communities — Groups / Clubs / Guilds (migration 0031)
+// ===========================================================================
+
+// One shared table across all three types; `kind` distinguishes them.
+// Groups are always private+non-open (DB CHECK enforces this). Clubs and
+// Guilds are configurable. Membership + ranks + join requests + activities
+// + auto-add prefs are all keyed by community_id so shared UI works for
+// every kind.
+export const communities = pgTable(
+  "communities",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kind: text("kind").notNull(),
+    name: text("name").notNull(),
+    handle: text("handle"),
+    description: text("description"),
+    visibility: text("visibility").notNull(),
+    joinPolicy: text("join_policy").notNull(),
+    outsiderVisibility: jsonb("outsider_visibility")
+      .$type<Record<string, boolean>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    createdBy: uuid("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("communities_kind_idx").on(t.kind),
+    index("communities_created_by_idx").on(t.createdBy),
+  ]
+);
+
+export const communityMembers = pgTable(
+  "community_members",
+  {
+    communityId: uuid("community_id").notNull(),
+    userId: uuid("user_id").notNull(),
+    role: text("role").notNull().default("member"),
+    joinedAt: timestamp("joined_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("community_members_user_idx").on(t.userId)]
+);
+
+export const communityRanks = pgTable(
+  "community_ranks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    communityId: uuid("community_id").notNull(),
+    name: text("name").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    permissions: jsonb("permissions")
+      .$type<Record<string, boolean>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+  },
+  (t) => [index("community_ranks_community_idx").on(t.communityId)]
+);
+
+export const communityJoinRequests = pgTable(
+  "community_join_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    communityId: uuid("community_id").notNull(),
+    userId: uuid("user_id").notNull(),
+    note: text("note"),
+    status: text("status").notNull().default("pending"),
+    handledBy: uuid("handled_by"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    handledAt: timestamp("handled_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("community_join_requests_community_idx").on(t.communityId, t.status),
+  ]
+);
+
+export const communityActivities = pgTable(
+  "community_activities",
+  {
+    communityId: uuid("community_id").notNull(),
+    activityId: uuid("activity_id").notNull(),
+    addedBy: uuid("added_by"),
+    addedAt: timestamp("added_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("community_activities_activity_idx").on(t.activityId)]
+);
+
+export const communityAutoAddPrefs = pgTable("community_auto_add_prefs", {
+  communityId: uuid("community_id").notNull(),
+  userId: uuid("user_id").notNull(),
+  autoAdd: boolean("auto_add").notNull().default(false),
+});
