@@ -687,32 +687,27 @@ function ViewSwitcher({
               />
             ))}
           </nav>
-          {/* Row 2b — Modifier chips on their OWN row, right-aligned,
-              rounded-full to visually separate them from the square
-              tab strip above. A small leading label ("View:") ties
-              them together as controls that shape the view rather
-              than pick one. Per user spec: "make them stand out as
-              separate so that people don't mistake them for another
-              option." */}
-          <div className="flex items-center justify-end gap-1.5 pt-1">
-            <span
-              aria-hidden
-              className="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500"
-            >
-              View:
-            </span>
+          {/* Row 2b — Modifier chips stacked vertically + right-aligned,
+              each carrying a small check-square that fills in when the
+              option is active. Per user spec: "add a small picture with
+              it with a checkbox when you click on it to help
+              differentiate it even more." The check + icon combo makes
+              it obvious these are toggle controls, not more view
+              options like the tab strip above. */}
+          <div className="flex flex-col items-end gap-1 pt-1">
             <Link
               href={`/?view=${currentView}&date=${date}${
                 timelineOn ? "" : "&timeline=1"
               }`}
               aria-pressed={timelineOn}
               title="Toggle Timeline overlay"
-              className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
+              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-medium transition-colors ${
                 timelineOn
                   ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
                   : "border-zinc-300 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
               }`}
             >
+              <CheckSquare on={timelineOn} />
               <ClockIcon />
               Timeline
               <TabPending />
@@ -783,6 +778,36 @@ function SubTab({
       {label}
       <TabPending />
     </Link>
+  );
+}
+
+// Small checkbox visual — filled square with a check when the option
+// it decorates is on, empty square otherwise. Purely visual (the parent
+// element is what actually toggles). Communicates "this is a switch,
+// not just a link" per user spec on the modifier chips.
+function CheckSquare({ on }: { on: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className={`inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border transition-colors ${
+        on
+          ? "border-white bg-white text-zinc-900 dark:border-zinc-900 dark:bg-zinc-900 dark:text-zinc-50"
+          : "border-current bg-transparent text-transparent"
+      }`}
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={4}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="h-2.5 w-2.5"
+      >
+        <path d="M5 12l5 5L20 7" />
+      </svg>
+    </span>
   );
 }
 
