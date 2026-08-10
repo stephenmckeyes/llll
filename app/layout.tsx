@@ -3,6 +3,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 
+import { BottomNav } from "./_components/bottom-nav";
+
 // Lock the viewport: no pinch / double-tap zoom, no accidental rescaling on
 // input focus. Mission is laid out for one canonical scale; zooming into the
 // dashboard breaks the sticky-header math and produces the "weird
@@ -101,6 +103,10 @@ export default function RootLayout({
       </head>
       <body>
         {children}
+        {/* Persistent 5-slot bottom nav. Self-hides on auth pages
+            (login / signup / onboarding) via usePathname; renders its
+            own spacer so nothing gets clipped by the fixed bar. */}
+        <BottomNav />
         {/* Vercel Speed Insights — collects real-user Core Web Vitals
             (load time, interaction latency) from production visitors.
             This is the data we use to find what's actually slow. No-op
