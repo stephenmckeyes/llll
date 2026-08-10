@@ -20,7 +20,7 @@ import {
 } from "@/app/actions/activities";
 import { rhythmCategoryLabel } from "@/lib/domain/rhythm-summary";
 import type { TagMap } from "@/lib/domain/tags";
-import { formatTime } from "@/lib/ui/format-time";
+import { formatTime, formatTimeRange } from "@/lib/ui/format-time";
 import { useTimeFormat } from "@/lib/ui/format-time-client";
 import { dispatchInstanceResolved } from "@/lib/ui/instance-resolved-event";
 import { normalizeReminder } from "@/lib/validators/reminder";
@@ -300,7 +300,13 @@ export function InstanceRow({
           {activity.scheduled_times.length > 0 && (
             <p className="mt-0.5 truncate text-xs text-zinc-600 dark:text-zinc-400">
               {activity.scheduled_times
-                .map((t) => formatTime(t, timeFormat))
+                .map((t, i) =>
+                  formatTimeRange(
+                    t,
+                    activity.scheduled_end_times?.[i],
+                    timeFormat
+                  )
+                )
                 .join(" · ")}
             </p>
           )}

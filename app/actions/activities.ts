@@ -27,6 +27,28 @@ export type ActivityFormState = { error: string } | null;
 // don't strand many "stale" future instances.
 const INSTANCE_HORIZON_DAYS = 30;
 
+// Parse the two parallel form arrays scheduledTime + scheduledEndTime,
+// filter to slots whose START is a valid "HH:MM", and keep the end at
+// the same index (or "" when the slot has no valid end). Both arrays
+// come out the same length; the DB stores them as sibling text[].
+function parseScheduledTimesFromForm(formData: FormData): {
+  starts: string[];
+  ends: string[];
+} {
+  const rawStarts = formData.getAll("scheduledTime").map(String);
+  const rawEnds = formData.getAll("scheduledEndTime").map(String);
+  const starts: string[] = [];
+  const ends: string[] = [];
+  for (let i = 0; i < rawStarts.length; i++) {
+    const s = rawStarts[i];
+    if (!/^\d{2}:\d{2}$/.test(s)) continue;
+    starts.push(s);
+    const e = rawEnds[i] ?? "";
+    ends.push(/^\d{2}:\d{2}$/.test(e) ? e : "");
+  }
+  return { starts, ends };
+}
+
 // ---------------------------------------------------------------------------
 // createActivity — insert one activity + pre-generate its instances.
 // ---------------------------------------------------------------------------
@@ -189,10 +211,8 @@ export async function createActivity(
   // Multi-Daily: one entry per time the user added (count was derived above).
   // Other rhythms: 0 or 1 entries (the optional single time field).
 
-  const scheduledTimes = formData
-    .getAll("scheduledTime")
-    .map(String)
-    .filter((s) => /^\d{2}:\d{2}$/.test(s));
+  const { starts: scheduledTimes, ends: scheduledEndTimes } =
+    parseScheduledTimesFromForm(formData);
 
   // ---- 4b. Reminders (zip parallel arrays from the form) ------------------
 
@@ -231,6 +251,7 @@ export async function createActivity(
         priority,
         default_skill_tags: tags,
         scheduled_times: scheduledTimes,
+        scheduled_end_times: scheduledEndTimes,
         reminders: remindersValidated.data,
         track_on_grid: trackOnGrid,
         // Toggles are per-activity and independent of the rhythm value —
@@ -324,10 +345,8 @@ export async function createDraftActivity(
 
   const priority = clampInt(formData.get("priority"), 1, 3, 2);
 
-  const scheduledTimes = formData
-    .getAll("scheduledTime")
-    .map(String)
-    .filter((s) => /^\d{2}:\d{2}$/.test(s));
+  const { starts: scheduledTimes, ends: scheduledEndTimes } =
+    parseScheduledTimesFromForm(formData);
 
   // Best-effort rhythm — a draft doesn't have to be a valid schedule yet.
   const rhythm = buildDraftRhythm(formData, scheduledTimes);
@@ -364,6 +383,7 @@ export async function createDraftActivity(
     priority,
     default_skill_tags: tags,
     scheduled_times: scheduledTimes,
+    scheduled_end_times: scheduledEndTimes,
     reminders,
     track_on_grid: String(formData.get("trackOnGrid")) === "true",
     rollover_missed_days:
@@ -581,10 +601,8 @@ export async function updateActivityRhythm(
   //         for the activity update). The Daily + multi-times shortcut
   //         is collapsed into a frequency rhythm just like in create. -
 
-  const scheduledTimes = formData
-    .getAll("scheduledTime")
-    .map(String)
-    .filter((s) => /^\d{2}:\d{2}$/.test(s));
+  const { starts: scheduledTimes, ends: scheduledEndTimes } =
+    parseScheduledTimesFromForm(formData);
 
   // ---- 2. Reconstruct + validate the rhythm ------------------------------
 
@@ -696,6 +714,7 @@ export async function updateActivityRhythm(
       priority,
       default_skill_tags: tags,
       scheduled_times: scheduledTimes,
+      scheduled_end_times: scheduledEndTimes,
       reminders: remindersValidated.data,
       track_on_grid: String(formData.get("trackOnGrid")) === "true",
       rollover_missed_days:

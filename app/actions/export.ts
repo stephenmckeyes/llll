@@ -92,7 +92,7 @@ export async function exportData(): Promise<{
   const { data: rawActivities } = await supabase
     .from("activities")
     .select(
-      "id, name, notes, rhythm, priority, scheduled_times, default_skill_tags, reminders, start_date, end_date, archived_at, created_at"
+      "id, name, notes, rhythm, priority, scheduled_times, scheduled_end_times, default_skill_tags, reminders, start_date, end_date, archived_at, created_at"
     );
   const activities = (rawActivities ?? []) as ExportBundle["activities"];
 

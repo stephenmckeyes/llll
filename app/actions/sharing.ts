@@ -43,6 +43,8 @@ export type ShareableActivity = {
   rhythm: Rhythm;
   defaultSkillTags: string[];
   scheduledTimes: string[];
+  /** Parallel to scheduledTimes (migration 0032). "" = no end. */
+  scheduledEndTimes: string[];
   trackOnGrid: boolean;
 };
 
@@ -62,7 +64,7 @@ export async function getShareState(
     supabase
       .from("activities")
       .select(
-        "id, name, rhythm, default_skill_tags, scheduled_times, track_on_grid"
+        "id, name, rhythm, default_skill_tags, scheduled_times, scheduled_end_times, track_on_grid"
       )
       .eq("user_id", user.id)
       .is("archived_at", null)
@@ -86,6 +88,7 @@ export async function getShareState(
     rhythm: Rhythm;
     default_skill_tags: string[] | null;
     scheduled_times: string[] | null;
+    scheduled_end_times: string[] | null;
     track_on_grid: boolean;
   };
   return ((activities ?? []) as Row[]).map((a) => ({
@@ -96,6 +99,7 @@ export async function getShareState(
     rhythm: a.rhythm,
     defaultSkillTags: a.default_skill_tags ?? [],
     scheduledTimes: a.scheduled_times ?? [],
+    scheduledEndTimes: a.scheduled_end_times ?? [],
     trackOnGrid: a.track_on_grid,
   }));
 }
@@ -222,6 +226,8 @@ export type SharedActivity = {
   rhythm: Rhythm;
   priority: number;
   scheduledTimes: string[];
+  /** Parallel to scheduledTimes (migration 0032). "" = no end. */
+  scheduledEndTimes: string[];
   defaultSkillTags: string[];
   startDate: string;
   endDate: string | null;
@@ -317,6 +323,7 @@ export async function getSharedWithMe(): Promise<SharedActivity[]> {
     rhythm: Rhythm;
     priority: number;
     scheduled_times: string[] | null;
+    scheduled_end_times: string[] | null;
     default_skill_tags: string[] | null;
     start_date: string;
     end_date: string | null;
@@ -336,6 +343,7 @@ export async function getSharedWithMe(): Promise<SharedActivity[]> {
     rhythm: r.rhythm,
     priority: r.priority,
     scheduledTimes: r.scheduled_times ?? [],
+    scheduledEndTimes: r.scheduled_end_times ?? [],
     defaultSkillTags: r.default_skill_tags ?? [],
     startDate: r.start_date,
     endDate: r.end_date,

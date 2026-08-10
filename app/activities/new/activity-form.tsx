@@ -155,6 +155,8 @@ export function ActivityForm({
   // Time of day is optional — start with none. An activity with no set
   // time sorts to the end of the day on the Day + Week views.
   const [scheduledTimes, setScheduledTimes] = useState<string[]>([]);
+  // Parallel array (migration 0032). "" = no end for that slot.
+  const [scheduledEndTimes, setScheduledEndTimes] = useState<string[]>([]);
   const [startDate, setStartDate] = useState<string>(TODAY_ISO);
   const [endDate, setEndDate] = useState<string>("");
   const [reminders, setReminders] = useState<Reminder[]>([]);
@@ -198,12 +200,22 @@ export function ActivityForm({
   function updateScheduledTime(i: number, value: string) {
     setScheduledTimes((prev) => prev.map((t, idx) => (idx === i ? value : t)));
   }
+  function updateScheduledEndTime(i: number, value: string) {
+    setScheduledEndTimes((prev) =>
+      prev.map((t, idx) => (idx === i ? value : t))
+    );
+  }
+  function clearScheduledEndTime(i: number) {
+    updateScheduledEndTime(i, "");
+  }
   function addScheduledTime() {
     setScheduledTimes((prev) => [...prev, DEFAULT_TIME]);
+    setScheduledEndTimes((prev) => [...prev, ""]);
   }
   function removeScheduledTime(i: number) {
     // Optional now — removing the last time is allowed (no set time).
     setScheduledTimes((prev) => prev.filter((_, idx) => idx !== i));
+    setScheduledEndTimes((prev) => prev.filter((_, idx) => idx !== i));
   }
 
   // ---- Weekday checkbox handler -----------------------------------------
@@ -677,6 +689,34 @@ export function ActivityForm({
                     onChange={(e) => updateScheduledTime(i, e.target.value)}
                     className="rounded-md border border-zinc-300 bg-white px-1.5 py-0.5 text-xs dark:border-zinc-700 dark:bg-zinc-900"
                   />
+                  <span aria-hidden className="text-xs text-zinc-400">
+                    –
+                  </span>
+                  <input
+                    type="hidden"
+                    name="scheduledEndTime"
+                    value={scheduledEndTimes[i] ?? ""}
+                  />
+                  <input
+                    type="time"
+                    value={scheduledEndTimes[i] ?? ""}
+                    onChange={(e) =>
+                      updateScheduledEndTime(i, e.target.value)
+                    }
+                    title="End (optional)"
+                    className="rounded-md border border-zinc-300 bg-white px-1.5 py-0.5 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+                  />
+                  {scheduledEndTimes[i] && (
+                    <button
+                      type="button"
+                      onClick={() => clearScheduledEndTime(i)}
+                      aria-label="Clear end time"
+                      title="No end time"
+                      className="rounded-md border border-zinc-300 px-1.5 py-0.5 text-[10px] text-zinc-500 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+                    >
+                      ×
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => removeScheduledTime(i)}
@@ -725,7 +765,7 @@ export function ActivityForm({
             )}
             <ul className="flex flex-col gap-2">
               {scheduledTimes.map((t, i) => (
-                <li key={i} className="flex items-center gap-2">
+                <li key={i} className="flex flex-wrap items-center gap-2">
                   <input
                     type="time"
                     name="scheduledTime"
@@ -733,6 +773,35 @@ export function ActivityForm({
                     onChange={(e) => updateScheduledTime(i, e.target.value)}
                     className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
                   />
+                  <span aria-hidden className="text-sm text-zinc-400">
+                    –
+                  </span>
+                  <input
+                    type="hidden"
+                    name="scheduledEndTime"
+                    value={scheduledEndTimes[i] ?? ""}
+                  />
+                  <input
+                    type="time"
+                    value={scheduledEndTimes[i] ?? ""}
+                    onChange={(e) =>
+                      updateScheduledEndTime(i, e.target.value)
+                    }
+                    placeholder="End"
+                    title="End (optional)"
+                    className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                  />
+                  {scheduledEndTimes[i] && (
+                    <button
+                      type="button"
+                      onClick={() => clearScheduledEndTime(i)}
+                      aria-label="Clear end time"
+                      title="No end time"
+                      className="rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-500 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+                    >
+                      No end
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => removeScheduledTime(i)}

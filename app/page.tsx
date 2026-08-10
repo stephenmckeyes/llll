@@ -735,6 +735,7 @@ async function DayView({
         rhythm,
         priority,
         scheduled_times,
+        scheduled_end_times,
         default_skill_tags,
         start_date,
         end_date,
@@ -1403,7 +1404,7 @@ async function GridView({
     supabase
       .from("activities")
       .select(
-        "id, name, notes, rhythm, priority, scheduled_times, default_skill_tags, start_date, end_date, archived_at, reminders, streak_mode, streak_goal, track_on_grid, rollover_missed_days, rollover_change_rhythm"
+        "id, name, notes, rhythm, priority, scheduled_times, scheduled_end_times, default_skill_tags, start_date, end_date, archived_at, reminders, streak_mode, streak_goal, track_on_grid, rollover_missed_days, rollover_change_rhythm"
       )
       .eq("user_id", userId)
       .is("archived_at", null)
@@ -1424,6 +1425,7 @@ async function GridView({
     rhythm: Rhythm;
     priority: number;
     scheduled_times: string[];
+    scheduled_end_times: string[];
     default_skill_tags: string[];
     start_date: string;
     end_date: string | null;
@@ -1434,7 +1436,6 @@ async function GridView({
     track_on_grid: boolean;
     rollover_missed_days: boolean;
     rollover_change_rhythm: boolean;
-    auto_archive: boolean;
   };
   // Grid only DISPLAYS activities the user opted into (track_on_grid).
   // Everything is still tracked elsewhere; this is a display filter.
@@ -1951,6 +1952,7 @@ function toDayInstance(
     rhythm: Rhythm;
     priority: number;
     scheduled_times: string[];
+    scheduled_end_times?: string[] | null;
     default_skill_tags: string[];
     start_date: string;
     end_date: string | null;
@@ -1986,6 +1988,7 @@ function toDayInstance(
       rhythm: act.rhythm,
       priority: act.priority,
       scheduled_times: act.scheduled_times ?? [],
+      scheduled_end_times: act.scheduled_end_times ?? [],
       default_skill_tags: act.default_skill_tags ?? [],
       start_date: act.start_date,
       end_date: act.end_date,

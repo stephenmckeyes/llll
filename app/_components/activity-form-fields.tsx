@@ -64,6 +64,14 @@ const WEEKDAYS: ReadonlyArray<{ value: DayOfWeek; label: string }> = [
 const inputClasses =
   "w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none disabled:cursor-not-allowed disabled:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-zinc-50 dark:disabled:bg-zinc-950";
 
+// Reconcile the saved end-times array with the (possibly larger) list
+// of start times: unknown / trailing slots become "" (no end time).
+function padEndTimes(saved: string[], expectedLength: number): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < expectedLength; i++) out.push(saved[i] ?? "");
+  return out;
+}
+
 /** Minimal shape this component needs from an activity. Compatible
  *  with both `DayInstance["activity"]` and the `ActivityRow` used in
  *  /activities — both expose every one of these fields. */
@@ -73,6 +81,9 @@ export type ActivityFormInitial = {
   rhythm: Rhythm;
   priority: number;
   scheduled_times: string[];
+  /** Parallel array to scheduled_times (migration 0032). "" = no end
+   *  time in that slot. Omitted / short array reads as trailing "". */
+  scheduled_end_times?: string[];
   default_skill_tags: string[];
   start_date: string;
   end_date: string | null;
@@ -130,6 +141,12 @@ export function ActivityFormFields({
   const [scheduledTimes, setScheduledTimes] = useState<string[]>(
     init.scheduledTimes
   );
+  // Parallel array: each entry either "" (no end time) or "HH:MM".
+  // Length is kept === scheduledTimes.length by the add/remove/update
+  // helpers below so index-based access always lines up.
+  const [scheduledEndTimes, setScheduledEndTimes] = useState<string[]>(
+    padEndTimes(init.scheduledEndTimes, init.scheduledTimes.length)
+  );
   const [priority, setPriority] = useState<number>(initialValues.priority);
   const [reminders, setReminders] = useState<Reminder[]>(
     initialValues.reminders.map(normalizeReminder)
@@ -166,13 +183,23 @@ export function ActivityFormFields({
       prev.map((t, idx) => (idx === i ? value : t))
     );
   }
+  function updateScheduledEndTime(i: number, value: string) {
+    setScheduledEndTimes((prev) =>
+      prev.map((t, idx) => (idx === i ? value : t))
+    );
+  }
+  function clearScheduledEndTime(i: number) {
+    updateScheduledEndTime(i, "");
+  }
   function addScheduledTime() {
     setScheduledTimes((prev) => [...prev, "12:00"]);
+    setScheduledEndTimes((prev) => [...prev, ""]);
   }
   function removeScheduledTime(i: number) {
     // Time of day is optional now — removing the last row is allowed
     // (an activity with no set time sorts to the end of the day).
     setScheduledTimes((prev) => prev.filter((_, idx) => idx !== i));
+    setScheduledEndTimes((prev) => prev.filter((_, idx) => idx !== i));
   }
 
   const intervalDays = Math.max(1, parseInt(intervalDaysStr, 10) || 1);
@@ -474,6 +501,31 @@ export function ActivityFormFields({
                   onChange={(e) => updateScheduledTime(i, e.target.value)}
                   className="rounded-md border border-zinc-300 bg-white px-1.5 py-0.5 text-xs dark:border-zinc-700 dark:bg-zinc-900"
                 />
+                <span aria-hidden className="text-xs text-zinc-400">
+                  –
+                </span>
+                {/* Parallel hidden input keeps form data lined up even
+                    when the end time is empty (server treats "" as
+                    "no end time in this slot"). */}
+                <input type="hidden" name="scheduledEndTime" value={scheduledEndTimes[i] ?? ""} />
+                <input
+                  type="time"
+                  value={scheduledEndTimes[i] ?? ""}
+                  onChange={(e) => updateScheduledEndTime(i, e.target.value)}
+                  title="End (optional)"
+                  className="rounded-md border border-zinc-300 bg-white px-1.5 py-0.5 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+                />
+                {scheduledEndTimes[i] && (
+                  <button
+                    type="button"
+                    onClick={() => clearScheduledEndTime(i)}
+                    aria-label="Clear end time"
+                    title="No end time"
+                    className="rounded-md border border-zinc-300 px-1.5 py-0.5 text-[10px] text-zinc-500 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+                  >
+                    ×
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => removeScheduledTime(i)}
@@ -521,7 +573,7 @@ export function ActivityFormFields({
           )}
           <ul className="mt-1 flex flex-col gap-2">
             {scheduledTimes.map((t, i) => (
-              <li key={i} className="flex items-center gap-2">
+              <li key={i} className="flex flex-wrap items-center gap-2">
                 <input
                   type="time"
                   name="scheduledTime"
@@ -529,6 +581,36 @@ export function ActivityFormFields({
                   onChange={(e) => updateScheduledTime(i, e.target.value)}
                   className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
                 />
+                <span aria-hidden className="text-sm text-zinc-400">
+                  –
+                </span>
+                {/* Parallel hidden input keeps the two form arrays
+                    lined up by index even when the end time is
+                    empty. */}
+                <input
+                  type="hidden"
+                  name="scheduledEndTime"
+                  value={scheduledEndTimes[i] ?? ""}
+                />
+                <input
+                  type="time"
+                  value={scheduledEndTimes[i] ?? ""}
+                  onChange={(e) => updateScheduledEndTime(i, e.target.value)}
+                  placeholder="End"
+                  title="End time (optional)"
+                  className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                />
+                {scheduledEndTimes[i] && (
+                  <button
+                    type="button"
+                    onClick={() => clearScheduledEndTime(i)}
+                    aria-label="Clear end time"
+                    title="No end time"
+                    className="rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-500 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+                  >
+                    No end
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => removeScheduledTime(i)}
@@ -827,38 +909,14 @@ export function ActivityFormFields({
           missed); recurring rhythms get both toggles (defaults off).
           `changeRhythm` is hidden on singles because there's no rhythm
           to shift. */}
-      {isCompact ? (
-        <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
-          <label className="flex cursor-pointer items-center gap-1.5">
-            <input
-              type="checkbox"
-              checked={rolloverMissedDays}
-              onChange={(e) => setRolloverMissedDays(e.target.checked)}
-              className="h-4 w-4 accent-zinc-900 dark:accent-zinc-50"
-            />
-            Rollover missed
-          </label>
-          {!isSingle && (
-            <label className="flex cursor-pointer items-center gap-1.5">
-              <input
-                type="checkbox"
-                checked={rolloverChangeRhythm}
-                onChange={(e) => setRolloverChangeRhythm(e.target.checked)}
-                className="h-4 w-4 accent-zinc-900 dark:accent-zinc-50"
-              />
-              Change rhythm
-            </label>
-          )}
-        </div>
-      ) : (
-        <RolloverButtonGroup
-          rhythmKind={rhythmKind}
-          rolloverMissedDays={rolloverMissedDays}
-          setRolloverMissedDays={setRolloverMissedDays}
-          rolloverChangeRhythm={rolloverChangeRhythm}
-          setRolloverChangeRhythm={setRolloverChangeRhythm}
-        />
-      )}
+      <RolloverButtonGroup
+        rhythmKind={rhythmKind}
+        rolloverMissedDays={rolloverMissedDays}
+        setRolloverMissedDays={setRolloverMissedDays}
+        rolloverChangeRhythm={rolloverChangeRhythm}
+        setRolloverChangeRhythm={setRolloverChangeRhythm}
+        compact={isCompact}
+      />
     </>
   );
 }
@@ -875,12 +933,14 @@ function initRhythmKindFromActivity(a: ActivityFormInitial): {
   frequencyPerCountStr: string;
   frequencyPerUnit: PeriodUnit;
   scheduledTimes: string[];
+  scheduledEndTimes: string[];
 } {
   const r = a.rhythm;
   // The unified "Times of day" list. Optional — an activity may have no
   // set time at all (it then sorts to the end of the day). We surface the
   // activity's saved times verbatim (empty stays empty).
   const scheduledTimes = a.scheduled_times;
+  const scheduledEndTimes = a.scheduled_end_times ?? [];
   const defaults = {
     kind: "single" as RhythmKind,
     weekdays: [] as DayOfWeek[],
@@ -889,6 +949,7 @@ function initRhythmKindFromActivity(a: ActivityFormInitial): {
     frequencyPerCountStr: "1",
     frequencyPerUnit: "weeks" as PeriodUnit,
     scheduledTimes,
+    scheduledEndTimes,
   };
 
   if (r.type === "single") return { ...defaults, kind: "single" };

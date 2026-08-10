@@ -59,6 +59,7 @@ export function toDayInstance(
       rhythm: share.rhythm,
       priority: share.priority,
       scheduled_times: share.scheduledTimes,
+      scheduled_end_times: share.scheduledEndTimes,
       default_skill_tags: share.defaultSkillTags,
       start_date: share.startDate,
       end_date: share.endDate,

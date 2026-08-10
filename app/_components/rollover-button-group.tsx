@@ -39,6 +39,7 @@ export function RolloverButtonGroup({
   setRolloverMissedDays,
   rolloverChangeRhythm,
   setRolloverChangeRhythm,
+  compact = false,
 }: {
   /** The RhythmKind from the parent form's state. Drives whether the
    *  third "change rhythm" button appears (recurring only) and shapes
@@ -48,6 +49,11 @@ export function RolloverButtonGroup({
   setRolloverMissedDays: (v: boolean) => void;
   rolloverChangeRhythm: boolean;
   setRolloverChangeRhythm: (v: boolean) => void;
+  /** Add-Activity Compact density (migration 0023). Drops the legend +
+   *  fine-print helper, shrinks the button padding + font-size, hides
+   *  the warning bubble. Still the same button group + selection
+   *  semantics — just visually condensed to fit the compact form. */
+  compact?: boolean;
 }) {
   const isSingle = rhythmKind === "single";
   const mode = toMode(rolloverMissedDays, rolloverChangeRhythm);
@@ -95,6 +101,52 @@ export function RolloverButtonGroup({
     }
   }
 
+  // Compact drops the fieldset chrome + fine-print helper + warning
+  // bubble, and shrinks the button padding + font-size. Same 2- or 3-
+  // way exclusive selection.
+  const buttonBase = compact
+    ? "flex-1 touch-manipulation rounded-md border px-1.5 py-1 text-center text-xs font-medium transition-colors"
+    : BUTTON_BASE;
+
+  const buttons = (
+    <div className="flex flex-wrap gap-1.5">
+      <button
+        type="button"
+        onClick={() => pick("off")}
+        aria-pressed={mode === "off"}
+        className={`${buttonBase} ${mode === "off" ? SELECTED : UNSELECTED}`}
+      >
+        {isSingle ? (compact ? "Missed" : "Finalise as missed") : "Off"}
+      </button>
+      <button
+        type="button"
+        onClick={() => pick("rollover")}
+        aria-pressed={mode === "rollover"}
+        className={`${buttonBase} ${
+          mode === "rollover" ? SELECTED : UNSELECTED
+        }`}
+      >
+        {isSingle ? (compact ? "Roll" : "Roll forward") : "Rollover"}
+      </button>
+      {!isSingle && (
+        <button
+          type="button"
+          onClick={() => pick("rolloverChange")}
+          aria-pressed={mode === "rolloverChange"}
+          className={`${buttonBase} ${
+            mode === "rolloverChange" ? SELECTED : UNSELECTED
+          }`}
+        >
+          {compact ? "Roll + shift" : "Rollover + change rhythm"}
+        </button>
+      )}
+    </div>
+  );
+
+  if (compact) {
+    return <div className="mt-2">{buttons}</div>;
+  }
+
   return (
     <fieldset className="mt-4 flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
       <legend className="px-1 text-sm font-medium">On missed</legend>
@@ -103,38 +155,7 @@ export function RolloverButtonGroup({
           ? "Roll a missed task forward instead of finalising it as missed."
           : "How should a missed occurrence adjust the rhythm?"}
       </p>
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => pick("off")}
-          aria-pressed={mode === "off"}
-          className={`${BUTTON_BASE} ${mode === "off" ? SELECTED : UNSELECTED}`}
-        >
-          {isSingle ? "Finalise as missed" : "Off"}
-        </button>
-        <button
-          type="button"
-          onClick={() => pick("rollover")}
-          aria-pressed={mode === "rollover"}
-          className={`${BUTTON_BASE} ${
-            mode === "rollover" ? SELECTED : UNSELECTED
-          }`}
-        >
-          {isSingle ? "Roll forward" : "Rollover"}
-        </button>
-        {!isSingle && (
-          <button
-            type="button"
-            onClick={() => pick("rolloverChange")}
-            aria-pressed={mode === "rolloverChange"}
-            className={`${BUTTON_BASE} ${
-              mode === "rolloverChange" ? SELECTED : UNSELECTED
-            }`}
-          >
-            Rollover + change rhythm
-          </button>
-        )}
-      </div>
+      {buttons}
       {warning && (
         <p className="rounded-md bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-200">
           Heads up: {warning}

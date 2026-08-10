@@ -79,6 +79,11 @@ export type DayInstance = {
     rhythm: Rhythm;
     priority: number;
     scheduled_times: string[];
+    /** Parallel to scheduled_times (migration 0032). Empty string in
+     *  a slot = "no end time" for that occurrence. Optional so
+     *  callers that don't fetch the column still typecheck; display
+     *  code treats missing / short as trailing "". */
+    scheduled_end_times?: string[];
     /** Activity's CURRENT tag set. Use this for activity-level
      *  surfaces (modal details, edit form, archive cards). For
      *  per-occurrence surfaces (Day banner, Week dots, Month dots),

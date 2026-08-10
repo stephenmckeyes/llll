@@ -39,3 +39,24 @@ export function formatTime(hhmm: string, format: TimeFormat = "auto"): string {
     hour12: format === "12h" ? true : undefined,
   });
 }
+
+/**
+ * Format an optional start + end pair as a single string.
+ *   ("08:00", "09:00", …) → "8:00 AM – 9:00 AM" (locale-dependent)
+ *   ("08:00", "",      …) → "8:00 AM"
+ *   ("08:00", null,    …) → "8:00 AM"
+ *
+ * Callers should pass empty string / null to mean "no end time"; the
+ * DB stores empty string in that slot of the parallel end-times array.
+ */
+export function formatTimeRange(
+  start: string,
+  end: string | null | undefined,
+  format: TimeFormat = "auto"
+): string {
+  const s = formatTime(start, format);
+  const trimmed = end?.trim();
+  if (!trimmed) return s;
+  return `${s} – ${formatTime(trimmed, format)}`;
+}
+

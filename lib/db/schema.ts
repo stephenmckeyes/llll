@@ -183,6 +183,15 @@ export const activities = pgTable(
       .array()
       .notNull()
       .default(sql`'{}'::text[]`),
+    // Optional per-slot end time paired to scheduled_times by index
+    // (migration 0032). Empty string ("") in a slot means "start only,
+    // no end". A shorter array is treated as trailing empties. When set,
+    // the day/timeline views render "08:00 – 09:00" and can detect
+    // conflicts by overlap.
+    scheduledEndTimes: text("scheduled_end_times")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     // Array of { amount, unit } reminders. unit ∈ {minutes,hours,days,weeks}.
     // Notification *delivery* is a separate concern (cron + email/push); this
     // column is the user's persisted preferences.
