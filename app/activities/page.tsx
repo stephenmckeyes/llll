@@ -45,7 +45,7 @@ export default async function ActivitiesPage() {
     supabase
       .from("activities")
       .select(
-        "id, name, notes, rhythm, start_date, end_date, priority, default_skill_tags, scheduled_times, scheduled_end_times, reminders, archived_at, created_at, track_on_grid, rollover_missed_days, rollover_change_rhythm, auto_archive"
+        "id, name, notes, rhythm, start_date, end_date, priority, default_skill_tags, scheduled_times, scheduled_end_times, reminders, archived_at, created_at, track_on_grid, rollover_missed_days, rollover_change_rhythm, auto_archive, pinned"
       ),
     supabase.from("tags").select("id, name, color"),
   ]);

@@ -34,7 +34,10 @@ type GroupBy = "status" | "tag" | "rhythm";
 //   - active   : archived_at IS NULL (day-to-day working set)
 //   - past     : auto-archived on completion (self-cleanup singles)
 //   - archived : manually archived / soft-deleted by the user
-type StatusFilter = "all" | "active" | "past" | "archived";
+// "pinned" ignores archived state and shows every activity the user
+// flagged as "I may want to re-initiate this" via the Add Activity
+// Pinned toggle (migration 0035). Default filter per user spec.
+type StatusFilter = "pinned" | "all" | "active" | "past" | "archived";
 
 type Group = { key: string; label: string; items: ActivityRow[] };
 
@@ -55,27 +58,30 @@ export function TotalView({
    *  "Scheduled X · Completed Y". */
   completedByActivityId?: Record<string, string>;
 }) {
-  // Defaults: grouped by Tag, showing Active only (per user request) — the
-  // most useful "what am I actively working on, organized by area" view.
+  // Defaults: grouped by Tag, showing Pinned only (per user spec —
+  // "This will be the default when going on total view, and shows
+  // those activities which a person may want to re-initiate").
   const [groupBy, setGroupBy] = useState<GroupBy>("tag");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("pinned");
   const [search, setSearch] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const base =
-      statusFilter === "active"
-        ? activities.filter((a) => a.archived_at === null)
-        : statusFilter === "past"
-          ? activities.filter(
-              (a) => a.archived_at !== null && a.auto_archive
-            )
-          : statusFilter === "archived"
+      statusFilter === "pinned"
+        ? activities.filter((a) => a.pinned === true)
+        : statusFilter === "active"
+          ? activities.filter((a) => a.archived_at === null)
+          : statusFilter === "past"
             ? activities.filter(
-                (a) => a.archived_at !== null && !a.auto_archive
+                (a) => a.archived_at !== null && a.auto_archive
               )
-            : activities;
+            : statusFilter === "archived"
+              ? activities.filter(
+                  (a) => a.archived_at !== null && !a.auto_archive
+                )
+              : activities;
     if (!q) return base;
     // Case-insensitive substring match on name — the smallest useful
     // scope. Tag / notes search can follow if the ask surfaces.
@@ -129,6 +135,7 @@ export function TotalView({
         <ControlRow label="Show">
           <Segmented
             options={[
+              ["pinned", "📌 Pinned"],
               ["active", "Active"],
               ["past", "Past"],
               ["archived", "Archived"],

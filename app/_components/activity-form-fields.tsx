@@ -99,6 +99,9 @@ export type ActivityFormInitial = {
    *  as its instance completes (or is finalised as missed for a
    *  single). Default true for new singles, false for recurring. */
   auto_archive: boolean;
+  /** Migration 0035 — user-pinned "may want to re-initiate" flag.
+   *  Independent of auto_archive. Defaults false. */
+  pinned?: boolean;
 };
 
 export function ActivityFormFields({
@@ -160,8 +163,9 @@ export function ActivityFormFields({
   const [rolloverChangeRhythm, setRolloverChangeRhythm] = useState<boolean>(
     initialValues.rollover_change_rhythm
   );
-  const [autoArchive, setAutoArchive] = useState<boolean>(
-    initialValues.auto_archive
+  const [autoArchive] = useState<boolean>(initialValues.auto_archive);
+  const [pinned, setPinned] = useState<boolean>(
+    initialValues.pinned ?? false
   );
   // Uncontrolled end-date input needs a ref so the Clear button can
   // reset it to "" (which the server treats as "no end date" →
@@ -229,6 +233,11 @@ export function ActivityFormFields({
         type="hidden"
         name="autoArchive"
         value={autoArchive ? "true" : "false"}
+      />
+      <input
+        type="hidden"
+        name="pinned"
+        value={pinned ? "true" : "false"}
       />
 
       {/* --- Activity name ----------------------------------------- */}
@@ -837,68 +846,74 @@ export function ActivityFormFields({
         </fieldset>
       )}
 
-      {/* --- Auto-archive on completion (migration 0026) -------------- */}
-      {/* Same button-pair pattern as Grid. When ON, the activity moves
-          to Total View's "Past" filter as soon as it completes (or is
-          finalised as missed for singles) — keeping the "Active"
-          filter free of one-off tasks the user already finished.
-          Default is set by the caller (new singles = true, recurring
-          = false); user can override either way. */}
+      {/* --- Pinned (migration 0035) ---------------------------------- */}
+      {/* Replaces the old Keep-on-Active / Auto-archive toggle per user
+          spec. Pinned = "I might want to re-initiate this later." Shows
+          up as the DEFAULT filter in Total View so pinned singles you've
+          completed stay one tap away. Auto-archive still runs per-rhythm
+          under the hood (singles archive on complete by default); Pinned
+          is independent — a pinned single still archives, but stays
+          surfaced under the Pinned filter. */}
       {isCompact ? (
         <div className="mt-2 flex gap-1">
           <button
             type="button"
-            onClick={() => setAutoArchive(false)}
+            onClick={() => setPinned(false)}
+            aria-pressed={!pinned}
             className={`flex-1 touch-manipulation rounded-md border px-2 py-1 text-center text-xs font-medium transition-colors ${
-              !autoArchive
+              !pinned
                 ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
                 : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
             }`}
           >
-            Keep on Active
+            Not pinned
           </button>
           <button
             type="button"
-            onClick={() => setAutoArchive(true)}
+            onClick={() => setPinned(true)}
+            aria-pressed={pinned}
             className={`flex-1 touch-manipulation rounded-md border px-2 py-1 text-center text-xs font-medium transition-colors ${
-              autoArchive
+              pinned
                 ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
                 : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
             }`}
           >
-            Auto-archive
+            📌 Pinned
           </button>
         </div>
       ) : (
         <fieldset className="mt-4 flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
-          <legend className="px-1 text-sm font-medium">When done</legend>
+          <legend className="px-1 text-sm font-medium">Pinned</legend>
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={() => setAutoArchive(false)}
+              onClick={() => setPinned(false)}
+              aria-pressed={!pinned}
               className={`flex-1 touch-manipulation rounded-md border px-3 py-2 text-center text-sm font-medium transition-colors ${
-                !autoArchive
+                !pinned
                   ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
                   : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
               }`}
             >
-              Keep on Active
+              Not pinned
             </button>
             <button
               type="button"
-              onClick={() => setAutoArchive(true)}
+              onClick={() => setPinned(true)}
+              aria-pressed={pinned}
               className={`flex-1 touch-manipulation rounded-md border px-3 py-2 text-center text-sm font-medium transition-colors ${
-                autoArchive
+                pinned
                   ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
                   : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
               }`}
             >
-              Auto-archive when done
+              📌 Pinned
             </button>
           </div>
           <p className="text-xs text-zinc-500">
-            Keep on Active if you may reuse this activity. Auto-archive
-            moves it to Total View → Past as soon as it completes.
+            Pin activities you may want to re-initiate. The Pinned filter
+            is the default view in Total, so pinned items stay one tap
+            away even after they complete.
           </p>
         </fieldset>
       )}

@@ -60,6 +60,8 @@ export type ActivityRow = ActivityFormInitial & {
   rollover_missed_days: boolean;
   rollover_change_rhythm: boolean;
   auto_archive: boolean;
+  /** Pinned (migration 0035) — Total View's default filter. */
+  pinned: boolean;
 };
 
 type Mode = "details" | "edit-rhythm";

@@ -237,6 +237,11 @@ export const activities = pgTable(
     // to keep Total View's Active filter uncluttered; the archived
     // rows still appear under the Past filter with completion dates.
     autoArchive: boolean("auto_archive").notNull().default(false),
+    // Pinned (migration 0035) — user-facing flag to keep an activity
+    // one-tap-accessible in Total View's Pinned filter (default view).
+    // Independent of auto_archive; a completed single that's pinned
+    // still archives on complete but stays surfaced under Pinned.
+    pinned: boolean("pinned").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

@@ -96,6 +96,7 @@ export async function createActivity(
   // the form input is absent so older callers stay unchanged; the
   // create-activity forms explicitly send "true" for new singles.
   const autoArchive = String(formData.get("autoArchive")) === "true";
+  const pinned = String(formData.get("pinned")) === "true";
 
   // ---- 2. Reconstruct + validate the rhythm -------------------------------
 
@@ -259,6 +260,7 @@ export async function createActivity(
         rollover_missed_days: rolloverMissedDays,
         rollover_change_rhythm: rolloverChangeRhythm,
         auto_archive: autoArchive,
+        pinned,
       })
       .select("id")
       .single();
@@ -391,6 +393,7 @@ export async function createDraftActivity(
     rollover_change_rhythm:
       String(formData.get("rolloverChangeRhythm")) === "true",
     auto_archive: String(formData.get("autoArchive")) === "true",
+    pinned: String(formData.get("pinned")) === "true",
     // The whole point: parked in the archive, generating no instances.
     archived_at: new Date().toISOString(),
   });
@@ -722,6 +725,7 @@ export async function updateActivityRhythm(
       rollover_change_rhythm:
         String(formData.get("rolloverChangeRhythm")) === "true",
       auto_archive: String(formData.get("autoArchive")) === "true",
+      pinned: String(formData.get("pinned")) === "true",
     })
     .eq("id", activityId);
   if (uerr) return { error: uerr.message };

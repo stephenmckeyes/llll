@@ -89,6 +89,11 @@ export const EXPECTATIONS: ReadonlyArray<MigrationExpectation> = [
       { table: "profiles", column: "default_calendar_hidden_tags" },
     ],
   },
+  {
+    migration: "0035_pinned_activities.sql",
+    label: "Pinned activities",
+    checks: [{ table: "activities", column: "pinned" }],
+  },
 ];
 
 export type MissingMigration = {
