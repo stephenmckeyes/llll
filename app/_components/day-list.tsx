@@ -27,6 +27,7 @@ import {
 } from "react";
 
 import { unlabelInstance } from "@/app/actions/activities";
+import { acknowledgeConflict } from "@/app/actions/conflicts";
 import { type AddActivityDensity } from "@/lib/domain/add-activity-density";
 import {
   frequencyDueDay,
@@ -34,6 +35,8 @@ import {
 } from "@/lib/domain/frequency-period";
 import { summarizeRhythm } from "@/lib/domain/rhythm-summary";
 import type { TagMap } from "@/lib/domain/tags";
+import { formatTimeRange } from "@/lib/ui/format-time";
+import { useTimeFormat } from "@/lib/ui/format-time-client";
 import { type Rhythm } from "@/lib/validators/rhythm";
 
 import { ActivityModal } from "./activity-modal";
@@ -42,6 +45,18 @@ import { IncompleteButton, type IncompleteInfo } from "./incomplete-button";
 import { InlineAddRow } from "./inline-add-row";
 import { InstanceRow } from "./instance-row";
 import { NewActivityModal } from "./new-activity-modal";
+import {
+  conflictKey,
+  detectConflicts,
+  effectiveEndMinutes,
+  HOUR_PX,
+  HOURS_END,
+  HOURS_START,
+  layoutEvents,
+  minutesFromHhmm,
+  type Conflict,
+  type TimelineEvent,
+} from "./timeline-shared";
 
 const DAY_VIEW_BACK = 90;
 const DAY_VIEW_AHEAD = 180;
@@ -142,6 +157,8 @@ export function DayList({
   onUnlabeledJump,
   density = "default",
   chipsSlot,
+  timelineMode = false,
+  acknowledgedPairKeys = [],
 }: {
   initialDate: string;
   completedByDate: Record<string, DayMarkedItem[]>;
@@ -155,6 +172,18 @@ export function DayList({
    *  the Calendar's Timeline + Filters chips here so they sit next to
    *  the Today button per user spec. */
   chipsSlot?: React.ReactNode;
+  /** When true, each DaySection swaps its middle render: timed
+   *  pending instances plot into an hour grid, untimed pending render
+   *  as regular InstanceRow rows below the grid. Completed/Missed
+   *  dropdown, InlineAdd, and every other DayList capability stay the
+   *  same — Timeline is a display variant, not a parallel system. */
+  timelineMode?: boolean;
+  /** Cross-device conflict-ack pair keys from migration 0036. When
+   *  set + timelineMode, DayList detects today's overlapping timed
+   *  pairs and surfaces an ack banner at the top of the scroll
+   *  container. Client-side ack calls the acknowledgeConflict
+   *  server action. */
+  acknowledgedPairKeys?: readonly string[];
   /** Read-only friend view: same infinite-scroll day list, but no
    *  Complete/Missed/Unlabel/+Add and no mutation modals — rows show a
    *  static status. Default false keeps the dashboard unchanged. */
@@ -440,6 +469,16 @@ export function DayList({
         className="h-[60vh] min-h-[20rem] touch-pan-y overflow-y-auto overflow-x-hidden overscroll-contain pr-2 sm:h-[68vh]"
       >
         <div className="flex flex-col gap-4">
+          {timelineMode && (
+            <TimelineConflictBanners
+              todayStr={todayStr}
+              instances={live}
+              acknowledgedPairKeys={acknowledgedPairKeys}
+              onOpenInstance={
+                readOnly ? onReadOnlyOpen ?? (() => {}) : setOpenInstance
+              }
+            />
+          )}
           {days.map((d) => (
             <DaySection
               key={d.dateStr}
@@ -459,6 +498,7 @@ export function DayList({
               onAdd={setAddDay}
               readOnly={readOnly}
               tagMap={tagMap}
+              timelineMode={timelineMode}
             />
           ))}
         </div>
@@ -505,6 +545,7 @@ function DaySection({
   onAdd,
   readOnly,
   tagMap,
+  timelineMode = false,
 }: {
   date: Date;
   dateStr: string;
@@ -520,6 +561,11 @@ function DaySection({
   onAdd: (dateStr: string) => void;
   readOnly: boolean;
   tagMap: TagMap;
+  /** Timeline variant — replaces the flat instance-row list with an
+   *  hour-grid for timed pending instances + a row list for the
+   *  untimed remainder. Completed/Missed dropdown, day header, and
+   *  the InlineAdd row are unchanged. */
+  timelineMode?: boolean;
 }) {
   const isToday = dateStr === todayStr;
   const totalMarked = completed.length + missed.length;
@@ -569,26 +615,40 @@ function DaySection({
           />
         </div>
       </details>
-      {/* If there's nothing scheduled for the day, render NOTHING — not
-          even a "Free" placeholder. The day header + completed/missed
-          dropdown alone communicate "empty day" cleanly without adding
-          a hollow card every row. */}
-      {visible.length > 0 && (
-        <div className="flex flex-col gap-2">
-          {visible.map((inst) => (
-            <InstanceRow
-              key={inst.id}
-              instance={inst}
-              todayStr={todayStr}
-              onOpen={() => onOpenInstance(inst)}
-              resolution={resolved.get(inst.id) ?? null}
-              onResolve={onResolve}
-              onUnresolve={onUnresolve}
-              readOnly={readOnly}
-              tagMap={tagMap}
-            />
-          ))}
-        </div>
+      {/* Timeline variant: split visible into TIMED (has scheduled
+          start times → hour-grid blocks) and UNTIMED (no time → row
+          list). Both open the SAME ActivityModal via onOpenInstance,
+          so Complete/Missed/Unlabel/Comment all work identically.
+          Non-timeline: unchanged flat instance-row list. */}
+      {timelineMode ? (
+        <TimelineDayBody
+          visible={visible}
+          resolved={resolved}
+          onOpenInstance={onOpenInstance}
+          onResolve={onResolve}
+          onUnresolve={onUnresolve}
+          readOnly={readOnly}
+          tagMap={tagMap}
+          todayStr={todayStr}
+        />
+      ) : (
+        visible.length > 0 && (
+          <div className="flex flex-col gap-2">
+            {visible.map((inst) => (
+              <InstanceRow
+                key={inst.id}
+                instance={inst}
+                todayStr={todayStr}
+                onOpen={() => onOpenInstance(inst)}
+                resolution={resolved.get(inst.id) ?? null}
+                onResolve={onResolve}
+                onUnresolve={onUnresolve}
+                readOnly={readOnly}
+                tagMap={tagMap}
+              />
+            ))}
+          </div>
+        )
       )}
 
       {/* Inline "+ Add activity" — type a name directly and commit on
@@ -908,4 +968,290 @@ function compareForDay(a: DayInstance, b: DayInstance): number {
   const pb = b.activity.priority ?? 2;
   if (pa !== pb) return pa - pb;
   return a.activity.name.localeCompare(b.activity.name);
+}
+
+// ---------------------------------------------------------------------------
+// TimelineDayBody — the middle-of-day render used when DayList is in
+// timelineMode. Splits the pending `visible` list into TIMED (has
+// scheduled_times → hour-grid blocks) and UNTIMED (no time → row list
+// below the grid). Everything else in the DaySection (day header,
+// Completed/Missed dropdown, InlineAdd row) stays exactly the same as
+// the non-timeline variant — click semantics + resolved-in-place +
+// InstanceRow behavior are all shared.
+// ---------------------------------------------------------------------------
+
+function TimelineDayBody({
+  visible,
+  resolved,
+  onOpenInstance,
+  onResolve,
+  onUnresolve,
+  readOnly,
+  tagMap,
+  todayStr,
+}: {
+  visible: DayInstance[];
+  resolved: ReadonlyMap<string, "completed" | "missed">;
+  onOpenInstance: (inst: DayInstance) => void;
+  onResolve: (id: string, status: "completed" | "missed") => void;
+  onUnresolve: (id: string) => void;
+  readOnly: boolean;
+  tagMap: TagMap;
+  todayStr: string;
+}) {
+  const timeFormat = useTimeFormat();
+
+  // Split by presence of scheduled_times. An activity with N times
+  // yields N events on the day (Multi-Daily / frequency rhythms).
+  const { events, untimed } = useMemo(() => {
+    const events: Array<TimelineEvent<DayInstance>> = [];
+    const untimed: DayInstance[] = [];
+    for (const inst of visible) {
+      const starts = inst.activity.scheduled_times ?? [];
+      const ends = inst.activity.scheduled_end_times ?? [];
+      if (starts.length === 0) {
+        untimed.push(inst);
+        continue;
+      }
+      for (let i = 0; i < starts.length; i++) {
+        events.push({
+          key: `${inst.id}:${i}`,
+          data: inst,
+          start: starts[i],
+          end: ends[i] ?? "",
+        });
+      }
+    }
+    return { events, untimed };
+  }, [visible]);
+
+  const layout = useMemo(() => layoutEvents(events), [events]);
+
+  // Empty day: render nothing (matches non-timeline DaySection).
+  if (events.length === 0 && untimed.length === 0) return null;
+
+  return (
+    <div className="flex flex-col gap-2">
+      {events.length > 0 && (
+        <div className="relative flex gap-2">
+          <div className="w-12 shrink-0">
+            {Array.from({ length: HOURS_END - HOURS_START }, (_, i) => {
+              const hour = HOURS_START + i;
+              const hhmm = `${String(hour).padStart(2, "0")}:00`;
+              return (
+                <div
+                  key={hour}
+                  style={{ height: HOUR_PX }}
+                  className="flex items-start justify-end pr-1 text-[10px] tabular-nums text-zinc-500"
+                >
+                  {formatTimeRange(hhmm, "", timeFormat)}
+                </div>
+              );
+            })}
+          </div>
+
+          <div
+            className="relative flex-1 rounded-md border border-zinc-200 dark:border-zinc-800"
+            style={{ height: (HOURS_END - HOURS_START) * HOUR_PX }}
+          >
+            {Array.from({ length: HOURS_END - HOURS_START }, (_, i) => (
+              <div
+                key={i}
+                style={{ top: i * HOUR_PX, height: HOUR_PX }}
+                className="absolute inset-x-0 border-t border-dashed border-zinc-200 first:border-t-0 dark:border-zinc-800"
+              />
+            ))}
+            {events.map((ev) => {
+              const startMin = minutesFromHhmm(ev.start);
+              const endMin = effectiveEndMinutes(ev);
+              if (endMin <= HOURS_START * 60) return null;
+              if (startMin >= HOURS_END * 60) return null;
+              const gridTop = ((startMin - HOURS_START * 60) / 60) * HOUR_PX;
+              const gridHeight = Math.max(
+                18,
+                ((endMin - startMin) / 60) * HOUR_PX
+              );
+              const slot = layout.get(ev.key) ?? { col: 0, cols: 1 };
+              const widthPct = 100 / slot.cols;
+              const leftPct = slot.col * widthPct;
+
+              const inst = ev.data;
+              // Prefer the client-side "just resolved" status so a
+              // block completed from ActivityModal / InstanceRow's
+              // inline button shows the resolved styling instantly.
+              const displayStatus = resolved.get(inst.id) ?? inst.status;
+              const isDone = displayStatus === "completed";
+              const isMissed = displayStatus === "missed";
+              const borderClass = isDone
+                ? "border-emerald-500"
+                : isMissed
+                  ? "border-red-500"
+                  : "border-zinc-400 dark:border-zinc-600";
+              const bgClass =
+                slot.col % 2 === 0
+                  ? "bg-zinc-100 dark:bg-zinc-800"
+                  : "bg-white dark:bg-zinc-900";
+              const name = inst.overrideName ?? inst.activity.name;
+              return (
+                <button
+                  key={ev.key}
+                  type="button"
+                  onClick={() => onOpenInstance(inst)}
+                  title={`${name} · ${formatTimeRange(ev.start, ev.end, timeFormat)}`}
+                  style={{
+                    top: Math.max(0, gridTop),
+                    height: gridHeight,
+                    left: `calc(${leftPct}% + 2px)`,
+                    width: `calc(${widthPct}% - 4px)`,
+                  }}
+                  className={`absolute overflow-hidden rounded border-l-4 px-2 py-1 text-left text-[11px] font-medium text-zinc-900 shadow-sm ring-1 ring-black/5 transition-colors hover:brightness-95 dark:text-zinc-100 dark:ring-white/10 ${bgClass} ${borderClass} ${
+                    isDone ? "opacity-70 line-through" : ""
+                  }`}
+                >
+                  <div className="truncate">{name}</div>
+                  <div className="truncate text-[10px] text-zinc-700 dark:text-zinc-300">
+                    {formatTimeRange(ev.start, ev.end, timeFormat)}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Untimed pending → regular InstanceRow rows (full Complete /
+          Missed / Unlabel / Comment controls, same behavior as
+          non-timeline mode). Per user spec: "The only change is that
+          the activities with a time associated with them are inputted
+          on the timeline." */}
+      {untimed.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {untimed.map((inst) => (
+            <InstanceRow
+              key={inst.id}
+              instance={inst}
+              todayStr={todayStr}
+              onOpen={() => onOpenInstance(inst)}
+              resolution={resolved.get(inst.id) ?? null}
+              onResolve={onResolve}
+              onUnresolve={onUnresolve}
+              readOnly={readOnly}
+              tagMap={tagMap}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// TimelineConflictBanners — surfaces today's overlapping timed pairs at
+// the top of the scroll container when DayList is in timelineMode.
+// Ack persists cross-device via acknowledgeConflict (migration 0036).
+// ---------------------------------------------------------------------------
+
+function TimelineConflictBanners({
+  todayStr,
+  instances,
+  acknowledgedPairKeys,
+  onOpenInstance,
+}: {
+  todayStr: string;
+  instances: DayInstance[];
+  acknowledgedPairKeys: readonly string[];
+  onOpenInstance: (inst: DayInstance) => void;
+}) {
+  const timeFormat = useTimeFormat();
+  const [locallyAcked, setLocallyAcked] = useState<Set<string>>(new Set());
+  const [, startTransition] = useTransition();
+
+  const todayEvents = useMemo(() => {
+    const events: Array<TimelineEvent<DayInstance>> = [];
+    for (const inst of instances) {
+      if (inst.scheduled_for !== todayStr) continue;
+      const starts = inst.activity.scheduled_times ?? [];
+      const ends = inst.activity.scheduled_end_times ?? [];
+      for (let i = 0; i < starts.length; i++) {
+        events.push({
+          key: `${inst.id}:${i}`,
+          data: inst,
+          start: starts[i],
+          end: ends[i] ?? "",
+        });
+      }
+    }
+    return events;
+  }, [instances, todayStr]);
+
+  const conflicts = useMemo(() => detectConflicts(todayEvents), [todayEvents]);
+  const dismissed = useMemo(() => {
+    const s = new Set(acknowledgedPairKeys);
+    for (const k of locallyAcked) s.add(k);
+    return s;
+  }, [acknowledgedPairKeys, locallyAcked]);
+  const visible = conflicts.filter(
+    (c) => !dismissed.has(conflictKey(todayStr, c.a, c.b))
+  );
+
+  function ack(c: Conflict<DayInstance>) {
+    const key = conflictKey(todayStr, c.a, c.b);
+    setLocallyAcked((prev) => {
+      if (prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.add(key);
+      return next;
+    });
+    startTransition(async () => {
+      await acknowledgeConflict(key);
+    });
+  }
+
+  if (visible.length === 0) return null;
+  return (
+    <ul className="flex flex-col gap-2">
+      {visible.map((c) => {
+        const nameA = c.a.data.overrideName ?? c.a.data.activity.name;
+        const nameB = c.b.data.overrideName ?? c.b.data.activity.name;
+        return (
+          <li
+            key={conflictKey(todayStr, c.a, c.b)}
+            className="rounded-md border-2 border-amber-400 bg-amber-50 p-3 text-sm dark:border-amber-600 dark:bg-amber-950"
+          >
+            <p className="font-semibold text-amber-900 dark:text-amber-200">
+              Scheduling conflict today
+            </p>
+            <p className="mt-1 text-amber-900/90 dark:text-amber-100">
+              <button
+                type="button"
+                onClick={() => onOpenInstance(c.a.data)}
+                className="underline underline-offset-2"
+              >
+                {nameA}
+              </button>{" "}
+              ({formatTimeRange(c.a.start, c.a.end, timeFormat)}) overlaps
+              with{" "}
+              <button
+                type="button"
+                onClick={() => onOpenInstance(c.b.data)}
+                className="underline underline-offset-2"
+              >
+                {nameB}
+              </button>{" "}
+              ({formatTimeRange(c.b.start, c.b.end, timeFormat)}).
+            </p>
+            <div className="mt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => ack(c)}
+                className="rounded-md bg-amber-600 px-3 py-1 text-xs font-semibold text-white hover:bg-amber-700"
+              >
+                Got it
+              </button>
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
 }

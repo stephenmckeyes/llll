@@ -69,7 +69,6 @@ import { SectionTabs } from "./_components/section-tabs";
 import { TagDotRow } from "./_components/tag-chip";
 import { TabPending } from "./_components/tab-pending";
 import { listAcknowledgedPairKeys } from "./actions/conflicts";
-import { TimelineDay } from "./_components/timeline-day";
 import { TimelineWeek } from "./_components/timeline-week";
 
 // Force a fresh server render on every request. The dashboard is a
@@ -332,7 +331,7 @@ export default async function HomePage({
       </header>
 
       <div className="flex flex-1 min-h-0 flex-col overflow-y-auto">
-      {view === "day" && !timelineOn && (
+      {view === "day" && (
         <DayView
           startDate={date}
           todayStr={todayStr}
@@ -341,24 +340,7 @@ export default async function HomePage({
           tagMap={tagMap}
           density={addActivityDensity}
           hiddenTags={hiddenTagsSet}
-          chipsNode={
-            <CalendarModifierChips
-              currentView={view}
-              date={date}
-              timelineOn={timelineOn}
-              allTagNames={Object.keys(tagMap).sort()}
-              activeHiddenTags={activeHiddenTags}
-            />
-          }
-        />
-      )}
-      {view === "day" && timelineOn && (
-        <TimelineView
-          date={date}
-          todayStr={todayStr}
-          tagMap={tagMap}
-          hiddenTags={hiddenTagsSet}
-          incompleteInfo={incompleteInfo}
+          timelineMode={timelineOn}
           chipsNode={
             <CalendarModifierChips
               currentView={view}
@@ -819,6 +801,7 @@ async function DayView({
   density,
   hiddenTags,
   chipsNode,
+  timelineMode = false,
 }: {
   startDate: string;
   todayStr: string;
@@ -828,6 +811,10 @@ async function DayView({
   density: AddActivityDensity;
   hiddenTags: ReadonlySet<string>;
   chipsNode?: React.ReactNode;
+  /** Timeline overlay on/off. Same fetch either way — DayList swaps
+   *  the per-day middle render (hour grid for timed pending + row
+   *  list for untimed) via its own `timelineMode` prop. */
+  timelineMode?: boolean;
 }) {
   const supabase = await createClient();
 
@@ -1006,6 +993,12 @@ async function DayView({
     }
   }
 
+  // Only fetch the ack set when timeline is on; wasted round-trip
+  // otherwise (non-timeline mode ignores it).
+  const acknowledgedPairKeys = timelineMode
+    ? await listAcknowledgedPairKeys()
+    : [];
+
   return (
     <DayList
       initialDate={startDate}
@@ -1017,165 +1010,13 @@ async function DayView({
       tagMap={tagMap}
       density={density}
       chipsSlot={chipsNode}
-    />
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Timeline view — vertical hour-column layout for a single day. Positions
-// each timed activity by its scheduled_time (start) and sizes it by
-// scheduled_end_time when present. Detects overlaps and surfaces
-// acknowledge-once conflict banners at the top. Untimed activities
-// render below the grid in an "Untimed" bucket.
-//
-// The heavy fetch is server-side; the client component (TimelineDay)
-// only owns interaction (conflict acknowledgement via localStorage).
-// ---------------------------------------------------------------------------
-
-async function TimelineView({
-  date,
-  todayStr,
-  tagMap,
-  hiddenTags,
-  incompleteInfo,
-  chipsNode,
-}: {
-  date: string;
-  todayStr: string;
-  tagMap: TagMap;
-  hiddenTags: ReadonlySet<string>;
-  incompleteInfo: IncompleteInfo;
-  chipsNode?: React.ReactNode;
-}) {
-  const supabase = await createClient();
-
-  // Fetch the SAME ±90 / +180 day window DayList uses so Timeline's
-  // scroll feels identical to the non-timeline Day view — no more
-  // arbitrary 7-day cap. Per user spec: "make the timeline view the
-  // same as the non-timeline view where it can go up and down
-  // indefinitely." Reuses the same activity+completion shape
-  // DayView uses so clicking a block opens the ActivityModal.
-  const TIMELINE_BACK = 90;
-  const TIMELINE_AHEAD = 180;
-  const centerDate = parseDate(date);
-  const windowStartStr = format(
-    addDays(centerDate, -TIMELINE_BACK),
-    "yyyy-MM-dd"
-  );
-  const windowEndStr = format(
-    addDays(centerDate, TIMELINE_AHEAD),
-    "yyyy-MM-dd"
-  );
-  const { data } = await supabase
-    .from("activity_instances")
-    .select(
-      `
-      id,
-      scheduled_for,
-      status,
-      tags,
-      name,
-      notes,
-      priority,
-      comment,
-      activities (
-        id,
-        name,
-        notes,
-        rhythm,
-        priority,
-        scheduled_times,
-        scheduled_end_times,
-        default_skill_tags,
-        start_date,
-        end_date,
-        archived_at,
-        reminders,
-        track_on_grid,
-        rollover_missed_days,
-        rollover_change_rhythm,
-        auto_archive
-      ),
-      completion_instances (
-        completion_id,
-        completions ( occurred_at, deleted_at )
-      )
-    `
-    )
-    .gte("scheduled_for", windowStartStr)
-    .lte("scheduled_for", windowEndStr);
-
-  type Row = {
-    id: string;
-    scheduled_for: string;
-    status: string;
-    tags: string[] | null;
-    name: string | null;
-    notes: string | null;
-    priority: number | null;
-    comment: string | null;
-    activities: DayInstance["activity"] | null;
-    completion_instances: Array<{
-      completion_id: string;
-      completions: { occurred_at: string; deleted_at: string | null } | null;
-    }> | null;
-  };
-
-  const rows = ((data ?? []) as unknown as Row[]).filter(
-    (r): r is Row & { activities: DayInstance["activity"] } => {
-      if (!r.activities) return false;
-      if (r.activities.archived_at) return false;
-      if (!keepForCalendar(r.activities.default_skill_tags ?? [], hiddenTags))
-        return false;
-      return true;
-    }
-  );
-
-  const instances: DayInstance[] = rows.map((r) => ({
-    id: r.id,
-    scheduled_for: r.scheduled_for,
-    status:
-      r.status === "completed" || r.status === "missed" ? r.status : "pending",
-    tags: r.tags ?? [],
-    overrideName: r.name ?? null,
-    overrideNotes: r.notes ?? null,
-    overridePriority: r.priority ?? null,
-    comment: r.comment ?? null,
-    activity: r.activities,
-    completionCount: liveCompletionCount(r.completion_instances),
-  }));
-
-  // Every date in the window (inclusive both ends) gets a section —
-  // even empty ones, so the scroll rhythm stays consistent and users
-  // don't guess whether a day is "empty" vs. "not fetched." Sorted
-  // chronologically so scrolling down goes future-forward.
-  const days: Array<{ date: string; instances: DayInstance[] }> = [];
-  const byDate = new Map<string, DayInstance[]>();
-  for (const inst of instances) {
-    const arr = byDate.get(inst.scheduled_for) ?? [];
-    arr.push(inst);
-    byDate.set(inst.scheduled_for, arr);
-  }
-  for (let i = -TIMELINE_BACK; i <= TIMELINE_AHEAD; i++) {
-    const d = format(addDays(centerDate, i), "yyyy-MM-dd");
-    days.push({ date: d, instances: byDate.get(d) ?? [] });
-  }
-
-  const acknowledgedPairKeys = await listAcknowledgedPairKeys();
-
-  return (
-    <TimelineDay
-      centerDate={date}
-      todayStr={todayStr}
-      days={days}
-      tagMap={tagMap}
-      incompleteInfo={incompleteInfo}
+      timelineMode={timelineMode}
       acknowledgedPairKeys={acknowledgedPairKeys}
-      chipsSlot={chipsNode}
     />
   );
 }
 
+// ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // Timeline (Week) — 7 side-by-side day columns, each a mini vertical
 // hour grid. Fetches instances across the whole visible week and hands
