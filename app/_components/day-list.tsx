@@ -330,73 +330,87 @@ export function DayList({
     if (!container) return;
 
     // Hard-reset scroll before doing anything else. Belt-and-suspenders
-    // with the parent's `key` remount + overflow-anchor:none — if
-    // either fails (iOS Safari has been known to preserve scroll state
-    // even across React remounts in PWA mode), this line still puts
-    // the container at the top so at worst the user lands on
-    // windowStart (May 12) rather than a proportional-ratio wrong date.
+    // with the parent's `key` remount + overflow-anchor:none.
     container.scrollTop = 0;
 
-    let verifyAttempts = 0;
-    const MAX_VERIFY = 20;
+    // Two flags that STOP the retry machinery:
+    //   - `settled`  = we verified target lands within 5 px of top
+    //   - `userTook` = user touched the container / dispatched a real
+    //                  scroll event that wasn't from our writes
+    // Either one shuts down retries so we never fight the user's
+    // scrolling. Without this, ResizeObserver ticks (fired every
+    // time content-visibility promotes an offscreen section) and
+    // the setTimeout sweep would snap the user back to today.
+    let settled = false;
+    let userTook = false;
 
     const targetSelector = `#day-${cssEscape(initialDate)}`;
 
+    const isTargetAtTop = (): boolean => {
+      const target = container.querySelector<HTMLElement>(targetSelector);
+      if (!target) return false;
+      const rect = target.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      return Math.abs(rect.top - containerRect.top) <= 5;
+    };
+
     const doScroll = () => {
-      if (cancelled) return;
+      if (cancelled || settled || userTook) return;
       const target = container.querySelector<HTMLElement>(targetSelector);
       if (!target) return;
 
-      // iOS layer-promotion trick: force reflow before the write so
-      // the compositor scroll layer exists before we set scrollTop.
+      // iOS layer-promotion: force reflow before the write.
       void container.offsetHeight;
 
-      // Try scrollIntoView first — iOS Safari's most reliable
-      // programmatic scroll. `block: "start"` aligns the target with
-      // the top of the nearest scrollable ancestor (our container).
+      // Mark that the NEXT scroll event was fired by us (via a small
+      // window of time), so the user-scroll detector doesn't confuse
+      // our own writes for user input.
+      lastProgrammaticScrollAt = performance.now();
+
       try {
         target.scrollIntoView({ block: "start", inline: "nearest", behavior: "auto" });
       } catch {
         /* fall through */
       }
 
-      // Verify + fall back to manual scrollTop if scrollIntoView
-      // didn't stick (walks ancestor chain — sometimes wrong on iOS).
       requestAnimationFrame(() => {
-        if (cancelled) return;
-        const rect = target.getBoundingClientRect();
-        const containerRect = container.getBoundingClientRect();
-        const offsetFromTop = rect.top - containerRect.top;
-        if (Math.abs(offsetFromTop) > 5) {
+        if (cancelled || userTook) return;
+        if (!isTargetAtTop()) {
+          lastProgrammaticScrollAt = performance.now();
           scrollContainerTo(container, initialDate);
         }
+        // Verify one more frame later — if we landed, mark settled
+        // so nothing else retries.
+        requestAnimationFrame(() => {
+          if (cancelled || userTook) return;
+          if (isTargetAtTop()) settled = true;
+        });
       });
-
-      verifyScroll();
     };
 
-    // Verify + retry loop — mobile browsers sometimes ignore scroll
-    // writes mid-layout, so keep checking on subsequent frames.
-    const verifyScroll = () => {
+    // Distinguish user scrolls from our own. A scroll event within
+    // ~200 ms of a programmatic write is ours. Anything else is the
+    // user, and we bail out of the retry loop immediately.
+    let lastProgrammaticScrollAt = 0;
+    const onScroll = () => {
       if (cancelled) return;
-      if (verifyAttempts >= MAX_VERIFY) return;
-      verifyAttempts += 1;
-      requestAnimationFrame(() => {
-        if (cancelled) return;
-        const target = container.querySelector<HTMLElement>(targetSelector);
-        if (!target) return;
-        const rect = target.getBoundingClientRect();
-        const containerRect = container.getBoundingClientRect();
-        const offsetFromTop = rect.top - containerRect.top;
-        if (Math.abs(offsetFromTop) > 5) {
-          void container.offsetHeight;
-          scrollContainerTo(container, initialDate);
-          verifyScroll();
-        }
-      });
+      const dt = performance.now() - lastProgrammaticScrollAt;
+      if (dt > 200) {
+        userTook = true;
+      }
     };
+    // Also treat any direct touch on the container as user intent —
+    // catches the case where iOS Safari fires touch events before
+    // any scroll event.
+    const onTouch = () => {
+      if (cancelled) return;
+      userTook = true;
+    };
+    container.addEventListener("scroll", onScroll, { passive: true });
+    container.addEventListener("touchstart", onTouch, { passive: true });
+    container.addEventListener("wheel", onTouch, { passive: true });
 
-    // Attempt 1: sync, right after commit.
+    // Attempt 1: sync.
     doScroll();
 
     // Attempts 2–3: next two frames.
@@ -405,19 +419,17 @@ export function DayList({
       requestAnimationFrame(doScroll);
     });
 
-    // Attempts 4+: watch the content wrapper AND the container
-    // itself for size changes. The container has a fixed h-[60vh]
-    // on desktop but iOS Safari's URL bar hide/show resizes it.
+    // Attempts 4+: on ResizeObserver ticks, but ONLY if not settled
+    // and the user hasn't scrolled.
     let lastContentHeight = container.scrollHeight;
     let lastContainerHeight = container.clientHeight;
     const observer = new ResizeObserver(() => {
-      if (cancelled) return;
+      if (cancelled || settled || userTook) return;
       const h = container.scrollHeight;
       const c = container.clientHeight;
       if (h !== lastContentHeight || c !== lastContainerHeight) {
         lastContentHeight = h;
         lastContainerHeight = c;
-        verifyAttempts = 0;
         doScroll();
       }
     });
@@ -425,16 +437,17 @@ export function DayList({
     const content = container.firstElementChild;
     if (content) observer.observe(content);
 
-    // Extended timer sweep for very slow iOS layout (older iPhones
-    // with ~271 days × 900 px of hour-grid DOM can take 3+ seconds).
-    const timers = [50, 200, 500, 1000, 2000, 4000, 6000, 9000].map((ms) =>
+    // Timer sweep for slow iOS layout — also short-circuited by
+    // settled / userTook.
+    const timers = [50, 200, 500, 1000, 2000, 4000].map((ms) =>
       setTimeout(() => {
-        verifyAttempts = 0;
+        if (cancelled || settled || userTook) return;
         doScroll();
       }, ms)
     );
 
-    const disconnectTimer = setTimeout(() => observer.disconnect(), 10000);
+    // Tear down observer after 5 s regardless.
+    const disconnectTimer = setTimeout(() => observer.disconnect(), 5000);
 
     return () => {
       cancelled = true;
@@ -442,6 +455,9 @@ export function DayList({
       timers.forEach(clearTimeout);
       clearTimeout(disconnectTimer);
       observer.disconnect();
+      container.removeEventListener("scroll", onScroll);
+      container.removeEventListener("touchstart", onTouch);
+      container.removeEventListener("wheel", onTouch);
     };
   }, [initialDate]);
 
