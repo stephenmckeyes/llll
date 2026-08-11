@@ -324,14 +324,23 @@ export function DayList({
   //     target still isn't at container top afterwards.
   //   - Layout of ~200,000 px of hour-grid DOM streams in over
   //     many more frames than on desktop.
+  const isFirstMountRef = useRef(true);
   useLayoutEffect(() => {
     let cancelled = false;
     const container = containerRef.current;
     if (!container) return;
 
-    // Hard-reset scroll before doing anything else. Belt-and-suspenders
-    // with the parent's `key` remount + overflow-anchor:none.
-    container.scrollTop = 0;
+    // Hard-reset scroll only on subsequent runs (Timeline toggle,
+    // initialDate change). On the FIRST mount the pre-hydration
+    // <script> serialized after the container has already set
+    // scrollTop to today's offsetTop — undoing that here would
+    // reintroduce the flash of windowStart (May 12) we're trying
+    // to avoid. Retries still run, but doScroll's first attempt
+    // sees target already at top and settles immediately.
+    if (!isFirstMountRef.current) {
+      container.scrollTop = 0;
+    }
+    isFirstMountRef.current = false;
 
     // Two flags that STOP the retry machinery:
     //   - `settled`  = we verified target lands within 5 px of top
@@ -638,6 +647,7 @@ export function DayList({
           list — which is what was making rows un-tappable on mobile. */}
       <div
         ref={containerRef}
+        data-day-scroll="true"
         // Vertical scroll only. `overflow-x-hidden` clips any sideways
         // overflow and `touch-pan-y` tells the browser to honor only
         // up/down panning gestures — so a slightly-diagonal swipe never
@@ -690,6 +700,21 @@ export function DayList({
           ))}
         </div>
       </div>
+      {/* Pre-hydration scroll anchor.
+          SSR ships this <script> serialized *after* all day sections,
+          so when the browser parses the HTML it can already resolve
+          `#day-${initialDate}` and set the scroll container's
+          scrollTop before the first paint. Result: cold-open lands
+          on today with no visible flash of windowStart (May 12).
+          React ignores <script> during hydration; our useLayoutEffect
+          also skips its scrollTop=0 reset on the first run so it
+          doesn't undo what this script already did. */}
+      <script
+        // eslint-disable-next-line react/no-danger
+        dangerouslySetInnerHTML={{
+          __html: `(function(){try{var s=document.getElementById('day-${initialDate}');if(!s)return;var c=s.closest('[data-day-scroll]');if(!c)return;c.scrollTop=s.offsetTop;}catch(e){}})();`,
+        }}
+      />
 
       {/* Mutation modals never mount in read-only mode (openInstance /
           addDay can't be set there). */}
