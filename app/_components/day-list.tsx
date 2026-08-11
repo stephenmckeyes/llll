@@ -314,51 +314,74 @@ export function DayList({
   // toggling Timeline REMOUNTS this component — so this effect
   // always sees a fresh container with scrollTop=0.
   //
-  // Mobile browsers (esp. iOS Safari) commit layout on a different
-  // schedule than desktop: the URL bar hides on scroll and resizes
-  // the viewport, layout is slower for the ~200,000 px of hour-grid
-  // DOM, and programmatic scrollTop sometimes silently doesn't
-  // stick mid-render. Strategy:
-  //
-  //   1. Fire scroll immediately + on rAF + on ResizeObserver ticks
-  //      + at fixed intervals (50/200/500/1000/2000/4000 ms).
-  //   2. After each attempt, VERIFY the target section actually
-  //      landed at container top (within 5 px). If not, retry on
-  //      the next rAF up to 15 attempts.
-  //   3. Observe the CONTAINER's own size too — catches iOS URL bar
-  //      hide/show which resizes the h-[60vh] element.
+  // iOS Safari specifically:
+  //   - scrollTop assignments can be silently dropped on freshly-
+  //     mounted containers until the compositor commits the scroll
+  //     layer. Workaround: read container.offsetHeight before every
+  //     write (forces layer promotion + reflow).
+  //   - `scrollIntoView` is more reliable than manual scrollTop
+  //     math on iOS. Try it first; fall back to scrollTop if the
+  //     target still isn't at container top afterwards.
+  //   - Layout of ~200,000 px of hour-grid DOM streams in over
+  //     many more frames than on desktop.
   useLayoutEffect(() => {
     let cancelled = false;
     const container = containerRef.current;
     if (!container) return;
 
     let verifyAttempts = 0;
-    const MAX_VERIFY = 15;
+    const MAX_VERIFY = 20;
+
+    const targetSelector = `#day-${cssEscape(initialDate)}`;
 
     const doScroll = () => {
       if (cancelled) return;
-      scrollContainerTo(container, initialDate);
+      const target = container.querySelector<HTMLElement>(targetSelector);
+      if (!target) return;
+
+      // iOS layer-promotion trick: force reflow before the write so
+      // the compositor scroll layer exists before we set scrollTop.
+      void container.offsetHeight;
+
+      // Try scrollIntoView first — iOS Safari's most reliable
+      // programmatic scroll. `block: "start"` aligns the target with
+      // the top of the nearest scrollable ancestor (our container).
+      try {
+        target.scrollIntoView({ block: "start", inline: "nearest", behavior: "auto" });
+      } catch {
+        /* fall through */
+      }
+
+      // Verify + fall back to manual scrollTop if scrollIntoView
+      // didn't stick (walks ancestor chain — sometimes wrong on iOS).
+      requestAnimationFrame(() => {
+        if (cancelled) return;
+        const rect = target.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        const offsetFromTop = rect.top - containerRect.top;
+        if (Math.abs(offsetFromTop) > 5) {
+          scrollContainerTo(container, initialDate);
+        }
+      });
+
       verifyScroll();
     };
 
-    // After a scroll, verify the target actually landed at the top
-    // (mobile browsers sometimes ignore scrollTop mid-layout). If
-    // not, retry on the next frame.
+    // Verify + retry loop — mobile browsers sometimes ignore scroll
+    // writes mid-layout, so keep checking on subsequent frames.
     const verifyScroll = () => {
       if (cancelled) return;
       if (verifyAttempts >= MAX_VERIFY) return;
       verifyAttempts += 1;
       requestAnimationFrame(() => {
         if (cancelled) return;
-        const target = container.querySelector<HTMLElement>(
-          `#day-${cssEscape(initialDate)}`
-        );
+        const target = container.querySelector<HTMLElement>(targetSelector);
         if (!target) return;
         const rect = target.getBoundingClientRect();
         const containerRect = container.getBoundingClientRect();
         const offsetFromTop = rect.top - containerRect.top;
         if (Math.abs(offsetFromTop) > 5) {
-          // Didn't stick — try again.
+          void container.offsetHeight;
           scrollContainerTo(container, initialDate);
           verifyScroll();
         }
@@ -386,8 +409,6 @@ export function DayList({
       if (h !== lastContentHeight || c !== lastContainerHeight) {
         lastContentHeight = h;
         lastContainerHeight = c;
-        // Reset verify counter on layout change so we get a fresh
-        // batch of retries against the new layout.
         verifyAttempts = 0;
         doScroll();
       }
@@ -396,17 +417,16 @@ export function DayList({
     const content = container.firstElementChild;
     if (content) observer.observe(content);
 
-    // Belt-and-suspenders timer sweep for slow mobile layout.
-    const timers = [50, 200, 500, 1000, 2000, 4000].map((ms) =>
+    // Extended timer sweep for very slow iOS layout (older iPhones
+    // with ~271 days × 900 px of hour-grid DOM can take 3+ seconds).
+    const timers = [50, 200, 500, 1000, 2000, 4000, 6000, 9000].map((ms) =>
       setTimeout(() => {
         verifyAttempts = 0;
         doScroll();
       }, ms)
     );
 
-    // Disconnect the observer after 5s so it doesn't linger for the
-    // component's lifetime.
-    const disconnectTimer = setTimeout(() => observer.disconnect(), 5000);
+    const disconnectTimer = setTimeout(() => observer.disconnect(), 10000);
 
     return () => {
       cancelled = true;
