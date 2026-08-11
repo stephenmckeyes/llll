@@ -329,6 +329,14 @@ export function DayList({
     const container = containerRef.current;
     if (!container) return;
 
+    // Hard-reset scroll before doing anything else. Belt-and-suspenders
+    // with the parent's `key` remount + overflow-anchor:none — if
+    // either fails (iOS Safari has been known to preserve scroll state
+    // even across React remounts in PWA mode), this line still puts
+    // the container at the top so at worst the user lands on
+    // windowStart (May 12) rather than a proportional-ratio wrong date.
+    container.scrollTop = 0;
+
     let verifyAttempts = 0;
     const MAX_VERIFY = 20;
 
@@ -592,6 +600,16 @@ export function DayList({
         // overflow and `touch-pan-y` tells the browser to honor only
         // up/down panning gestures — so a slightly-diagonal swipe never
         // scrolls the list left/right.
+        //
+        // `overflow-anchor: none` disables the browser's scroll-
+        // anchoring heuristic. Without this, when Timeline toggles and
+        // section heights change ~4×, iOS Safari (and Chrome to a
+        // lesser extent) tries to preserve the user's viewing position
+        // by adjusting scrollTop — which lands them on the wrong date
+        // proportional to the layout ratio (e.g. Jan 4 → July 14 on
+        // enter-timeline; July 10 → Dec 24 on exit). We want the
+        // initial-scroll effect to place the user, not the browser.
+        style={{ overflowAnchor: "none" }}
         className="h-[60vh] min-h-[20rem] touch-pan-y overflow-y-auto overflow-x-hidden overscroll-contain pr-2 sm:h-[68vh]"
       >
         <div className="flex flex-col gap-4">
