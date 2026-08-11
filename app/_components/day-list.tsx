@@ -535,18 +535,6 @@ export function DayList({
 
   return (
     <div className="flex flex-col gap-3">
-      {/* TEMP DEBUG overlay — remove once iOS scroll bug is fixed.
-          Renders live scroll diagnostics so we can see what's
-          actually happening on the phone (scrollTop, scrollHeight,
-          target section top, initialDate). If this shows the
-          expected values but the visible content is still wrong,
-          the browser is doing something after our writes. If it
-          shows unexpected values, our writes never landed. */}
-      <ScrollDebug
-        containerRef={containerRef}
-        initialDate={initialDate}
-        timelineMode={timelineMode}
-      />
       {/* Date navigator — pinned above the scroll container, never
           scrolls.
           Two rows: friendly label on top, [← date-input → Today] below.
@@ -1459,69 +1447,3 @@ function TimelineConflictBanners({
   );
 }
 
-// ---------------------------------------------------------------------------
-// ScrollDebug — TEMPORARY diagnostic for iOS scroll bug.
-// Renders a small overlay showing live container scroll state.
-// Remove once the bug is confirmed fixed.
-// ---------------------------------------------------------------------------
-
-function ScrollDebug({
-  containerRef,
-  initialDate,
-  timelineMode,
-}: {
-  containerRef: React.RefObject<HTMLDivElement | null>;
-  initialDate: string;
-  timelineMode: boolean;
-}) {
-  const [state, setState] = useState({
-    scrollTop: 0,
-    scrollHeight: 0,
-    clientHeight: 0,
-    targetTop: 0,
-    ua: "",
-  });
-
-  useEffect(() => {
-    const update = () => {
-      const c = containerRef.current;
-      if (!c) return;
-      const target = c.querySelector<HTMLElement>(
-        `#day-${cssEscape(initialDate)}`
-      );
-      const cRect = c.getBoundingClientRect();
-      const tRect = target?.getBoundingClientRect();
-      setState({
-        scrollTop: Math.round(c.scrollTop),
-        scrollHeight: c.scrollHeight,
-        clientHeight: Math.round(c.clientHeight),
-        targetTop: tRect ? Math.round(tRect.top - cRect.top + c.scrollTop) : -1,
-        ua: navigator.userAgent.slice(0, 40),
-      });
-    };
-    update();
-    const t1 = setTimeout(update, 100);
-    const t2 = setTimeout(update, 500);
-    const t3 = setTimeout(update, 1500);
-    const t4 = setTimeout(update, 3000);
-    const container = containerRef.current;
-    container?.addEventListener("scroll", update, { passive: true });
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
-      clearTimeout(t4);
-      container?.removeEventListener("scroll", update);
-    };
-  }, [containerRef, initialDate, timelineMode]);
-
-  return (
-    <div className="rounded border border-amber-500 bg-amber-50 px-2 py-1 text-[10px] font-mono text-amber-900 dark:bg-amber-950 dark:text-amber-200">
-      <div>v6 · init={initialDate} · tl={String(timelineMode)}</div>
-      <div>
-        scrollTop={state.scrollTop} / {state.scrollHeight - state.clientHeight}{" "}
-        · target={state.targetTop} · h={state.clientHeight}
-      </div>
-    </div>
-  );
-}
