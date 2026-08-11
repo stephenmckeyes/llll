@@ -11,7 +11,8 @@
 // Timeline). Grid has its own tag filter and no Timeline concept.
 // ---------------------------------------------------------------------------
 
-import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useTransition } from "react";
 
 import { CalendarFiltersButton } from "./calendar-filters-button";
 import { TabPending } from "./tab-pending";
@@ -74,15 +75,36 @@ export function CalendarModifierChips({
   allTagNames: string[];
   activeHiddenTags: string[];
 }) {
-  // Toggling Timeline drops the `?date` param intentionally — page.tsx
-  // defaults `date` to today when it's missing, so both directions
-  // land on the current day. Preserving a stale URL `?date` was
-  // causing "Timeline lands on 2027 instead of today" whenever the
-  // user had earlier navigated to a specific date.
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+
+  // Toggle Timeline while PRESERVING the day the user is currently
+  // viewing. DayList mirrors `currentDate` back into the URL via
+  // history.replaceState, so window.location.search always has the
+  // right `?date`. Reading at click time lets us build an href that
+  // keeps the same day across the toggle.
+  //
+  // Previously we dropped `?date` on toggle to work around a bug
+  // where an old URL date (e.g. Jan 4, 2027) shipped the user to
+  // the wrong day; now that DayList keeps the URL in sync with what
+  // the user is actually looking at, preserving is the correct move.
+  const onToggle = () => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const date = params.get("date");
+    const query = new URLSearchParams();
+    query.set("view", currentView);
+    if (date) query.set("date", date);
+    if (!timelineOn) query.set("timeline", "1");
+    const href = `/?${query.toString()}`;
+    startTransition(() => router.push(href));
+  };
+
   return (
     <div className="flex flex-col items-end gap-1">
-      <Link
-        href={`/?view=${currentView}${timelineOn ? "" : "&timeline=1"}`}
+      <button
+        type="button"
+        onClick={onToggle}
         aria-pressed={timelineOn}
         title="Toggle Timeline overlay"
         className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-medium transition-colors ${
@@ -94,8 +116,8 @@ export function CalendarModifierChips({
         <CheckSquare on={timelineOn} />
         <ClockIcon />
         Timeline
-        <TabPending />
-      </Link>
+        {pending && <TabPending />}
+      </button>
       <CalendarFiltersButton
         allTags={allTagNames}
         activeHidden={activeHiddenTags}

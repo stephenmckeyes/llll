@@ -1006,13 +1006,14 @@ async function DayView({
 
   return (
     <DayList
-      // Force a fresh mount when Timeline toggles. Reconciling the same
-      // instance across the toggle preserved the container's scrollTop
-      // through a ~4× layout change, which landed the user on the
-      // wrong day (window edges specifically — Feb 6 2027 / May 25).
-      // Fresh mount = fresh container = scrollTop starts at 0, then
-      // the initial-scroll effect anchors to `initialDate` cleanly.
-      key={timelineMode ? "timeline" : "normal"}
+      // No `key` here on purpose: reconciling across the Timeline
+      // toggle is what keeps the transition snappy on desktop and
+      // avoids tearing down / rebuilding 271 DaySections (the
+      // "flash" the user reported after the earlier iOS fix).
+      // DayList's initial-scroll useLayoutEffect now depends on
+      // BOTH `initialDate` and `timelineMode`, so it explicitly
+      // resets scrollTop and re-anchors to `initialDate` when the
+      // mode flips — no remount needed to get the same guarantee.
       initialDate={startDate}
       instances={instances}
       completedByDate={completedByDate}

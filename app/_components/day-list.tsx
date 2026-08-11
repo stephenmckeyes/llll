@@ -459,7 +459,12 @@ export function DayList({
       container.removeEventListener("touchstart", onTouch);
       container.removeEventListener("wheel", onTouch);
     };
-  }, [initialDate]);
+    // `timelineMode` is in deps so toggling the mode re-runs the
+    // initial-scroll flow: DayList is NOT remounted on toggle
+    // (that caused a 271-section tear-down flash on desktop), so
+    // we rely on this effect firing to reset scrollTop and re-
+    // anchor to `initialDate` when the sections' heights change.
+  }, [initialDate, timelineMode]);
 
   // Sync the date input with the URL's initial date if it changes
   // externally (e.g., the user used the View Switcher to navigate and
@@ -473,6 +478,27 @@ export function DayList({
     setCurrentDate(initialDate);
     setDateInputValue(initialDate);
   }
+
+  // Silently mirror the currently-viewed day back into the URL as
+  // ?date=<currentDate>. Uses history.replaceState (no navigation,
+  // no re-render, no new history entry) — the URL just tracks where
+  // the user is looking so:
+  //   - The Timeline / Filters chips can generate hrefs that PRESERVE
+  //     the current day when toggled, instead of always jumping to
+  //     today.
+  //   - Refresh / share URL includes the current day (bookmarkable).
+  //
+  // Cold-open protection is upstream in page.tsx: `sec-fetch-site ===
+  // "none"` + any stale `?date` redirects to `/`. So bookmarkable
+  // dates don't outlive a cold open — user still lands on today when
+  // they open the app fresh.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("date") === currentDate) return;
+    url.searchParams.set("date", currentDate);
+    window.history.replaceState(window.history.state, "", url.toString());
+  }, [currentDate]);
 
   // Track the topmost visible day section while scrolling.
   useEffect(() => {
@@ -739,21 +765,6 @@ function DaySection({
       id={`day-${dateStr}`}
       data-date={dateStr}
       className="flex flex-col gap-2 scroll-mt-2"
-      // content-visibility skips layout + paint for offscreen sections.
-      // Critical for iOS Safari where laying out 271 × ~900 px of
-      // hour-grid DOM takes 3+ seconds and races with the initial-
-      // scroll effect — with content-visibility, only ~5 visible
-      // sections need real layout, so scrollHeight stabilizes fast
-      // and scrollTop assignments stick reliably.
-      //
-      // contain-intrinsic-size gives the browser a placeholder height
-      // to reserve so scroll geometry is correct for offscreen items.
-      // Timeline mode: ~900 px per day (hour grid + header + dropdown).
-      // Normal mode: ~200 px (no hour grid).
-      style={{
-        contentVisibility: "auto",
-        containIntrinsicSize: `0 ${timelineMode ? 900 : 200}px`,
-      }}
     >
       <h2 className="flex items-baseline gap-2 text-sm font-medium uppercase tracking-wide text-zinc-500">
         <span>{formatDateMedium(date)}</span>
