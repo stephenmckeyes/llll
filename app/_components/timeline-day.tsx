@@ -21,6 +21,8 @@
 // shades so overlapping blocks stay legible.
 // ---------------------------------------------------------------------------
 
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -37,6 +39,7 @@ import { useTimeFormat } from "@/lib/ui/format-time-client";
 
 import { ActivityModal } from "./activity-modal";
 import type { DayInstance } from "./day-list";
+import { IncompleteButton, type IncompleteInfo } from "./incomplete-button";
 import {
   conflictKey,
   detectConflicts,
@@ -96,6 +99,7 @@ export function TimelineDay({
   todayStr,
   days,
   tagMap,
+  incompleteInfo,
   acknowledgedPairKeys = [],
   chipsSlot,
 }: {
@@ -108,13 +112,38 @@ export function TimelineDay({
    *  are included so the scroll rhythm stays consistent. */
   days: Array<{ date: string; instances: DayInstance[] }>;
   tagMap: TagMap;
+  /** Powers the "Unlabeled (N)" chip in the sticky top row — same
+   *  count DayList shows so the header info is consistent between
+   *  Timeline-off and Timeline-on. */
+  incompleteInfo: IncompleteInfo;
   acknowledgedPairKeys?: readonly string[];
   chipsSlot?: React.ReactNode;
 }) {
+  const router = useRouter();
   const [locallyAcked, setLocallyAcked] = useState<Set<string>>(new Set());
   const [, startAckTransition] = useTransition();
   const [openInstance, setOpenInstance] = useState<DayInstance | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+
+  // Mirror centerDate into local state so the date input stays
+  // controlled (React 19 snapshot pattern — no useEffect).
+  const [dateInput, setDateInput] = useState(centerDate);
+  const [dateInputSnapshot, setDateInputSnapshot] = useState(centerDate);
+  if (dateInputSnapshot !== centerDate) {
+    setDateInputSnapshot(centerDate);
+    setDateInput(centerDate);
+  }
+  function hrefFor(date: string): string {
+    return `/?view=day&date=${date}&timeline=1`;
+  }
+  function shiftDays(delta: number): string {
+    const [y, m, d] = centerDate.split("-").map(Number);
+    const dt = new Date(y, m - 1, d + delta);
+    const yy = dt.getFullYear();
+    const mm = String(dt.getMonth() + 1).padStart(2, "0");
+    const dd = String(dt.getDate()).padStart(2, "0");
+    return `${yy}-${mm}-${dd}`;
+  }
 
   // Conflict detection: only surface TODAY's overlapping pairs at
   // the top. Per-day conflicts within a scrolled-past day would
@@ -192,13 +221,45 @@ export function TimelineDay({
 
   return (
     <div ref={containerRef} className="flex flex-col gap-3">
-      {/* Sticky chips strip — no date label here anymore; each day
-          section carries its own header. */}
-      {chipsSlot && (
-        <div className="sticky top-0 z-10 -mx-6 flex items-start justify-end bg-white px-6 py-2 dark:bg-zinc-950">
-          {chipsSlot}
-        </div>
-      )}
+      {/* Sticky top strip — mirrors the [← input → Today Unlabeled
+          chips] row from the non-timeline Day view so header info
+          stays the same whether Timeline is on or off. Per user spec:
+          the "date and Today button" should still be up here. */}
+      <div className="sticky top-0 z-10 -mx-6 flex flex-wrap items-center gap-2 bg-white px-6 py-2 dark:bg-zinc-950">
+        <Link
+          href={hrefFor(shiftDays(-1))}
+          aria-label="Previous day"
+          className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+        >
+          ←
+        </Link>
+        <input
+          type="date"
+          value={dateInput}
+          onChange={(e) => {
+            setDateInput(e.target.value);
+            if (/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) {
+              router.push(hrefFor(e.target.value));
+            }
+          }}
+          className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+        />
+        <Link
+          href={hrefFor(shiftDays(1))}
+          aria-label="Next day"
+          className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+        >
+          →
+        </Link>
+        <Link
+          href={hrefFor(todayStr)}
+          className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
+        >
+          Today
+        </Link>
+        <IncompleteButton info={incompleteInfo} />
+        {chipsSlot && <div className="ml-auto shrink-0">{chipsSlot}</div>}
+      </div>
 
       {visibleConflicts.length > 0 && (
         <ul className="flex flex-col gap-2">

@@ -358,6 +358,7 @@ export default async function HomePage({
           todayStr={todayStr}
           tagMap={tagMap}
           hiddenTags={hiddenTagsSet}
+          incompleteInfo={incompleteInfo}
           chipsNode={
             <CalendarModifierChips
               currentView={view}
@@ -1036,12 +1037,14 @@ async function TimelineView({
   todayStr,
   tagMap,
   hiddenTags,
+  incompleteInfo,
   chipsNode,
 }: {
   date: string;
   todayStr: string;
   tagMap: TagMap;
   hiddenTags: ReadonlySet<string>;
+  incompleteInfo: IncompleteInfo;
   chipsNode?: React.ReactNode;
 }) {
   const supabase = await createClient();
@@ -1166,6 +1169,7 @@ async function TimelineView({
       todayStr={todayStr}
       days={days}
       tagMap={tagMap}
+      incompleteInfo={incompleteInfo}
       acknowledgedPairKeys={acknowledgedPairKeys}
       chipsSlot={chipsNode}
     />
