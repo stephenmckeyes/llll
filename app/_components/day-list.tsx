@@ -16,6 +16,7 @@
 // ---------------------------------------------------------------------------
 
 import { addDays, format } from "date-fns";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   useCallback,
@@ -578,8 +579,21 @@ export function DayList({
           when the user steps day-by-day. "Saturday, May 23, 2026" being
           longer than "Friday, May 22, 2026" no longer drags the right
           arrow with it. The label moved to its own row so changes in its
-          width can't shift the arrows below. */}
-      <div className="flex flex-col gap-1">
+          width can't shift the arrows below.
+          Absolute-positioned "< MMM YYYY" back link on the left drills
+          up to Month view for the currently-viewed day — same target as
+          tapping the Month section tab, but without losing your place.
+          Mirrors iPhone Calendar's drill-up affordance. */}
+      <div className="relative flex flex-col gap-1">
+        {!readOnly && (
+          <Link
+            href={`/?view=month&date=${currentDate}`}
+            className="absolute left-0 top-0 shrink-0 text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+            aria-label={`Go to month view of ${format(parseLocalDate(currentDate), "MMMM yyyy")}`}
+          >
+            ‹ {format(parseLocalDate(currentDate), "MMM yyyy")}
+          </Link>
+        )}
         <p className="text-center text-sm font-medium text-zinc-700 dark:text-zinc-300">
           {labelLong(currentDate)}
         </p>

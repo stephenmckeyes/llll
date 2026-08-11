@@ -51,8 +51,33 @@ export function DateNavigator({
     setVal(currentDate);
   }
 
+  // Drill-up affordance on the left of the label row. Month → Year
+  // uses the currently-viewed year; Day → Month lives in DayList (not
+  // here — DayList uses its own inline label instead of this shared
+  // component). Week/Year get no back link (Week's drill-up is
+  // ambiguous, Year has no parent view).
+  const parentLink = (() => {
+    if (view === "month") {
+      return {
+        href: `/?view=year&date=${currentDate}`,
+        label: `‹ ${currentDate.slice(0, 4)}`,
+        title: `Go to year view of ${currentDate.slice(0, 4)}`,
+      };
+    }
+    return null;
+  })();
+
   return (
-    <div className="flex flex-col gap-1">
+    <div className="relative flex flex-col gap-1">
+      {parentLink && (
+        <Link
+          href={parentLink.href}
+          className="absolute left-0 top-0 shrink-0 text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+          aria-label={parentLink.title}
+        >
+          {parentLink.label}
+        </Link>
+      )}
       {/* Friendly label above the controls — changes in length here can't
           shift the arrows below because they're on a different row. */}
       <p className="text-center text-sm font-medium text-zinc-700 dark:text-zinc-300">
