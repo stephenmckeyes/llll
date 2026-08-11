@@ -1006,6 +1006,13 @@ async function DayView({
 
   return (
     <DayList
+      // Force a fresh mount when Timeline toggles. Reconciling the same
+      // instance across the toggle preserved the container's scrollTop
+      // through a ~4× layout change, which landed the user on the
+      // wrong day (window edges specifically — Feb 6 2027 / May 25).
+      // Fresh mount = fresh container = scrollTop starts at 0, then
+      // the initial-scroll effect anchors to `initialDate` cleanly.
+      key={timelineMode ? "timeline" : "normal"}
       initialDate={startDate}
       instances={instances}
       completedByDate={completedByDate}

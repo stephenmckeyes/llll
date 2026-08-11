@@ -20,6 +20,7 @@ import { useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -308,28 +309,17 @@ export function DayList({
   const windowStart = days[0]?.dateStr ?? initialDate;
   const windowEnd = days[days.length - 1]?.dateStr ?? initialDate;
 
-  // Snap the scroll to `initialDate` on mount, on initialDate change,
-  // AND on timelineMode toggle.
+  // Snap the scroll to `initialDate` on mount. Because DayList
+  // gets a `key={timelineMode ? "timeline" : "normal"}` from its
+  // parent, toggling Timeline REMOUNTS this component — so this
+  // effect always sees a fresh container with scrollTop=0.
   //
-  // Why timelineMode is in the deps: toggling Timeline via the chip
-  // re-renders the same DayList instance (same key, same ref), so the
-  // container's scrollTop is preserved. But each DaySection's height
-  // changes ~4× (timeline adds an 18-hour column). Preserved
-  // scrollTop against a re-laid-out container lands the user on the
-  // wrong date. Re-running this effect on toggle re-anchors to
-  // `initialDate` regardless.
-  //
-  // Why ResizeObserver + re-scroll: timeline mode inflates DOM to
-  // ~200,000+ px of hour-grid content across the ±90/+180 window.
-  // Layout streams in over many frames — a fixed rAF/setTimeout
-  // budget was landing scroll BEFORE the container reached its full
-  // scrollHeight, so `scrollContainerTo` clamped to a too-small max.
-  // Instead, keep re-running the scroll every time the container's
-  // scrollHeight changes, until it stops growing (or we hit a 2s
-  // ceiling). Each re-scroll is O(1) — a single scrollTop assignment
-  // — so the cost is trivial and the user never sees intermediate
-  // states because the writes all happen within a rAF.
-  useEffect(() => {
+  // Uses useLayoutEffect (sync after commit, before paint) so we
+  // scroll BEFORE the user sees the wrong position. ResizeObserver
+  // + rAF chain + 2s safety timer catch late-arriving layout
+  // (timeline mode has ~200,000+ px of hour-grid content across
+  // the ±90/+180 window, which streams in over several frames).
+  useLayoutEffect(() => {
     let cancelled = false;
     const container = containerRef.current;
     if (!container) return;
@@ -339,40 +329,34 @@ export function DayList({
       scrollContainerTo(container, initialDate);
     };
 
-    // Immediate attempt so first paint at least attempts an anchor.
+    // Immediate attempt — often works when layout is already done.
     doScroll();
 
+    // Re-scroll on rAF; catches the case where layout finishes on
+    // the next frame after commit.
+    const raf1 = requestAnimationFrame(() => {
+      doScroll();
+      requestAnimationFrame(doScroll);
+    });
+
     // Re-scroll on every ResizeObserver tick until layout stabilizes.
-    // A ResizeObserver fires when the observed element's size changes,
-    // which for our scroll container corresponds to content reflow.
-    let stableFrames = 0;
+    // We observe `content` (the flex-col wrapper inside the fixed-
+    // height scroll container) because that's the element that
+    // GROWS as sections render — the container itself has a fixed
+    // h-[60vh] so its own size never changes.
     let lastHeight = container.scrollHeight;
     const observer = new ResizeObserver(() => {
       if (cancelled) return;
       const h = container.scrollHeight;
       if (h !== lastHeight) {
         lastHeight = h;
-        stableFrames = 0;
         doScroll();
-      } else {
-        stableFrames += 1;
       }
     });
-    observer.observe(container);
-    // The scroll container's height is fixed (h-[60vh]); we need to
-    // watch the CONTENT inside it, which is the flex-col child that
-    // holds the day sections.
     const content = container.firstElementChild;
     if (content) observer.observe(content);
 
-    // Belt-and-suspenders rAF sweep in case ResizeObserver doesn't
-    // fire (e.g., layout was already done before we observed).
-    const raf1 = requestAnimationFrame(() => {
-      requestAnimationFrame(doScroll);
-    });
-
-    // Give up after 2s no matter what — never leave the observer
-    // holding a reference for the life of the component.
+    // Give up after 2s — never leak the observer.
     const t = setTimeout(() => {
       doScroll();
       observer.disconnect();
@@ -384,7 +368,7 @@ export function DayList({
       clearTimeout(t);
       observer.disconnect();
     };
-  }, [initialDate, timelineMode]);
+  }, [initialDate]);
 
   // Sync the date input with the URL's initial date if it changes
   // externally (e.g., the user used the View Switcher to navigate and
