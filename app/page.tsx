@@ -349,7 +349,6 @@ export default async function HomePage({
           chipsNode={
             <CalendarModifierChips
               currentView={view}
-              date={date}
               timelineOn={timelineOn}
               allTagNames={Object.keys(tagMap).sort()}
               activeHiddenTags={activeHiddenTags}
@@ -367,7 +366,6 @@ export default async function HomePage({
           chipsNode={
             <CalendarModifierChips
               currentView={view}
-              date={date}
               timelineOn={timelineOn}
               allTagNames={Object.keys(tagMap).sort()}
               activeHiddenTags={activeHiddenTags}
@@ -385,7 +383,6 @@ export default async function HomePage({
           chipsNode={
             <CalendarModifierChips
               currentView={view}
-              date={date}
               timelineOn={timelineOn}
               allTagNames={Object.keys(tagMap).sort()}
               activeHiddenTags={activeHiddenTags}
@@ -403,7 +400,6 @@ export default async function HomePage({
           chipsNode={
             <CalendarModifierChips
               currentView={view}
-              date={date}
               timelineOn={timelineOn}
               allTagNames={Object.keys(tagMap).sort()}
               activeHiddenTags={activeHiddenTags}
@@ -420,7 +416,6 @@ export default async function HomePage({
           chipsNode={
             <CalendarModifierChips
               currentView={view}
-              date={date}
               timelineOn={timelineOn}
               allTagNames={Object.keys(tagMap).sort()}
               activeHiddenTags={activeHiddenTags}

@@ -388,7 +388,11 @@ export function DayList({
     (dateStr: string) => {
       if (dateStr < windowStart || dateStr > windowEnd) {
         // Out of pre-rendered window — full navigation reload.
-        router.push(`/?view=day&date=${dateStr}`);
+        // Preserve the timeline flag so the Today button doesn't
+        // silently exit Timeline mode when today happens to fall
+        // outside the current initialDate's ±window.
+        const suffix = timelineMode ? "&timeline=1" : "";
+        router.push(`/?view=day&date=${dateStr}${suffix}`);
         return;
       }
       // Use container.scrollTo on the actual scroll element. iOS Safari
@@ -396,7 +400,7 @@ export function DayList({
       // does not always animate / scroll inside an internal container.
       scrollContainerTo(containerRef.current, dateStr, "smooth");
     },
-    [router, windowStart, windowEnd]
+    [router, windowStart, windowEnd, timelineMode]
   );
 
   function shiftDays(delta: number) {

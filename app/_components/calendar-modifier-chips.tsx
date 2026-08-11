@@ -65,23 +65,24 @@ function ClockIcon() {
 
 export function CalendarModifierChips({
   currentView,
-  date,
   timelineOn,
   allTagNames,
   activeHiddenTags,
 }: {
   currentView: "day" | "week" | "month" | "year";
-  date: string;
   timelineOn: boolean;
   allTagNames: string[];
   activeHiddenTags: string[];
 }) {
+  // Toggling Timeline drops the `?date` param intentionally — page.tsx
+  // defaults `date` to today when it's missing, so both directions
+  // land on the current day. Preserving a stale URL `?date` was
+  // causing "Timeline lands on 2027 instead of today" whenever the
+  // user had earlier navigated to a specific date.
   return (
     <div className="flex flex-col items-end gap-1">
       <Link
-        href={`/?view=${currentView}&date=${date}${
-          timelineOn ? "" : "&timeline=1"
-        }`}
+        href={`/?view=${currentView}${timelineOn ? "" : "&timeline=1"}`}
         aria-pressed={timelineOn}
         title="Toggle Timeline overlay"
         className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-medium transition-colors ${
