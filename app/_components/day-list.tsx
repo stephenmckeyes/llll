@@ -316,35 +316,73 @@ export function DayList({
   // container's scrollTop is preserved. But each DaySection's height
   // changes ~4× (timeline adds an 18-hour column). Preserved
   // scrollTop against a re-laid-out container lands the user on the
-  // wrong date — specifically the far end when scrollTop clamps to
-  // max (Feb 6, 2027 = today+180 on our ±90/+180 window), and ~70
-  // days short when the layout grows around the preserved position.
-  // Re-running this effect on toggle re-anchors to today (initialDate).
+  // wrong date. Re-running this effect on toggle re-anchors to
+  // `initialDate` regardless.
   //
-  // rAF-then-rAF-then-setTimeout: after the toggle triggers React's
-  // commit, the browser needs style + layout done before offsetTop
-  // is meaningful. Two rAFs cover most cases; the timeout is a
-  // safety net for very large timeline DOMs on slow devices.
+  // Why ResizeObserver + re-scroll: timeline mode inflates DOM to
+  // ~200,000+ px of hour-grid content across the ±90/+180 window.
+  // Layout streams in over many frames — a fixed rAF/setTimeout
+  // budget was landing scroll BEFORE the container reached its full
+  // scrollHeight, so `scrollContainerTo` clamped to a too-small max.
+  // Instead, keep re-running the scroll every time the container's
+  // scrollHeight changes, until it stops growing (or we hit a 2s
+  // ceiling). Each re-scroll is O(1) — a single scrollTop assignment
+  // — so the cost is trivial and the user never sees intermediate
+  // states because the writes all happen within a rAF.
   useEffect(() => {
     let cancelled = false;
+    const container = containerRef.current;
+    if (!container) return;
+
     const doScroll = () => {
       if (cancelled) return;
-      scrollContainerTo(containerRef.current, initialDate);
+      scrollContainerTo(container, initialDate);
     };
-    // Immediate attempt (usually still races layout on first mount).
+
+    // Immediate attempt so first paint at least attempts an anchor.
     doScroll();
-    // Chain rAF twice so style + layout are done, THEN scroll.
+
+    // Re-scroll on every ResizeObserver tick until layout stabilizes.
+    // A ResizeObserver fires when the observed element's size changes,
+    // which for our scroll container corresponds to content reflow.
+    let stableFrames = 0;
+    let lastHeight = container.scrollHeight;
+    const observer = new ResizeObserver(() => {
+      if (cancelled) return;
+      const h = container.scrollHeight;
+      if (h !== lastHeight) {
+        lastHeight = h;
+        stableFrames = 0;
+        doScroll();
+      } else {
+        stableFrames += 1;
+      }
+    });
+    observer.observe(container);
+    // The scroll container's height is fixed (h-[60vh]); we need to
+    // watch the CONTENT inside it, which is the flex-col child that
+    // holds the day sections.
+    const content = container.firstElementChild;
+    if (content) observer.observe(content);
+
+    // Belt-and-suspenders rAF sweep in case ResizeObserver doesn't
+    // fire (e.g., layout was already done before we observed).
     const raf1 = requestAnimationFrame(() => {
       requestAnimationFrame(doScroll);
     });
-    // Belt-and-suspenders for very large timeline DOMs where two rAFs
-    // still race with layout on slow devices; a later re-scroll snaps
-    // to the correct position once everything's painted.
-    const t = setTimeout(doScroll, 300);
+
+    // Give up after 2s no matter what — never leave the observer
+    // holding a reference for the life of the component.
+    const t = setTimeout(() => {
+      doScroll();
+      observer.disconnect();
+    }, 2000);
+
     return () => {
       cancelled = true;
       cancelAnimationFrame(raf1);
       clearTimeout(t);
+      observer.disconnect();
     };
   }, [initialDate, timelineMode]);
 
