@@ -309,63 +309,110 @@ export function DayList({
   const windowStart = days[0]?.dateStr ?? initialDate;
   const windowEnd = days[days.length - 1]?.dateStr ?? initialDate;
 
-  // Snap the scroll to `initialDate` on mount. Because DayList
-  // gets a `key={timelineMode ? "timeline" : "normal"}` from its
-  // parent, toggling Timeline REMOUNTS this component — so this
-  // effect always sees a fresh container with scrollTop=0.
+  // Snap the scroll to `initialDate` on mount. Because DayList gets
+  // a `key={timelineMode ? "timeline" : "normal"}` from its parent,
+  // toggling Timeline REMOUNTS this component — so this effect
+  // always sees a fresh container with scrollTop=0.
   //
-  // Uses useLayoutEffect (sync after commit, before paint) so we
-  // scroll BEFORE the user sees the wrong position. ResizeObserver
-  // + rAF chain + 2s safety timer catch late-arriving layout
-  // (timeline mode has ~200,000+ px of hour-grid content across
-  // the ±90/+180 window, which streams in over several frames).
+  // Mobile browsers (esp. iOS Safari) commit layout on a different
+  // schedule than desktop: the URL bar hides on scroll and resizes
+  // the viewport, layout is slower for the ~200,000 px of hour-grid
+  // DOM, and programmatic scrollTop sometimes silently doesn't
+  // stick mid-render. Strategy:
+  //
+  //   1. Fire scroll immediately + on rAF + on ResizeObserver ticks
+  //      + at fixed intervals (50/200/500/1000/2000/4000 ms).
+  //   2. After each attempt, VERIFY the target section actually
+  //      landed at container top (within 5 px). If not, retry on
+  //      the next rAF up to 15 attempts.
+  //   3. Observe the CONTAINER's own size too — catches iOS URL bar
+  //      hide/show which resizes the h-[60vh] element.
   useLayoutEffect(() => {
     let cancelled = false;
     const container = containerRef.current;
     if (!container) return;
 
+    let verifyAttempts = 0;
+    const MAX_VERIFY = 15;
+
     const doScroll = () => {
       if (cancelled) return;
       scrollContainerTo(container, initialDate);
+      verifyScroll();
     };
 
-    // Immediate attempt — often works when layout is already done.
+    // After a scroll, verify the target actually landed at the top
+    // (mobile browsers sometimes ignore scrollTop mid-layout). If
+    // not, retry on the next frame.
+    const verifyScroll = () => {
+      if (cancelled) return;
+      if (verifyAttempts >= MAX_VERIFY) return;
+      verifyAttempts += 1;
+      requestAnimationFrame(() => {
+        if (cancelled) return;
+        const target = container.querySelector<HTMLElement>(
+          `#day-${cssEscape(initialDate)}`
+        );
+        if (!target) return;
+        const rect = target.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        const offsetFromTop = rect.top - containerRect.top;
+        if (Math.abs(offsetFromTop) > 5) {
+          // Didn't stick — try again.
+          scrollContainerTo(container, initialDate);
+          verifyScroll();
+        }
+      });
+    };
+
+    // Attempt 1: sync, right after commit.
     doScroll();
 
-    // Re-scroll on rAF; catches the case where layout finishes on
-    // the next frame after commit.
+    // Attempts 2–3: next two frames.
     const raf1 = requestAnimationFrame(() => {
       doScroll();
       requestAnimationFrame(doScroll);
     });
 
-    // Re-scroll on every ResizeObserver tick until layout stabilizes.
-    // We observe `content` (the flex-col wrapper inside the fixed-
-    // height scroll container) because that's the element that
-    // GROWS as sections render — the container itself has a fixed
-    // h-[60vh] so its own size never changes.
-    let lastHeight = container.scrollHeight;
+    // Attempts 4+: watch the content wrapper AND the container
+    // itself for size changes. The container has a fixed h-[60vh]
+    // on desktop but iOS Safari's URL bar hide/show resizes it.
+    let lastContentHeight = container.scrollHeight;
+    let lastContainerHeight = container.clientHeight;
     const observer = new ResizeObserver(() => {
       if (cancelled) return;
       const h = container.scrollHeight;
-      if (h !== lastHeight) {
-        lastHeight = h;
+      const c = container.clientHeight;
+      if (h !== lastContentHeight || c !== lastContainerHeight) {
+        lastContentHeight = h;
+        lastContainerHeight = c;
+        // Reset verify counter on layout change so we get a fresh
+        // batch of retries against the new layout.
+        verifyAttempts = 0;
         doScroll();
       }
     });
+    observer.observe(container);
     const content = container.firstElementChild;
     if (content) observer.observe(content);
 
-    // Give up after 2s — never leak the observer.
-    const t = setTimeout(() => {
-      doScroll();
-      observer.disconnect();
-    }, 2000);
+    // Belt-and-suspenders timer sweep for slow mobile layout.
+    const timers = [50, 200, 500, 1000, 2000, 4000].map((ms) =>
+      setTimeout(() => {
+        verifyAttempts = 0;
+        doScroll();
+      }, ms)
+    );
+
+    // Disconnect the observer after 5s so it doesn't linger for the
+    // component's lifetime.
+    const disconnectTimer = setTimeout(() => observer.disconnect(), 5000);
 
     return () => {
       cancelled = true;
       cancelAnimationFrame(raf1);
-      clearTimeout(t);
+      timers.forEach(clearTimeout);
+      clearTimeout(disconnectTimer);
       observer.disconnect();
     };
   }, [initialDate]);
