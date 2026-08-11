@@ -321,13 +321,29 @@ export function DayList({
   // net for iOS Safari + very large DOMs.
   useEffect(() => {
     let cancelled = false;
+    // scrollIntoView delegates to the browser — it handles nested
+    // scroll containers + still-laying-out DOM more reliably than
+    // hand-rolled getBoundingClientRect math. `block: "start"` aligns
+    // the target section with the top of the nearest scrollable
+    // ancestor, which is DayList's own h-[60vh] container.
     const scroll = () => {
-      if (!cancelled) scrollContainerTo(containerRef.current, initialDate);
+      if (cancelled) return;
+      const container = containerRef.current;
+      if (!container) return;
+      const target = container.querySelector<HTMLElement>(
+        `#day-${cssEscape(initialDate)}`
+      );
+      if (!target) return;
+      target.scrollIntoView({ block: "start", behavior: "auto" });
     };
+    // Chain rAF twice so style + layout are done, THEN scroll.
     const raf1 = requestAnimationFrame(() => {
       requestAnimationFrame(scroll);
     });
-    const t = setTimeout(scroll, 150);
+    // Belt-and-suspenders for very large timeline DOMs where two rAFs
+    // still race with layout on slow devices; a later re-scroll snaps
+    // to the correct position once everything's painted.
+    const t = setTimeout(scroll, 300);
     return () => {
       cancelled = true;
       cancelAnimationFrame(raf1);
