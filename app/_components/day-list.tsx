@@ -1027,13 +1027,14 @@ function TimelineDayBody({
 
   const layout = useMemo(() => layoutEvents(events), [events]);
 
-  // Empty day: render nothing (matches non-timeline DaySection).
-  if (events.length === 0 && untimed.length === 0) return null;
+  // Timeline mode ALWAYS renders the hour rail + grid — even when
+  // there are no timed events — so the user gets a visual signal
+  // that the timeline overlay is on. Days with no untimed items
+  // just show the empty hour column (matches Week view's behavior).
 
   return (
     <div className="flex flex-col gap-2">
-      {events.length > 0 && (
-        <div className="relative flex gap-2">
+      <div className="relative flex gap-2">
           <div className="w-12 shrink-0">
             {Array.from({ length: HOURS_END - HOURS_START }, (_, i) => {
               const hour = HOURS_START + i;
@@ -1117,7 +1118,6 @@ function TimelineDayBody({
             })}
           </div>
         </div>
-      )}
 
       {/* Untimed pending → regular InstanceRow rows (full Complete /
           Missed / Unlabel / Comment controls, same behavior as

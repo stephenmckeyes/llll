@@ -95,12 +95,6 @@ export function TimelineWeek({
     [instances]
   );
 
-  const untimedTotal = useMemo(() => {
-    let n = 0;
-    for (const arr of untimedByDate.values()) n += arr.length;
-    return n;
-  }, [untimedByDate]);
-
   // Drop stale open modal if the underlying instance disappeared.
   if (
     openInstance !== null &&
@@ -116,8 +110,10 @@ export function TimelineWeek({
           {chipsSlot}
         </div>
       )}
-      {/* Grid: hour rail on the left, then 7 narrow day columns. */}
-      <div className="flex gap-1">
+      {/* Grid: hour rail on the left, then 7 narrow day columns.
+          Each column stacks its hour grid + its own untimed list
+          below (per user spec — no aggregate at the end). */}
+      <div className="flex items-start gap-1">
         <div className="w-10 shrink-0 pt-6">
           {Array.from({ length: HOURS_END - HOURS_START }, (_, i) => {
             const hour = HOURS_START + i;
@@ -134,74 +130,20 @@ export function TimelineWeek({
           })}
         </div>
 
-        <div className="flex flex-1 min-w-0 gap-0.5">
+        <div className="flex flex-1 min-w-0 items-start gap-0.5">
           {weekDates.map((date) => (
             <DayColumn
               key={date}
               date={date}
               todayStr={todayStr}
               events={timedByDate.get(date) ?? []}
+              untimed={untimedByDate.get(date) ?? []}
               timeFormat={timeFormat}
               onOpen={setOpenInstance}
             />
           ))}
         </div>
       </div>
-
-      {/* Untimed summary per user spec. Groups by day with a top-line
-          total across the whole week. */}
-      {untimedTotal > 0 && (
-        <section className="flex flex-col gap-2">
-          <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-            Untimed ({untimedTotal} activit
-            {untimedTotal === 1 ? "y" : "ies"} this week)
-          </h3>
-          <ul className="flex flex-col gap-2">
-            {weekDates.map((date) => {
-              const items = untimedByDate.get(date) ?? [];
-              if (items.length === 0) return null;
-              return (
-                <li key={date} className="flex flex-col gap-1">
-                  <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">
-                    {formatWeekdayShort(date)} · {items.length}
-                  </p>
-                  <ul className="flex flex-col gap-1">
-                    {items.map((inst) => {
-                      const isDone = inst.status === "completed";
-                      const isMissed = inst.status === "missed";
-                      return (
-                        <li key={inst.id}>
-                          <button
-                            type="button"
-                            onClick={() => setOpenInstance(inst)}
-                            className={`flex w-full items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 text-left text-sm transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900 ${
-                              isDone ? "opacity-60 line-through" : ""
-                            }`}
-                          >
-                            <span
-                              aria-hidden
-                              className={`h-2 w-2 shrink-0 rounded-full ${
-                                isDone
-                                  ? "bg-emerald-500"
-                                  : isMissed
-                                    ? "bg-red-500"
-                                    : "bg-zinc-400"
-                              }`}
-                            />
-                            <span className="truncate">
-                              {activityName(inst)}
-                            </span>
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      )}
 
       {openInstance && (
         <ActivityModal
@@ -215,26 +157,18 @@ export function TimelineWeek({
   );
 }
 
-function formatWeekdayShort(date: string): string {
-  const [y, m, d] = date.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  return dt.toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
-}
-
 function DayColumn({
   date,
   todayStr,
   events,
+  untimed,
   timeFormat,
   onOpen,
 }: {
   date: string;
   todayStr: string;
   events: WeekEvent[];
+  untimed: DayInstance[];
   timeFormat: import("@/lib/ui/format-time").TimeFormat;
   onOpen: (inst: DayInstance) => void;
 }) {
@@ -326,6 +260,41 @@ function DayColumn({
           );
         })}
       </div>
+      {/* Per-day untimed list under this column's hour grid (per user
+          spec: "keep each day's untimed activities at the end of each
+          day rather than as their own list at the end"). */}
+      {untimed.length > 0 && (
+        <ul className="flex flex-col gap-0.5">
+          {untimed.map((inst) => {
+            const isDone = inst.status === "completed";
+            const isMissed = inst.status === "missed";
+            return (
+              <li key={inst.id}>
+                <button
+                  type="button"
+                  onClick={() => onOpen(inst)}
+                  className={`flex w-full items-center gap-1 rounded border border-zinc-200 bg-white px-1 py-0.5 text-left text-[9px] leading-tight transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900 ${
+                    isDone ? "opacity-60 line-through" : ""
+                  }`}
+                  title={activityName(inst)}
+                >
+                  <span
+                    aria-hidden
+                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                      isDone
+                        ? "bg-emerald-500"
+                        : isMissed
+                          ? "bg-red-500"
+                          : "bg-zinc-400"
+                    }`}
+                  />
+                  <span className="truncate">{activityName(inst)}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }
