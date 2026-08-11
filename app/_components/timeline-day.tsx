@@ -125,19 +125,22 @@ export function TimelineDay({
   const [openInstance, setOpenInstance] = useState<DayInstance | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // Mirror centerDate into local state so the date input stays
-  // controlled (React 19 snapshot pattern — no useEffect).
-  const [dateInput, setDateInput] = useState(centerDate);
-  const [dateInputSnapshot, setDateInputSnapshot] = useState(centerDate);
-  if (dateInputSnapshot !== centerDate) {
-    setDateInputSnapshot(centerDate);
-    setDateInput(centerDate);
+  // Currently-visible day (topmost day section inside the viewport).
+  // Drives both the friendly label above the Today button AND the
+  // date-input value, so the header always describes what the user
+  // is looking at as they scroll. Defaults to centerDate on mount /
+  // when the URL date changes. IntersectionObserver-updated below.
+  const [visibleDate, setVisibleDate] = useState(centerDate);
+  const [visibleSnapshot, setVisibleSnapshot] = useState(centerDate);
+  if (visibleSnapshot !== centerDate) {
+    setVisibleSnapshot(centerDate);
+    setVisibleDate(centerDate);
   }
   function hrefFor(date: string): string {
     return `/?view=day&date=${date}&timeline=1`;
   }
-  function shiftDays(delta: number): string {
-    const [y, m, d] = centerDate.split("-").map(Number);
+  function shiftFromDate(from: string, delta: number): string {
+    const [y, m, d] = from.split("-").map(Number);
     const dt = new Date(y, m - 1, d + delta);
     const yy = dt.getFullYear();
     const mm = String(dt.getMonth() + 1).padStart(2, "0");
@@ -207,9 +210,6 @@ export function TimelineDay({
         `[data-timeline-day="${centerDate}"]`
       );
       if (!el) return;
-      // Scroll the outer scroll container so the target section's
-      // top lines up with the container's top edge, offset by the
-      // sticky chips strip's height.
       const parent = container.parentElement;
       if (!parent) return;
       const parentRect = parent.getBoundingClientRect();
@@ -219,46 +219,112 @@ export function TimelineDay({
     return () => clearTimeout(t);
   }, [centerDate]);
 
+  // Track the TOPMOST visible day section and expose its date via
+  // `visibleDate`. Same pattern DayList uses for its friendly label.
+  // Observing against the outer scroll container (parentElement) so
+  // rootMargin's top edge lines up with the visible area, discounting
+  // the sticky header height. rootMargin's bottom is aggressive so
+  // only sections near the top of the viewport count as "visible."
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const scroller = container.parentElement;
+    if (!scroller) return;
+    const sections = Array.from(
+      container.querySelectorAll<HTMLElement>("[data-timeline-day]")
+    );
+    if (sections.length === 0) return;
+
+    // Track intersection ratios; pick the section closest to the
+    // top with a non-zero intersection.
+    const visibility = new Map<string, number>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const date = entry.target.getAttribute("data-timeline-day");
+          if (!date) continue;
+          if (entry.isIntersecting) {
+            visibility.set(date, entry.intersectionRatio || 0.0001);
+          } else {
+            visibility.delete(date);
+          }
+        }
+        // The section whose top is nearest the scroller's top wins —
+        // that's the "currently reading" day.
+        let best: { date: string; top: number } | null = null;
+        for (const date of visibility.keys()) {
+          const el = container.querySelector<HTMLElement>(
+            `[data-timeline-day="${date}"]`
+          );
+          if (!el) continue;
+          const top =
+            el.getBoundingClientRect().top -
+            scroller.getBoundingClientRect().top;
+          if (best === null || Math.abs(top) < Math.abs(best.top)) {
+            best = { date, top };
+          }
+        }
+        if (best) setVisibleDate(best.date);
+      },
+      {
+        root: scroller,
+        // Trim ~80px from the top to account for the sticky header;
+        // the "top" from the observer's POV is just below the strip.
+        rootMargin: "-80px 0px -50% 0px",
+        threshold: [0, 0.1, 0.5, 1],
+      }
+    );
+    for (const s of sections) observer.observe(s);
+    return () => observer.disconnect();
+  }, [days]);
+
   return (
     <div ref={containerRef} className="flex flex-col gap-3">
-      {/* Sticky top strip — mirrors the [← input → Today Unlabeled
-          chips] row from the non-timeline Day view so header info
-          stays the same whether Timeline is on or off. Per user spec:
-          the "date and Today button" should still be up here. */}
-      <div className="sticky top-0 z-10 -mx-6 flex flex-wrap items-center gap-2 bg-white px-6 py-2 dark:bg-zinc-950">
-        <Link
-          href={hrefFor(shiftDays(-1))}
-          aria-label="Previous day"
-          className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-        >
-          ←
-        </Link>
-        <input
-          type="date"
-          value={dateInput}
-          onChange={(e) => {
-            setDateInput(e.target.value);
-            if (/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) {
-              router.push(hrefFor(e.target.value));
-            }
-          }}
-          className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-        />
-        <Link
-          href={hrefFor(shiftDays(1))}
-          aria-label="Next day"
-          className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-        >
-          →
-        </Link>
-        <Link
-          href={hrefFor(todayStr)}
-          className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
-        >
-          Today
-        </Link>
-        <IncompleteButton info={incompleteInfo} />
-        {chipsSlot && <div className="ml-auto shrink-0">{chipsSlot}</div>}
+      {/* Sticky top strip — mirrors the DayList header exactly:
+          friendly label above, [← input → Today Unlabeled … chips]
+          below. The label + input show `visibleDate` (updated by the
+          IntersectionObserver above), so they describe whatever day
+          the user is currently scrolled to. */}
+      <div className="sticky top-0 z-10 -mx-6 flex flex-col gap-1 bg-white px-6 py-2 dark:bg-zinc-950">
+        <p className="text-center text-sm font-medium text-zinc-700 dark:text-zinc-300">
+          {dateLabelLong(visibleDate)}
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href={hrefFor(shiftFromDate(visibleDate, -1))}
+            aria-label="Previous day"
+            className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+          >
+            ←
+          </Link>
+          <input
+            type="date"
+            value={visibleDate}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+                setVisibleDate(v);
+                router.push(hrefFor(v));
+              }
+            }}
+            className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+          />
+          <Link
+            href={hrefFor(shiftFromDate(visibleDate, 1))}
+            aria-label="Next day"
+            className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+          >
+            →
+          </Link>
+          <Link
+            href={hrefFor(todayStr)}
+            className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
+          >
+            Today
+          </Link>
+          <IncompleteButton info={incompleteInfo} />
+          {chipsSlot && <div className="ml-auto shrink-0">{chipsSlot}</div>}
+        </div>
       </div>
 
       {visibleConflicts.length > 0 && (

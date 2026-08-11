@@ -1049,21 +1049,21 @@ async function TimelineView({
 }) {
   const supabase = await createClient();
 
-  // Fetch a WINDOW around the requested date so Timeline supports
-  // scrolling into nearby days (matches Day view's infinite-scroll
-  // pattern per user spec: "continue to scroll onto previous and
-  // future days"). ±7 days is a middle ground — enough to feel
-  // continuous while keeping DOM manageable (each day renders an
-  // 18-hour column). Reuses the same activity+completion shape
+  // Fetch the SAME ±90 / +180 day window DayList uses so Timeline's
+  // scroll feels identical to the non-timeline Day view — no more
+  // arbitrary 7-day cap. Per user spec: "make the timeline view the
+  // same as the non-timeline view where it can go up and down
+  // indefinitely." Reuses the same activity+completion shape
   // DayView uses so clicking a block opens the ActivityModal.
-  const TIMELINE_WINDOW = 7;
+  const TIMELINE_BACK = 90;
+  const TIMELINE_AHEAD = 180;
   const centerDate = parseDate(date);
   const windowStartStr = format(
-    addDays(centerDate, -TIMELINE_WINDOW),
+    addDays(centerDate, -TIMELINE_BACK),
     "yyyy-MM-dd"
   );
   const windowEndStr = format(
-    addDays(centerDate, TIMELINE_WINDOW),
+    addDays(centerDate, TIMELINE_AHEAD),
     "yyyy-MM-dd"
   );
   const { data } = await supabase
@@ -1156,7 +1156,7 @@ async function TimelineView({
     arr.push(inst);
     byDate.set(inst.scheduled_for, arr);
   }
-  for (let i = -TIMELINE_WINDOW; i <= TIMELINE_WINDOW; i++) {
+  for (let i = -TIMELINE_BACK; i <= TIMELINE_AHEAD; i++) {
     const d = format(addDays(centerDate, i), "yyyy-MM-dd");
     days.push({ date: d, instances: byDate.get(d) ?? [] });
   }
