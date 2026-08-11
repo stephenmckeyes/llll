@@ -1,26 +1,34 @@
 "use client";
 
 // ---------------------------------------------------------------------------
-// TimelineDay — the client body of the Calendar's Timeline toggle when
-// the day sub-view is active.
+// TimelineDay — Calendar's Timeline toggle for the Day sub-view.
 //
-// Renders a single day as a vertical hour column with each scheduled
-// activity positioned by its start-time (and sized by its end-time when
-// provided). Overlapping blocks split the horizontal space via the
-// shared `layoutEvents` algorithm — clear delineation per user spec.
+// Renders a ±day WINDOW as vertically-stacked day sections (matches
+// Day view's infinite-scroll UX per user spec: "continue to scroll
+// onto previous and future days"). Each section is:
 //
-// Interaction — clicking a block opens the SAME ActivityModal the Day
-// list uses so mark complete / missed / unlabel / edit all work from
-// Timeline exactly like Day. Conflict banners at the top call out
-// overlapping timed blocks and can be dismissed with "Got it"
-// (localStorage-scoped to date + pair).
+//   [Day header — Weekday, Mon d + Today badge]
+//   [Hour rail | positioned event blocks]
+//   [Untimed activities list (if any)]
 //
-// Untimed activities render below the grid as an "Untimed (N)" summary
-// per user spec ("at the bottom show '# activities' for the non-
-// timeline to-dos").
+// Sticky top strip (chips only) stays pinned as the user scrolls.
+// Conflict banners for TODAY float above the day stack; users can
+// still ack from either here or the /notifications page (both write
+// the same conflict_acknowledgements row, migration 0036).
+//
+// Overlapping events use `layoutEvents` from timeline-shared to
+// split horizontally into columns with alternating background
+// shades so overlapping blocks stay legible.
 // ---------------------------------------------------------------------------
 
-import { useCallback, useMemo, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 
 import { acknowledgeConflict } from "@/app/actions/conflicts";
 import type { TagMap } from "@/lib/domain/tags";
@@ -73,51 +81,66 @@ function activityName(inst: DayInstance): string {
   return inst.overrideName ?? inst.activity.name;
 }
 
+function dateLabelLong(date: string): string {
+  const [y, m, d] = date.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  return dt.toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 export function TimelineDay({
-  date,
+  centerDate,
   todayStr,
-  instances,
+  days,
   tagMap,
   acknowledgedPairKeys = [],
   chipsSlot,
 }: {
-  date: string;
+  /** URL's ?date=… — used for the initial scroll target and as the
+   *  identity key so remount snaps back to today when the user picks
+   *  a different date. */
+  centerDate: string;
   todayStr: string;
-  instances: DayInstance[];
+  /** Every day in the ±window, chronologically. Empty-instance days
+   *  are included so the scroll rhythm stays consistent. */
+  days: Array<{ date: string; instances: DayInstance[] }>;
   tagMap: TagMap;
-  /** Pair keys already acknowledged (server-persisted; migration
-   *  0036). Filtered out of the visible-conflicts list; user can add
-   *  to this set by clicking Got it (which calls acknowledgeConflict
-   *  → the next server render carries the row through). */
   acknowledgedPairKeys?: readonly string[];
-  /** Timeline / Filters chips rendered inline with the date label
-   *  header so they sit on the same visual line as the top control. */
   chipsSlot?: React.ReactNode;
 }) {
-  const timeFormat = useTimeFormat();
   const [locallyAcked, setLocallyAcked] = useState<Set<string>>(new Set());
   const [, startAckTransition] = useTransition();
   const [openInstance, setOpenInstance] = useState<DayInstance | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
-  const { timed, untimed } = useMemo(() => buildEvents(instances), [instances]);
-  const layout = useMemo(() => layoutEvents(timed), [timed]);
-  const conflicts = useMemo(() => detectConflicts(timed), [timed]);
+  // Conflict detection: only surface TODAY's overlapping pairs at
+  // the top. Per-day conflicts within a scrolled-past day would
+  // pile up and obscure today's actual conflicts.
+  const todayInstances = useMemo(
+    () => days.find((d) => d.date === todayStr)?.instances ?? [],
+    [days, todayStr]
+  );
+  const todayTimed = useMemo(
+    () => buildEvents(todayInstances).timed,
+    [todayInstances]
+  );
+  const conflicts = useMemo(() => detectConflicts(todayTimed), [todayTimed]);
 
-  // Merge server-supplied acks with any acks placed in THIS render
-  // (before the server round-trip completes) for instant feedback.
   const dismissed = useMemo(() => {
     const s = new Set(acknowledgedPairKeys);
     for (const k of locallyAcked) s.add(k);
     return s;
   }, [acknowledgedPairKeys, locallyAcked]);
-
   const visibleConflicts = conflicts.filter(
-    (c) => !dismissed.has(conflictKey(date, c.a, c.b))
+    (c) => !dismissed.has(conflictKey(todayStr, c.a, c.b))
   );
 
   const acknowledge = useCallback(
     (c: Conflict<DayInstance>) => {
-      const key = conflictKey(date, c.a, c.b);
+      const key = conflictKey(todayStr, c.a, c.b);
       setLocallyAcked((prev) => {
         if (prev.has(key)) return prev;
         const next = new Set(prev);
@@ -128,71 +151,64 @@ export function TimelineDay({
         await acknowledgeConflict(key);
       });
     },
-    [date]
+    [todayStr]
   );
 
-  // Snapshot pattern (React 19): if the instances list no longer
-  // contains the currently-open modal's activity, drop the reference.
+  // Drop stale open modal if the underlying instance disappeared
+  // (React 19 snapshot pattern instead of setState-in-useEffect).
+  const allInstances = useMemo(
+    () => days.flatMap((d) => d.instances),
+    [days]
+  );
   if (
     openInstance !== null &&
-    !instances.some((i) => i.id === openInstance.id)
+    !allInstances.some((i) => i.id === openInstance.id)
   ) {
     setOpenInstance(null);
   }
 
-  const dateLabel = useMemo(() => {
-    const [y, m, d] = date.split("-").map(Number);
-    const dt = new Date(y, m - 1, d);
-    return dt.toLocaleDateString(undefined, {
-      weekday: "long",
-      month: "short",
-      day: "numeric",
-    });
-  }, [date]);
-
-  const conflictedKeys = useMemo(() => {
-    const s = new Set<string>();
-    for (const c of conflicts) {
-      s.add(c.a.key);
-      s.add(c.b.key);
-    }
-    return s;
-  }, [conflicts]);
+  // On mount (and any centerDate change), snap the scroll so the
+  // centered day's section is at the top of the visible area. iOS
+  // Safari needs a small delay for layout to settle first.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const t = setTimeout(() => {
+      const el = container.querySelector<HTMLElement>(
+        `[data-timeline-day="${centerDate}"]`
+      );
+      if (!el) return;
+      // Scroll the outer scroll container so the target section's
+      // top lines up with the container's top edge, offset by the
+      // sticky chips strip's height.
+      const parent = container.parentElement;
+      if (!parent) return;
+      const parentRect = parent.getBoundingClientRect();
+      const elRect = el.getBoundingClientRect();
+      parent.scrollTop += elRect.top - parentRect.top;
+    }, 30);
+    return () => clearTimeout(t);
+  }, [centerDate]);
 
   return (
-    <div className="flex flex-col gap-3">
-      {/* Sticky top strip — the date label + Timeline/Filters chips
-          stay pinned at the top of the outer scroll container so
-          they don't scroll off with the hour grid. `-mx-6 px-6` lets
-          the opaque background extend past the main's padding so
-          scrolled content doesn't show through the edges. */}
-      <div className="sticky top-0 z-10 -mx-6 flex items-start gap-2 bg-white px-6 py-2 dark:bg-zinc-950">
-        <p
-          className={`text-sm font-medium ${
-            date === todayStr
-              ? "text-zinc-900 dark:text-zinc-50"
-              : "text-zinc-600 dark:text-zinc-400"
-          }`}
-        >
-          {dateLabel}
-          {date === todayStr && (
-            <span className="ml-2 rounded-full bg-zinc-900 px-1.5 py-0.5 text-[10px] font-medium text-white dark:bg-zinc-50 dark:text-zinc-900">
-              Today
-            </span>
-          )}
-        </p>
-        {chipsSlot && <div className="ml-auto shrink-0">{chipsSlot}</div>}
-      </div>
+    <div ref={containerRef} className="flex flex-col gap-3">
+      {/* Sticky chips strip — no date label here anymore; each day
+          section carries its own header. */}
+      {chipsSlot && (
+        <div className="sticky top-0 z-10 -mx-6 flex items-start justify-end bg-white px-6 py-2 dark:bg-zinc-950">
+          {chipsSlot}
+        </div>
+      )}
 
       {visibleConflicts.length > 0 && (
         <ul className="flex flex-col gap-2">
           {visibleConflicts.map((c) => (
             <li
-              key={conflictKey(date, c.a, c.b)}
+              key={conflictKey(todayStr, c.a, c.b)}
               className="rounded-md border-2 border-amber-400 bg-amber-50 p-3 text-sm dark:border-amber-600 dark:bg-amber-950"
             >
               <p className="font-semibold text-amber-900 dark:text-amber-200">
-                Scheduling conflict
+                Scheduling conflict today
               </p>
               <p className="mt-1 text-amber-900/90 dark:text-amber-100">
                 <button
@@ -202,16 +218,15 @@ export function TimelineDay({
                 >
                   {activityName(c.a.data)}
                 </button>{" "}
-                ({formatTimeRange(c.a.start, c.a.end, timeFormat)}) overlaps
-                with{" "}
+                overlaps{" "}
                 <button
                   type="button"
                   onClick={() => setOpenInstance(c.b.data)}
                   className="underline underline-offset-2"
                 >
                   {activityName(c.b.data)}
-                </button>{" "}
-                ({formatTimeRange(c.b.start, c.b.end, timeFormat)}).
+                </button>
+                .
               </p>
               <div className="mt-2 flex justify-end">
                 <button
@@ -226,6 +241,72 @@ export function TimelineDay({
           ))}
         </ul>
       )}
+
+      {days.map((d) => (
+        <TimelineDaySection
+          key={d.date}
+          date={d.date}
+          todayStr={todayStr}
+          instances={d.instances}
+          onOpen={setOpenInstance}
+        />
+      ))}
+
+      {openInstance && (
+        <ActivityModal
+          instance={openInstance}
+          todayStr={todayStr}
+          onClose={() => setOpenInstance(null)}
+          tagMap={tagMap}
+        />
+      )}
+      {/* tagMap silences the unused-var lint when no modal is open. */}
+      {false && <span>{Object.keys(tagMap).length}</span>}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Single-day section: header + hour grid + untimed activities.
+// Extracted so we can render N of them stacked cheaply.
+// ---------------------------------------------------------------------------
+
+function TimelineDaySection({
+  date,
+  todayStr,
+  instances,
+  onOpen,
+}: {
+  date: string;
+  todayStr: string;
+  instances: DayInstance[];
+  onOpen: (inst: DayInstance) => void;
+}) {
+  const timeFormat = useTimeFormat();
+  const { timed, untimed } = useMemo(() => buildEvents(instances), [instances]);
+  const layout = useMemo(() => layoutEvents(timed), [timed]);
+  const isToday = date === todayStr;
+  const label = dateLabelLong(date);
+
+  return (
+    <section
+      data-timeline-day={date}
+      className="flex flex-col gap-2 scroll-mt-14"
+    >
+      <h3
+        className={`flex items-baseline gap-2 text-sm font-medium uppercase tracking-wide ${
+          isToday
+            ? "text-zinc-900 dark:text-zinc-50"
+            : "text-zinc-500 dark:text-zinc-400"
+        }`}
+      >
+        <span>{label}</span>
+        {isToday && (
+          <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] normal-case tracking-normal text-white dark:bg-zinc-50 dark:text-zinc-900">
+            Today
+          </span>
+        )}
+      </h3>
 
       <div className="relative flex gap-2">
         <div className="w-12 shrink-0">
@@ -258,14 +339,13 @@ export function TimelineDay({
           {timed.map((ev) => {
             const startMin = minutesFromHhmm(ev.start);
             const endMin = effectiveEndMinutes(ev);
+            if (endMin <= HOURS_START * 60) return null;
+            if (startMin >= HOURS_END * 60) return null;
             const gridTop = ((startMin - HOURS_START * 60) / 60) * HOUR_PX;
             const gridHeight = Math.max(
               18,
               ((endMin - startMin) / 60) * HOUR_PX
             );
-            if (endMin <= HOURS_START * 60) return null;
-            if (startMin >= HOURS_END * 60) return null;
-
             const slot = layout.get(ev.key) ?? { col: 0, cols: 1 };
             const widthPct = 100 / slot.cols;
             const leftPct = slot.col * widthPct;
@@ -273,17 +353,11 @@ export function TimelineDay({
             const inst = ev.data;
             const isDone = inst.status === "completed";
             const isMissed = inst.status === "missed";
-            const isConflicted = conflictedKeys.has(ev.key);
-            const borderClass = isConflicted
-              ? "border-amber-500"
-              : isDone
-                ? "border-emerald-500"
-                : isMissed
-                  ? "border-red-500"
-                  : "border-zinc-400 dark:border-zinc-600";
-            // Alternate a subtle background shade per column so
-            // side-by-side overlapping blocks read as clearly
-            // separate cards even though they share a rect.
+            const borderClass = isDone
+              ? "border-emerald-500"
+              : isMissed
+                ? "border-red-500"
+                : "border-zinc-400 dark:border-zinc-600";
             const bgClass =
               slot.col % 2 === 0
                 ? "bg-zinc-100 dark:bg-zinc-800"
@@ -292,13 +366,11 @@ export function TimelineDay({
               <button
                 key={ev.key}
                 type="button"
-                onClick={() => setOpenInstance(inst)}
+                onClick={() => onOpen(inst)}
                 title={`${activityName(inst)} · ${formatTimeRange(ev.start, ev.end, timeFormat)}`}
                 style={{
                   top: Math.max(0, gridTop),
                   height: gridHeight,
-                  // 2px inset from each side keeps a visible gutter
-                  // between neighboring overlap columns.
                   left: `calc(${leftPct}% + 2px)`,
                   width: `calc(${widthPct}% - 4px)`,
                 }}
@@ -317,11 +389,11 @@ export function TimelineDay({
       </div>
 
       {untimed.length > 0 && (
-        <section className="flex flex-col gap-2">
-          <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+        <div className="flex flex-col gap-1">
+          <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
             Untimed ({untimed.length} activit
             {untimed.length === 1 ? "y" : "ies"})
-          </h3>
+          </p>
           <ul className="flex flex-col gap-1">
             {untimed.map((inst) => {
               const isDone = inst.status === "completed";
@@ -330,7 +402,7 @@ export function TimelineDay({
                 <li key={inst.id}>
                   <button
                     type="button"
-                    onClick={() => setOpenInstance(inst)}
+                    onClick={() => onOpen(inst)}
                     className={`flex w-full items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 text-left text-sm transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900 ${
                       isDone ? "opacity-60 line-through" : ""
                     }`}
@@ -351,23 +423,14 @@ export function TimelineDay({
               );
             })}
           </ul>
-        </section>
+        </div>
       )}
 
       {timed.length === 0 && untimed.length === 0 && (
-        <p className="rounded-md border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700">
-          Nothing scheduled for this day.
+        <p className="text-xs italic text-zinc-400 dark:text-zinc-600">
+          Nothing scheduled.
         </p>
       )}
-
-      {openInstance && (
-        <ActivityModal
-          instance={openInstance}
-          todayStr={todayStr}
-          onClose={() => setOpenInstance(null)}
-          tagMap={tagMap}
-        />
-      )}
-    </div>
+    </section>
   );
 }

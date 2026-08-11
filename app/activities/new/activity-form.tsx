@@ -1099,19 +1099,14 @@ export function ActivityForm({
             page's sticky header uses z-30).
           - safe-area-inset-bottom padding respects the iOS home indicator. */}
       <div
-        className="sticky bottom-0 z-20 -mx-6 flex flex-wrap gap-2 border-t border-zinc-200 bg-white px-6 py-3 dark:border-zinc-800 dark:bg-zinc-950"
+        className="sticky bottom-0 z-20 -mx-6 flex flex-wrap justify-end gap-2 border-t border-zinc-200 bg-white px-6 py-3 dark:border-zinc-800 dark:bg-zinc-950"
         style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
       >
-        <button
-          type="submit"
-          disabled={isPending || draftPending}
-          className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
-        >
-          {isPending ? "Adding…" : "Add Activity"}
-        </button>
-        {/* Save-for-later: parks a draft in Total View → Archived without
-            scheduling it. Lets the user capture an idea before it's fully
-            specced. */}
+        {/* Save-for-later on the LEFT of the right-aligned pair so
+            Add Activity — the primary action — sits at the far right
+            edge where the thumb naturally lands (per user spec:
+            "make the add activity and save for later buttons on the
+            right bottom side"). */}
         <button
           type="button"
           onClick={handleSaveForLater}
@@ -1119,6 +1114,13 @@ export function ActivityForm({
           className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
         >
           {draftPending ? "Saving…" : "Save for later"}
+        </button>
+        <button
+          type="submit"
+          disabled={isPending || draftPending}
+          className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
+        >
+          {isPending ? "Adding…" : "Add Activity"}
         </button>
       </div>
     </form>

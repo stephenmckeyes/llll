@@ -1046,10 +1046,23 @@ async function TimelineView({
 }) {
   const supabase = await createClient();
 
-  // Fetch the same activity + completion shape DayView uses so the
-  // Timeline blocks can open the SAME ActivityModal (per user spec:
-  // clicking Timeline blocks should behave like clicking Day rows,
-  // opening the full modal — not routing away to another view).
+  // Fetch a WINDOW around the requested date so Timeline supports
+  // scrolling into nearby days (matches Day view's infinite-scroll
+  // pattern per user spec: "continue to scroll onto previous and
+  // future days"). ±7 days is a middle ground — enough to feel
+  // continuous while keeping DOM manageable (each day renders an
+  // 18-hour column). Reuses the same activity+completion shape
+  // DayView uses so clicking a block opens the ActivityModal.
+  const TIMELINE_WINDOW = 7;
+  const centerDate = parseDate(date);
+  const windowStartStr = format(
+    addDays(centerDate, -TIMELINE_WINDOW),
+    "yyyy-MM-dd"
+  );
+  const windowEndStr = format(
+    addDays(centerDate, TIMELINE_WINDOW),
+    "yyyy-MM-dd"
+  );
   const { data } = await supabase
     .from("activity_instances")
     .select(
@@ -1086,7 +1099,8 @@ async function TimelineView({
       )
     `
     )
-    .eq("scheduled_for", date);
+    .gte("scheduled_for", windowStartStr)
+    .lte("scheduled_for", windowEndStr);
 
   type Row = {
     id: string;
@@ -1128,13 +1142,29 @@ async function TimelineView({
     completionCount: liveCompletionCount(r.completion_instances),
   }));
 
+  // Every date in the window (inclusive both ends) gets a section —
+  // even empty ones, so the scroll rhythm stays consistent and users
+  // don't guess whether a day is "empty" vs. "not fetched." Sorted
+  // chronologically so scrolling down goes future-forward.
+  const days: Array<{ date: string; instances: DayInstance[] }> = [];
+  const byDate = new Map<string, DayInstance[]>();
+  for (const inst of instances) {
+    const arr = byDate.get(inst.scheduled_for) ?? [];
+    arr.push(inst);
+    byDate.set(inst.scheduled_for, arr);
+  }
+  for (let i = -TIMELINE_WINDOW; i <= TIMELINE_WINDOW; i++) {
+    const d = format(addDays(centerDate, i), "yyyy-MM-dd");
+    days.push({ date: d, instances: byDate.get(d) ?? [] });
+  }
+
   const acknowledgedPairKeys = await listAcknowledgedPairKeys();
 
   return (
     <TimelineDay
-      date={date}
+      centerDate={date}
       todayStr={todayStr}
-      instances={instances}
+      days={days}
       tagMap={tagMap}
       acknowledgedPairKeys={acknowledgedPairKeys}
       chipsSlot={chipsNode}
