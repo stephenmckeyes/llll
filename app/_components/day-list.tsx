@@ -308,48 +308,45 @@ export function DayList({
   const windowStart = days[0]?.dateStr ?? initialDate;
   const windowEnd = days[days.length - 1]?.dateStr ?? initialDate;
 
-  // On mount and on every initialDate change, snap the scroll to that
-  // section.
+  // Snap the scroll to `initialDate` on mount, on initialDate change,
+  // AND on timelineMode toggle.
   //
-  // Timeline mode multiplies per-day DOM by ~10× (each day renders an
-  // 18-hour column, ~800px), so a single small setTimeout wasn't
-  // giving the browser enough time to lay everything out before we
-  // read positions via getBoundingClientRect — the scroll would fire
-  // against stale rects and land the user ~90 days back at the top
-  // of the pre-rendered window. Fix: chain rAF twice (guarantees
-  // style + layout is done) AND keep a longer setTimeout as a safety
-  // net for iOS Safari + very large DOMs.
+  // Why timelineMode is in the deps: toggling Timeline via the chip
+  // re-renders the same DayList instance (same key, same ref), so the
+  // container's scrollTop is preserved. But each DaySection's height
+  // changes ~4× (timeline adds an 18-hour column). Preserved
+  // scrollTop against a re-laid-out container lands the user on the
+  // wrong date — specifically the far end when scrollTop clamps to
+  // max (Feb 6, 2027 = today+180 on our ±90/+180 window), and ~70
+  // days short when the layout grows around the preserved position.
+  // Re-running this effect on toggle re-anchors to today (initialDate).
+  //
+  // rAF-then-rAF-then-setTimeout: after the toggle triggers React's
+  // commit, the browser needs style + layout done before offsetTop
+  // is meaningful. Two rAFs cover most cases; the timeout is a
+  // safety net for very large timeline DOMs on slow devices.
   useEffect(() => {
     let cancelled = false;
-    // scrollIntoView delegates to the browser — it handles nested
-    // scroll containers + still-laying-out DOM more reliably than
-    // hand-rolled getBoundingClientRect math. `block: "start"` aligns
-    // the target section with the top of the nearest scrollable
-    // ancestor, which is DayList's own h-[60vh] container.
-    const scroll = () => {
+    const doScroll = () => {
       if (cancelled) return;
-      const container = containerRef.current;
-      if (!container) return;
-      const target = container.querySelector<HTMLElement>(
-        `#day-${cssEscape(initialDate)}`
-      );
-      if (!target) return;
-      target.scrollIntoView({ block: "start", behavior: "auto" });
+      scrollContainerTo(containerRef.current, initialDate);
     };
+    // Immediate attempt (usually still races layout on first mount).
+    doScroll();
     // Chain rAF twice so style + layout are done, THEN scroll.
     const raf1 = requestAnimationFrame(() => {
-      requestAnimationFrame(scroll);
+      requestAnimationFrame(doScroll);
     });
     // Belt-and-suspenders for very large timeline DOMs where two rAFs
     // still race with layout on slow devices; a later re-scroll snaps
     // to the correct position once everything's painted.
-    const t = setTimeout(scroll, 300);
+    const t = setTimeout(doScroll, 300);
     return () => {
       cancelled = true;
       cancelAnimationFrame(raf1);
       clearTimeout(t);
     };
-  }, [initialDate]);
+  }, [initialDate, timelineMode]);
 
   // Sync the date input with the URL's initial date if it changes
   // externally (e.g., the user used the View Switcher to navigate and
