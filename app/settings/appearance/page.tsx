@@ -22,6 +22,7 @@ import { AddActivityDensityPicker } from "./add-activity-density-picker";
 import { CalendarSync } from "./calendar-sync";
 import { DefaultCalendarFilterPicker } from "./default-calendar-filter-picker";
 import { DefaultStreaksRangePicker } from "./default-streaks-range-picker";
+import { DefaultUntimedOpenPicker } from "./default-untimed-open-picker";
 import { TimeFormatPicker } from "./time-format-picker";
 import { ThemeToggle } from "../theme-toggle";
 
@@ -32,7 +33,7 @@ export default async function AppearanceSettingsPage() {
     supabase
       .from("profiles")
       .select(
-        "add_activity_density, time_format, ics_token, default_streaks_range, default_calendar_hidden_tags"
+        "add_activity_density, time_format, ics_token, default_streaks_range, default_calendar_hidden_tags, default_untimed_open"
       )
       .eq("id", user.id)
       .maybeSingle(),
@@ -66,6 +67,10 @@ export default async function AppearanceSettingsPage() {
     : [];
   const allTags: string[] = ((tagRows ?? []) as Array<{ name: string }>).map(
     (r) => r.name
+  );
+  const initialUntimedOpen: boolean = Boolean(
+    (profile as { default_untimed_open?: boolean } | null)
+      ?.default_untimed_open ?? false
   );
 
   return (
@@ -120,6 +125,19 @@ export default async function AppearanceSettingsPage() {
           allTags={allTags}
           initialHidden={initialHiddenTags}
         />
+      </div>
+
+      <hr className="my-2 border-zinc-200 dark:border-zinc-800" />
+
+      <div className="flex flex-col gap-2">
+        <h2 className="text-sm font-medium">Timeline untimed dropdown</h2>
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          Whether each day&rsquo;s &ldquo;Untimed activities&rdquo; block
+          in the Timeline view starts collapsed or expanded. Collapsed
+          hides the row list under a tap-to-expand summary; Expanded
+          shows it inline.
+        </p>
+        <DefaultUntimedOpenPicker initialOpen={initialUntimedOpen} />
       </div>
 
       <hr className="my-2 border-zinc-200 dark:border-zinc-800" />

@@ -99,6 +99,11 @@ export const EXPECTATIONS: ReadonlyArray<MigrationExpectation> = [
     label: "Timeline conflict acknowledgements (cross-device)",
     checks: [{ table: "conflict_acknowledgements", column: "pair_key" }],
   },
+  {
+    migration: "0037_default_untimed_open.sql",
+    label: "Default Timeline untimed-dropdown state",
+    checks: [{ table: "profiles", column: "default_untimed_open" }],
+  },
 ];
 
 export type MissingMigration = {

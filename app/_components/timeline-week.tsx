@@ -77,6 +77,7 @@ export function TimelineWeek({
   instances,
   tagMap,
   chipsSlot,
+  untimedOpenDefault = false,
 }: {
   /** 7 YYYY-MM-DD strings, Monday..Sunday. */
   weekDates: string[];
@@ -86,6 +87,9 @@ export function TimelineWeek({
   /** Timeline / Filters chips rendered at the top of the week grid
    *  so they sit on the same visual line as the top control. */
   chipsSlot?: React.ReactNode;
+  /** Default state for each per-day untimed dropdown (migration
+   *  0037, Settings → Appearance). */
+  untimedOpenDefault?: boolean;
 }) {
   const timeFormat = useTimeFormat();
   const [openInstance, setOpenInstance] = useState<DayInstance | null>(null);
@@ -140,6 +144,7 @@ export function TimelineWeek({
               untimed={untimedByDate.get(date) ?? []}
               timeFormat={timeFormat}
               onOpen={setOpenInstance}
+              untimedOpenDefault={untimedOpenDefault}
             />
           ))}
         </div>
@@ -164,6 +169,7 @@ function DayColumn({
   untimed,
   timeFormat,
   onOpen,
+  untimedOpenDefault,
 }: {
   date: string;
   todayStr: string;
@@ -171,6 +177,7 @@ function DayColumn({
   untimed: DayInstance[];
   timeFormat: import("@/lib/ui/format-time").TimeFormat;
   onOpen: (inst: DayInstance) => void;
+  untimedOpenDefault: boolean;
 }) {
   const layout = useMemo(() => layoutEvents(events), [events]);
   const isToday = date === todayStr;
@@ -260,40 +267,49 @@ function DayColumn({
           );
         })}
       </div>
-      {/* Per-day untimed list under this column's hour grid (per user
-          spec: "keep each day's untimed activities at the end of each
-          day rather than as their own list at the end"). */}
+      {/* Per-day untimed list under this column's hour grid. Now
+          collapsible (migration 0037) — default state comes from the
+          user's setting, falls back to closed. Summary matches the
+          Day-view untimed block visually. */}
       {untimed.length > 0 && (
-        <ul className="flex flex-col gap-0.5">
-          {untimed.map((inst) => {
-            const isDone = inst.status === "completed";
-            const isMissed = inst.status === "missed";
-            return (
-              <li key={inst.id}>
-                <button
-                  type="button"
-                  onClick={() => onOpen(inst)}
-                  className={`flex w-full items-center gap-1 rounded border border-zinc-200 bg-white px-1 py-0.5 text-left text-[9px] leading-tight transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900 ${
-                    isDone ? "opacity-60 line-through" : ""
-                  }`}
-                  title={activityName(inst)}
-                >
-                  <span
-                    aria-hidden
-                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                      isDone
-                        ? "bg-emerald-500"
-                        : isMissed
-                          ? "bg-red-500"
-                          : "bg-zinc-400"
+        <details
+          className="rounded border border-zinc-200 bg-zinc-50 px-1 py-0.5 dark:border-zinc-800 dark:bg-zinc-900"
+          open={untimedOpenDefault}
+        >
+          <summary className="cursor-pointer text-[9px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+            Untimed ({untimed.length})
+          </summary>
+          <ul className="mt-1 flex flex-col gap-0.5">
+            {untimed.map((inst) => {
+              const isDone = inst.status === "completed";
+              const isMissed = inst.status === "missed";
+              return (
+                <li key={inst.id}>
+                  <button
+                    type="button"
+                    onClick={() => onOpen(inst)}
+                    className={`flex w-full items-center gap-1 rounded border border-zinc-200 bg-white px-1 py-0.5 text-left text-[9px] leading-tight transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900 ${
+                      isDone ? "opacity-60 line-through" : ""
                     }`}
-                  />
-                  <span className="truncate">{activityName(inst)}</span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+                    title={activityName(inst)}
+                  >
+                    <span
+                      aria-hidden
+                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                        isDone
+                          ? "bg-emerald-500"
+                          : isMissed
+                            ? "bg-red-500"
+                            : "bg-zinc-400"
+                      }`}
+                    />
+                    <span className="truncate">{activityName(inst)}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </details>
       )}
     </div>
   );

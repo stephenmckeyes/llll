@@ -121,6 +121,11 @@ export const profiles = pgTable("profiles", {
     .array()
     .notNull()
     .default(sql`'{}'::text[]`),
+  // Default state for the Timeline's per-day untimed dropdown
+  // (migration 0037). False = collapsed on load; true = expanded.
+  defaultUntimedOpen: boolean("default_untimed_open")
+    .notNull()
+    .default(false),
 });
 
 // ===========================================================================

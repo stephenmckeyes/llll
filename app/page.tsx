@@ -206,7 +206,7 @@ export default async function HomePage({
     supabase
       .from("profiles")
       .select(
-        "timezone, onboarded_at, add_activity_density, default_streaks_range, default_calendar_hidden_tags"
+        "timezone, onboarded_at, add_activity_density, default_streaks_range, default_calendar_hidden_tags, default_untimed_open"
       )
       .eq("id", user.id)
       .maybeSingle(),
@@ -266,6 +266,10 @@ export default async function HomePage({
   // keys off this single value, threaded into every view + helper.
   const todayStr = todayInTimeZone(profile.timezone ?? "UTC");
   const date = parseDateParam(params.date, todayStr);
+  const untimedOpenDefault: boolean = Boolean(
+    (profile as { default_untimed_open?: boolean } | null)
+      ?.default_untimed_open ?? false
+  );
 
   // Add Activity form density — shapes every "Add / Edit activity"
   // surface that renders under this page. Threaded into DayView (and
@@ -341,6 +345,7 @@ export default async function HomePage({
           density={addActivityDensity}
           hiddenTags={hiddenTagsSet}
           timelineMode={timelineOn}
+          untimedOpenDefault={untimedOpenDefault}
           chipsNode={
             <CalendarModifierChips
               currentView={view}
@@ -376,6 +381,7 @@ export default async function HomePage({
           todayStr={todayStr}
           tagMap={tagMap}
           hiddenTags={hiddenTagsSet}
+          untimedOpenDefault={untimedOpenDefault}
           chipsNode={
             <CalendarModifierChips
               currentView={view}
@@ -802,6 +808,7 @@ async function DayView({
   hiddenTags,
   chipsNode,
   timelineMode = false,
+  untimedOpenDefault = false,
 }: {
   startDate: string;
   todayStr: string;
@@ -815,6 +822,9 @@ async function DayView({
    *  the per-day middle render (hour grid for timed pending + row
    *  list for untimed) via its own `timelineMode` prop. */
   timelineMode?: boolean;
+  /** Default open/collapsed state for the per-day untimed dropdown
+   *  inside Timeline mode (migration 0037). */
+  untimedOpenDefault?: boolean;
 }) {
   const supabase = await createClient();
 
@@ -1011,6 +1021,7 @@ async function DayView({
       density={density}
       chipsSlot={chipsNode}
       timelineMode={timelineMode}
+      untimedOpenDefault={untimedOpenDefault}
       acknowledgedPairKeys={acknowledgedPairKeys}
     />
   );
@@ -1030,12 +1041,14 @@ async function TimelineWeekView({
   tagMap,
   hiddenTags,
   chipsNode,
+  untimedOpenDefault = false,
 }: {
   weekDate: string;
   todayStr: string;
   tagMap: TagMap;
   hiddenTags: ReadonlySet<string>;
   chipsNode?: React.ReactNode;
+  untimedOpenDefault?: boolean;
 }) {
   const supabase = await createClient();
 
@@ -1136,6 +1149,7 @@ async function TimelineWeekView({
       instances={instances}
       tagMap={tagMap}
       chipsSlot={chipsNode}
+      untimedOpenDefault={untimedOpenDefault}
     />
   );
 }

@@ -159,6 +159,7 @@ export function DayList({
   chipsSlot,
   timelineMode = false,
   acknowledgedPairKeys = [],
+  untimedOpenDefault = false,
 }: {
   initialDate: string;
   completedByDate: Record<string, DayMarkedItem[]>;
@@ -184,6 +185,9 @@ export function DayList({
    *  container. Client-side ack calls the acknowledgeConflict
    *  server action. */
   acknowledgedPairKeys?: readonly string[];
+  /** Migration 0037. Whether the per-day untimed dropdown starts
+   *  expanded. Only meaningful in timelineMode. */
+  untimedOpenDefault?: boolean;
   /** Read-only friend view: same infinite-scroll day list, but no
    *  Complete/Missed/Unlabel/+Add and no mutation modals — rows show a
    *  static status. Default false keeps the dashboard unchanged. */
@@ -305,14 +309,30 @@ export function DayList({
   const windowEnd = days[days.length - 1]?.dateStr ?? initialDate;
 
   // On mount and on every initialDate change, snap the scroll to that
-  // section. The setTimeout is critical on iOS Safari — without it, the
-  // call fires before layout is fully painted and silently does nothing,
-  // which made "the calendar isn't defaulted to today" feel broken.
+  // section.
+  //
+  // Timeline mode multiplies per-day DOM by ~10× (each day renders an
+  // 18-hour column, ~800px), so a single small setTimeout wasn't
+  // giving the browser enough time to lay everything out before we
+  // read positions via getBoundingClientRect — the scroll would fire
+  // against stale rects and land the user ~90 days back at the top
+  // of the pre-rendered window. Fix: chain rAF twice (guarantees
+  // style + layout is done) AND keep a longer setTimeout as a safety
+  // net for iOS Safari + very large DOMs.
   useEffect(() => {
-    const t = setTimeout(() => {
-      scrollContainerTo(containerRef.current, initialDate);
-    }, 30);
-    return () => clearTimeout(t);
+    let cancelled = false;
+    const scroll = () => {
+      if (!cancelled) scrollContainerTo(containerRef.current, initialDate);
+    };
+    const raf1 = requestAnimationFrame(() => {
+      requestAnimationFrame(scroll);
+    });
+    const t = setTimeout(scroll, 150);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf1);
+      clearTimeout(t);
+    };
   }, [initialDate]);
 
   // Sync the date input with the URL's initial date if it changes
@@ -499,6 +519,7 @@ export function DayList({
               readOnly={readOnly}
               tagMap={tagMap}
               timelineMode={timelineMode}
+              untimedOpenDefault={untimedOpenDefault}
             />
           ))}
         </div>
@@ -546,6 +567,7 @@ function DaySection({
   readOnly,
   tagMap,
   timelineMode = false,
+  untimedOpenDefault = false,
 }: {
   date: Date;
   dateStr: string;
@@ -566,6 +588,9 @@ function DaySection({
    *  untimed remainder. Completed/Missed dropdown, day header, and
    *  the InlineAdd row are unchanged. */
   timelineMode?: boolean;
+  /** Initial open/closed state for the untimed <details> (only used
+   *  in timelineMode). Migration 0037 → Settings picker. */
+  untimedOpenDefault?: boolean;
 }) {
   const isToday = dateStr === todayStr;
   const totalMarked = completed.length + missed.length;
@@ -630,6 +655,7 @@ function DaySection({
           readOnly={readOnly}
           tagMap={tagMap}
           todayStr={todayStr}
+          untimedOpenDefault={untimedOpenDefault}
         />
       ) : (
         visible.length > 0 && (
@@ -989,6 +1015,7 @@ function TimelineDayBody({
   readOnly,
   tagMap,
   todayStr,
+  untimedOpenDefault,
 }: {
   visible: DayInstance[];
   resolved: ReadonlyMap<string, "completed" | "missed">;
@@ -998,6 +1025,7 @@ function TimelineDayBody({
   readOnly: boolean;
   tagMap: TagMap;
   todayStr: string;
+  untimedOpenDefault: boolean;
 }) {
   const timeFormat = useTimeFormat();
 
@@ -1119,27 +1147,35 @@ function TimelineDayBody({
           </div>
         </div>
 
-      {/* Untimed pending → regular InstanceRow rows (full Complete /
-          Missed / Unlabel / Comment controls, same behavior as
-          non-timeline mode). Per user spec: "The only change is that
-          the activities with a time associated with them are inputted
-          on the timeline." */}
+      {/* Untimed pending → collapsible <details>. Default open state
+          comes from profiles.default_untimed_open (migration 0037,
+          user-configurable via Settings → Appearance). Rows inside
+          are the SAME InstanceRow used in non-timeline mode, so
+          Complete / Missed / Unlabel / Comment all still work. */}
       {untimed.length > 0 && (
-        <div className="flex flex-col gap-2">
-          {untimed.map((inst) => (
-            <InstanceRow
-              key={inst.id}
-              instance={inst}
-              todayStr={todayStr}
-              onOpen={() => onOpenInstance(inst)}
-              resolution={resolved.get(inst.id) ?? null}
-              onResolve={onResolve}
-              onUnresolve={onUnresolve}
-              readOnly={readOnly}
-              tagMap={tagMap}
-            />
-          ))}
-        </div>
+        <details
+          className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900"
+          open={untimedOpenDefault}
+        >
+          <summary className="cursor-pointer text-xs font-medium uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
+            Untimed ({untimed.length})
+          </summary>
+          <div className="mt-2 flex flex-col gap-2">
+            {untimed.map((inst) => (
+              <InstanceRow
+                key={inst.id}
+                instance={inst}
+                todayStr={todayStr}
+                onOpen={() => onOpenInstance(inst)}
+                resolution={resolved.get(inst.id) ?? null}
+                onResolve={onResolve}
+                onUnresolve={onUnresolve}
+                readOnly={readOnly}
+                tagMap={tagMap}
+              />
+            ))}
+          </div>
+        </details>
       )}
     </div>
   );

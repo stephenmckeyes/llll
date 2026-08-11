@@ -124,6 +124,26 @@ export async function updateDefaultStreaksRange(
   return { ok: true };
 }
 
+export async function updateDefaultUntimedOpen(
+  open: boolean
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({ default_untimed_open: Boolean(open) })
+    .eq("id", user.id);
+  if (error) return { error: error.message };
+
+  revalidatePath("/settings/appearance");
+  revalidatePath("/");
+  return { ok: true };
+}
+
 export async function updateDefaultCalendarHiddenTags(
   tags: string[]
 ): Promise<{ error: string } | { ok: true }> {
