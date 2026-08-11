@@ -705,6 +705,21 @@ function DaySection({
       id={`day-${dateStr}`}
       data-date={dateStr}
       className="flex flex-col gap-2 scroll-mt-2"
+      // content-visibility skips layout + paint for offscreen sections.
+      // Critical for iOS Safari where laying out 271 × ~900 px of
+      // hour-grid DOM takes 3+ seconds and races with the initial-
+      // scroll effect — with content-visibility, only ~5 visible
+      // sections need real layout, so scrollHeight stabilizes fast
+      // and scrollTop assignments stick reliably.
+      //
+      // contain-intrinsic-size gives the browser a placeholder height
+      // to reserve so scroll geometry is correct for offscreen items.
+      // Timeline mode: ~900 px per day (hour grid + header + dropdown).
+      // Normal mode: ~200 px (no hour grid).
+      style={{
+        contentVisibility: "auto",
+        containIntrinsicSize: `0 ${timelineMode ? 900 : 200}px`,
+      }}
     >
       <h2 className="flex items-baseline gap-2 text-sm font-medium uppercase tracking-wide text-zinc-500">
         <span>{formatDateMedium(date)}</span>
