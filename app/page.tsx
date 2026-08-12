@@ -772,8 +772,13 @@ function ViewSwitcher({
 // extend across the page's p-6 so scrolled content doesn't leak
 // through behind the navigator.
 function StickyNav({ children }: { children: React.ReactNode }) {
+  // top-0 (was top-[5rem]) since the app-shell refactor moved the
+  // DashboardHeader OUT of the scroll container. The sticky nav now
+  // sits at the top of its own scroll region — a 5rem offset was
+  // leaving the nav parked mid-page and covering the top row of
+  // Week view banners.
   return (
-    <div className="sticky top-[5rem] z-20 -mx-6 bg-white px-6 py-2 dark:bg-zinc-950">
+    <div className="sticky top-0 z-20 -mx-6 bg-white px-6 py-2 dark:bg-zinc-950">
       {children}
     </div>
   );
