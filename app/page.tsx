@@ -350,7 +350,7 @@ export default async function HomePage({
         <DashboardHeader userEmail={user.email ?? ""} />
       </header>
 
-      <div className="flex flex-1 min-h-0 flex-col overflow-y-auto">
+      <div className="flex flex-1 min-h-0 flex-col overflow-y-auto overflow-x-hidden">
       {view === "day" && (
         <DayView
           startDate={date}
@@ -769,9 +769,12 @@ function ViewSwitcher({
 // Navigator at `top-[5rem]` (80px) makes the two abut exactly. If
 // either nav row's vertical padding changes, retune these together.
 //
-// The negative horizontal margin + matching padding lets the bg
-// extend across the page's p-6 so scrolled content doesn't leak
-// through behind the navigator.
+// No negative horizontal margin: the scroll container this sticks in
+// (the app-shell scroll region) already spans exactly the content
+// width, and the page's px-6 gutter lives OUTSIDE it, so a `-mx-6`
+// bleed only made this header 48px wider than the container — which
+// forced a horizontal scrollbar on Week view. Full-width bg (no
+// -mx-6 / px-6) covers the scrolled content just fine.
 function StickyNav({ children }: { children: React.ReactNode }) {
   // top-0 (was top-[5rem]) since the app-shell refactor moved the
   // DashboardHeader OUT of the scroll container. The sticky nav now
@@ -779,7 +782,7 @@ function StickyNav({ children }: { children: React.ReactNode }) {
   // leaving the nav parked mid-page and covering the top row of
   // Week view banners.
   return (
-    <div className="sticky top-0 z-20 -mx-6 bg-white px-6 py-2 dark:bg-zinc-950">
+    <div className="sticky top-0 z-20 bg-white py-2 dark:bg-zinc-950">
       {children}
     </div>
   );

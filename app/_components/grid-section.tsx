@@ -133,11 +133,12 @@ export function GridSection({
   return (
     <>
       {/* Inline sticky wrapper — matches the StickyNav used by the
-          other (non-grid) views in page.tsx. Sticks at top-[5rem]
-          (just below the ViewSwitcher's ~80px-tall sticky band),
-          with bg + horizontal bleed via -mx-6 / px-6 so scrolled
-          content doesn't leak through. */}
-      <div className="sticky top-[5rem] z-20 -mx-6 bg-white px-6 py-2 dark:bg-zinc-950">
+          other (non-grid) views in page.tsx. No -mx-6 / px-6 bleed:
+          that made this header 48px wider than the scroll container
+          and forced a horizontal scrollbar on the Streaks view. The
+          GridTable is w-full/table-fixed so it fits the width without
+          any sideways scroll. */}
+      <div className="sticky top-[5rem] z-20 bg-white py-2 dark:bg-zinc-950">
         <GridNavigator
           range={range}
           currentDate={currentDate}
