@@ -3,6 +3,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 
+import { createClient } from "@/lib/supabase/server";
+
 import { BottomNav } from "./_components/bottom-nav";
 import { MigrationCheckBanner } from "./_components/migration-check-banner";
 
@@ -75,11 +77,19 @@ const themeScript = `
 })();
 `;
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Only signed-in users get the bottom nav. Signed-out surfaces — the
+  // marketing landing at "/", plus /login and /signup — shouldn't show
+  // the Schedule/Levels/etc. tabs (they'd just bounce to /login anyway).
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
   return (
     <html
       lang="en"
@@ -118,7 +128,7 @@ export default function RootLayout({
         {/* Persistent 5-slot bottom nav. Now an in-flow flex sibling
             (was fixed before the app-shell refactor) so it always sits
             at the bottom of the viewport without needing a spacer. */}
-        <BottomNav />
+        {user && <BottomNav />}
         {/* Vercel Speed Insights — collects real-user Core Web Vitals
             (load time, interaction latency) from production visitors.
             This is the data we use to find what's actually slow. No-op
