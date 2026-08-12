@@ -17,10 +17,12 @@
 
 import { type RhythmKind } from "./activity-form-fields";
 
+// py trimmed ~1/3 from the earlier px-2 py-2 / px-1.5 py-1 pair so
+// the Off / On row doesn't dominate the form's vertical rhythm.
 const BUTTON_BASE =
-  "flex-1 touch-manipulation rounded-md border px-2 py-2 text-center text-sm font-medium transition-colors";
+  "flex-1 touch-manipulation rounded-md border px-2 py-1 text-center text-sm font-medium transition-colors";
 const BUTTON_BASE_COMPACT =
-  "flex-1 touch-manipulation rounded-md border px-1.5 py-1 text-center text-xs font-medium transition-colors";
+  "flex-1 touch-manipulation rounded-md border px-1.5 py-0.5 text-center text-xs font-medium transition-colors";
 const SELECTED =
   "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900";
 const UNSELECTED =

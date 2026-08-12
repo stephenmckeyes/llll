@@ -645,14 +645,25 @@ export function ActivityFormFields({
           End date" sub-labels — the browser's native date-picker chrome
           is enough context, and the two inputs sit side-by-side. */}
       {isCompact ? (
+        // Floating "(start)" / "(end)" watermarks sit at the top-left
+        // of each date input in a tiny font. Absolute-positioned so
+        // they take zero layout height — the box itself doesn't grow.
+        // `<input type=date>` doesn't honor the native placeholder
+        // attribute, so an overlay is the only way to hint at which
+        // input is which without stacking a label above them.
         <div className="mt-2 grid grid-cols-2 gap-2">
-          <input
-            type="date"
-            name="startDate"
-            required
-            defaultValue={blankStartDate ? "" : initialValues.start_date}
-            className={inputClasses}
-          />
+          <div className="relative">
+            <input
+              type="date"
+              name="startDate"
+              required
+              defaultValue={blankStartDate ? "" : initialValues.start_date}
+              className={inputClasses}
+            />
+            <span className="pointer-events-none absolute left-1 top-0 text-[8px] font-medium uppercase text-zinc-400 dark:text-zinc-500">
+              (start)
+            </span>
+          </div>
           {/* End-date + tiny "no end date" clear button. Native
               <input type="date"> on iOS has no built-in clear, so the
               explicit × makes going back to "indefinite" obvious. */}
@@ -665,6 +676,9 @@ export function ActivityFormFields({
               disabled={isSingle}
               className={`${inputClasses} pr-7`}
             />
+            <span className="pointer-events-none absolute left-1 top-0 text-[8px] font-medium uppercase text-zinc-400 dark:text-zinc-500">
+              (end)
+            </span>
             {!isSingle && (
               <button
                 type="button"
@@ -788,15 +802,15 @@ export function ActivityFormFields({
       )}
 
       {/* --- Show on Streaks (moved to bottom per user request) ------ */}
-      {/* Compact drops the "Streaks" legend and the fieldset border;
-          just the two toggle buttons on one row. Internal column stays
-          `track_on_grid` — only the label is renamed. */}
+      {/* Vertical padding on the Off/On buttons trimmed ~1/3 (compact
+          py-1 → py-0.5, normal py-2 → py-1) so the row doesn't
+          dominate the form's vertical rhythm. */}
       {isCompact ? (
         <div className="mt-2 flex gap-1">
           <button
             type="button"
             onClick={() => setTrackOnGrid(false)}
-            className={`flex-1 touch-manipulation rounded-md border px-2 py-1 text-center text-xs font-medium transition-colors ${
+            className={`flex-1 touch-manipulation rounded-md border px-2 py-0.5 text-center text-xs font-medium transition-colors ${
               !trackOnGrid
                 ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
                 : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
@@ -807,7 +821,7 @@ export function ActivityFormFields({
           <button
             type="button"
             onClick={() => setTrackOnGrid(true)}
-            className={`flex-1 touch-manipulation rounded-md border px-2 py-1 text-center text-xs font-medium transition-colors ${
+            className={`flex-1 touch-manipulation rounded-md border px-2 py-0.5 text-center text-xs font-medium transition-colors ${
               trackOnGrid
                 ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
                 : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
@@ -823,7 +837,7 @@ export function ActivityFormFields({
             <button
               type="button"
               onClick={() => setTrackOnGrid(false)}
-              className={`flex-1 touch-manipulation rounded-md border px-3 py-2 text-center text-sm font-medium transition-colors ${
+              className={`flex-1 touch-manipulation rounded-md border px-3 py-1 text-center text-sm font-medium transition-colors ${
                 !trackOnGrid
                   ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
                   : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
@@ -834,7 +848,7 @@ export function ActivityFormFields({
             <button
               type="button"
               onClick={() => setTrackOnGrid(true)}
-              className={`flex-1 touch-manipulation rounded-md border px-3 py-2 text-center text-sm font-medium transition-colors ${
+              className={`flex-1 touch-manipulation rounded-md border px-3 py-1 text-center text-sm font-medium transition-colors ${
                 trackOnGrid
                   ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
                   : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
@@ -855,41 +869,17 @@ export function ActivityFormFields({
           is independent — a pinned single still archives, but stays
           surfaced under the Pinned filter. */}
       {isCompact ? (
-        <div className="mt-2 flex gap-1">
-          <button
-            type="button"
-            onClick={() => setPinned(false)}
-            aria-pressed={!pinned}
-            className={`flex-1 touch-manipulation rounded-md border px-2 py-1 text-center text-xs font-medium transition-colors ${
-              !pinned
-                ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
-                : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-            }`}
-          >
-            Not pinned
-          </button>
-          <button
-            type="button"
-            onClick={() => setPinned(true)}
-            aria-pressed={pinned}
-            className={`flex-1 touch-manipulation rounded-md border px-2 py-1 text-center text-xs font-medium transition-colors ${
-              pinned
-                ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
-                : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-            }`}
-          >
-            📌 Pinned
-          </button>
-        </div>
-      ) : (
-        <fieldset className="mt-4 flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
-          <legend className="px-1 text-sm font-medium">Pinned</legend>
-          <div className="flex gap-2">
+        // Vertical padding on the toggle row trimmed ~1/3 (py-1 → py-0.5).
+        // Tiny caption below the pair explains what Pinned does — kept
+        // to text-[10px] so the whole block still fits in one row of
+        // vertical rhythm.
+        <div className="mt-2 flex flex-col gap-0.5">
+          <div className="flex gap-1">
             <button
               type="button"
               onClick={() => setPinned(false)}
               aria-pressed={!pinned}
-              className={`flex-1 touch-manipulation rounded-md border px-3 py-2 text-center text-sm font-medium transition-colors ${
+              className={`flex-1 touch-manipulation rounded-md border px-2 py-0.5 text-center text-xs font-medium transition-colors ${
                 !pinned
                   ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
                   : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
@@ -901,7 +891,40 @@ export function ActivityFormFields({
               type="button"
               onClick={() => setPinned(true)}
               aria-pressed={pinned}
-              className={`flex-1 touch-manipulation rounded-md border px-3 py-2 text-center text-sm font-medium transition-colors ${
+              className={`flex-1 touch-manipulation rounded-md border px-2 py-0.5 text-center text-xs font-medium transition-colors ${
+                pinned
+                  ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                  : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+              }`}
+            >
+              📌 Pinned
+            </button>
+          </div>
+          <p className="text-[10px] leading-tight text-zinc-500 dark:text-zinc-400">
+            Pinned = surfaced on Total list by default.
+          </p>
+        </div>
+      ) : (
+        <fieldset className="mt-4 flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+          <legend className="px-1 text-sm font-medium">Pinned</legend>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setPinned(false)}
+              aria-pressed={!pinned}
+              className={`flex-1 touch-manipulation rounded-md border px-3 py-1 text-center text-sm font-medium transition-colors ${
+                !pinned
+                  ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                  : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+              }`}
+            >
+              Not pinned
+            </button>
+            <button
+              type="button"
+              onClick={() => setPinned(true)}
+              aria-pressed={pinned}
+              className={`flex-1 touch-manipulation rounded-md border px-3 py-1 text-center text-sm font-medium transition-colors ${
                 pinned
                   ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
                   : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
