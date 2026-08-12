@@ -18,11 +18,22 @@ import { TabPending } from "@/app/_components/tab-pending";
 
 export type FriendsTabKind = "friends" | "groups" | "clubs" | "guilds";
 
-export function FriendsTabs({ active }: { active: FriendsTabKind }) {
+export function FriendsTabs({
+  active,
+  bottomAnchored = false,
+}: {
+  active: FriendsTabKind;
+  /** When true, render the strip inverted left→right (flex-row-reverse)
+   *  so the visual order is [Guilds, Clubs, Groups, Friends] — matching
+   *  the bottom-anchored Schedule tabs. DOM order stays Friends-first. */
+  bottomAnchored?: boolean;
+}) {
   return (
     <nav
-      aria-label="Friends section"
-      className="flex gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800"
+      aria-label="Community section"
+      className={`flex gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800 ${
+        bottomAnchored ? "flex-row-reverse" : ""
+      }`}
     >
       <FriendsTab label="Friends" href="/friends" active={active === "friends"} />
       <FriendsTab label="Groups" href="/friends/groups" active={active === "groups"} />

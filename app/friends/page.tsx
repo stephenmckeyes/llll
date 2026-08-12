@@ -12,10 +12,8 @@ import { getSocialOverview, type SocialEntry } from "@/app/actions/friends";
 import { getUnreadCounts } from "@/app/actions/messages";
 import { requireOnboardedUser } from "@/lib/auth/require-onboarded-user";
 
-import { PendingLink } from "@/app/_components/pending-link";
-
 import { AskForHelpButton } from "./ask-for-help";
-import { FriendsTabs } from "./_friends-tabs";
+import { CommunityShell } from "./_community-shell";
 import { FriendRowButton, FriendSearch } from "./friends-client";
 import { FriendsList } from "./friends-list";
 
@@ -71,19 +69,7 @@ export default async function FriendsPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-8 bg-white p-6 dark:bg-zinc-950">
-      <header className="flex flex-col gap-1">
-        <PendingLink
-          href="/"
-          className="inline-flex items-center text-sm text-zinc-500 underline-offset-2 hover:underline"
-        >
-          ← Mission
-        </PendingLink>
-        <h1 className="text-3xl font-semibold tracking-tight">Friends</h1>
-      </header>
-
-      <FriendsTabs active="friends" />
-
+    <CommunityShell active="friends">
       <AskForHelpButton
         friends={friendOptions}
         activities={myActivities}
@@ -140,6 +126,6 @@ export default async function FriendsPage() {
           </ul>
         </section>
       )}
-    </main>
+    </CommunityShell>
   );
 }

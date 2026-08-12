@@ -2,7 +2,7 @@
 
 // ---------------------------------------------------------------------------
 // BottomNav — persistent 5-slot bottom banner:
-//   Settings · Friends · [Schedule] · Levels · Adventures
+//   Settings · Community · [Schedule] · Levels · Adventures
 //                        ^ bigger, centered — represents Calendar / Streaks /
 //                          Total (all live at "/" via SectionTabs).
 //
@@ -40,7 +40,7 @@ const ITEMS: NavItem[] = [
     icon: <GearIcon />,
   },
   {
-    label: "Friends",
+    label: "Community",
     href: "/friends",
     match: (p) => p.startsWith("/friends"),
     icon: <FriendsIcon />,
@@ -98,8 +98,9 @@ export function BottomNav() {
 }
 
 function NavButton({ item, active }: { item: NavItem; active: boolean }) {
+  // py-3 (was py-2) makes each button ~15% taller per user request.
   const base =
-    "group relative flex w-full flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium transition-colors touch-manipulation";
+    "group relative flex w-full flex-col items-center justify-center gap-0.5 py-3 text-[10px] font-medium transition-colors touch-manipulation";
   const size = item.primary ? "text-[11px]" : "text-[10px]";
   const color = active
     ? "text-zinc-900 dark:text-zinc-50"
