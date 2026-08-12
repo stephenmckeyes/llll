@@ -162,6 +162,7 @@ export function DayList({
   timelineMode = false,
   acknowledgedPairKeys = [],
   untimedOpenDefault = false,
+  fillHeight = false,
 }: {
   initialDate: string;
   completedByDate: Record<string, DayMarkedItem[]>;
@@ -190,6 +191,11 @@ export function DayList({
   /** Migration 0037. Whether the per-day untimed dropdown starts
    *  expanded. Only meaningful in timelineMode. */
   untimedOpenDefault?: boolean;
+  /** Dashboard-only: fill the bounded parent (root flex-1, list flex-1)
+   *  so the date navigator pins and only the day list scrolls. Left
+   *  false for the friend view, which renders DayList inside an
+   *  unbounded (min-h-svh) page and needs the fixed h-[60vh]/68vh. */
+  fillHeight?: boolean;
   /** Read-only friend view: same infinite-scroll day list, but no
    *  Complete/Missed/Unlabel/+Add and no mutation modals — rows show a
    *  static status. Default false keeps the dashboard unchanged. */
@@ -574,7 +580,7 @@ export function DayList({
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className={`flex flex-col gap-3 ${fillHeight ? "min-h-0 flex-1" : ""}`}>
       {/* Date navigator — pinned above the scroll container, never
           scrolls.
           Two rows: friendly label on top, [← date-input → Today] below.
@@ -588,7 +594,7 @@ export function DayList({
           up to Month view for the currently-viewed day — same target as
           tapping the Month section tab, but without losing your place.
           Mirrors iPhone Calendar's drill-up affordance. */}
-      <div className="relative flex flex-col gap-1">
+      <div className="relative flex shrink-0 flex-col gap-1">
         {!readOnly && (
           <Link
             href={`/?view=month&date=${currentDate}`}
@@ -680,7 +686,12 @@ export function DayList({
         // enter-timeline; July 10 → Dec 24 on exit). We want the
         // initial-scroll effect to place the user, not the browser.
         style={{ overflowAnchor: "none" }}
-        className="h-[60vh] min-h-[20rem] touch-pan-y overflow-y-auto overflow-x-hidden overscroll-contain pr-2 sm:h-[68vh]"
+        // fillHeight (dashboard): fill the bounded parent so only this
+        // list scrolls. Otherwise (friend view, unbounded page): keep
+        // the explicit h-[60vh]/68vh — see the note above re: iOS.
+        className={`touch-pan-y overflow-y-auto overflow-x-hidden overscroll-contain pr-2 ${
+          fillHeight ? "min-h-0 flex-1" : "h-[60vh] min-h-[20rem] sm:h-[68vh]"
+        }`}
       >
         <div className="flex flex-col gap-4">
           {timelineMode && (

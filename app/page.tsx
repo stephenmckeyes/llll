@@ -1050,6 +1050,7 @@ async function DayView({
       timelineMode={timelineMode}
       untimedOpenDefault={untimedOpenDefault}
       acknowledgedPairKeys={acknowledgedPairKeys}
+      fillHeight
     />
   );
 }
