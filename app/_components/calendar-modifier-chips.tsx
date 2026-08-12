@@ -14,6 +14,8 @@
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 
+import { setTimelinePref } from "@/app/actions/timeline-pref";
+
 import { CalendarFiltersButton } from "./calendar-filters-button";
 import { TabPending } from "./tab-pending";
 
@@ -78,26 +80,19 @@ export function CalendarModifierChips({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
-  // Toggle Timeline while PRESERVING the day the user is currently
-  // viewing. DayList mirrors `currentDate` back into the URL via
-  // history.replaceState, so window.location.search always has the
-  // right `?date`. Reading at click time lets us build an href that
-  // keeps the same day across the toggle.
+  // Timeline is a sticky user preference (server-side cookie), so a
+  // toggle here persists across ALL calendar navigation — switching
+  // to Month view and then drilling back into a specific day keeps
+  // Timeline on. Cookie is the single source of truth; page.tsx
+  // reads it on every request and threads timelineOn into the view.
   //
-  // Previously we dropped `?date` on toggle to work around a bug
-  // where an old URL date (e.g. Jan 4, 2027) shipped the user to
-  // the wrong day; now that DayList keeps the URL in sync with what
-  // the user is actually looking at, preserving is the correct move.
+  // On toggle: write cookie, then router.refresh() to re-render the
+  // current URL with the new preference. No URL manipulation needed.
   const onToggle = () => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const date = params.get("date");
-    const query = new URLSearchParams();
-    query.set("view", currentView);
-    if (date) query.set("date", date);
-    if (!timelineOn) query.set("timeline", "1");
-    const href = `/?${query.toString()}`;
-    startTransition(() => router.push(href));
+    startTransition(async () => {
+      await setTimelinePref(!timelineOn);
+      router.refresh();
+    });
   };
 
   return (

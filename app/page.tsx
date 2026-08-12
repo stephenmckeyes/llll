@@ -73,6 +73,7 @@ import {
 import { MonthList } from "./_components/month-list";
 import { YearList } from "./_components/year-list";
 import type { MonthBannersByDate, YearCountsByDate } from "./actions/calendar-fetch";
+import { readTimelinePref } from "./actions/timeline-pref";
 import { SectionTabs } from "./_components/section-tabs";
 import { TagDotRow } from "./_components/tag-chip";
 import { TabPending } from "./_components/tab-pending";
@@ -194,7 +195,13 @@ export default async function HomePage({
   if (isColdOpen && hasStaleParams) redirect("/");
 
   const view = parseView(params.view);
-  const timelineOn = parseTimelineFlag(params.view, params.timeline);
+  // Timeline is a sticky user preference (cookie), NOT a per-URL flag.
+  // Turning it on in Day view keeps it on when the user drills into
+  // Month or clicks a specific day. URL param `&timeline=1` still
+  // wins if present (for the legacy `/?view=timeline` shape and for
+  // shareable links), otherwise fall back to the cookie.
+  const urlTimeline = parseTimelineFlag(params.view, params.timeline);
+  const timelineOn = urlTimeline || (await readTimelinePref());
 
   // Note: `range` gets its FINAL value AFTER the profile fetch below,
   // because when the URL doesn't carry ?range we fall back to the
