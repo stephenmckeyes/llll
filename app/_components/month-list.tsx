@@ -391,7 +391,7 @@ export function MonthList({
       <div className="relative flex shrink-0 flex-col gap-1">
         <Link
           href={`/?view=year&date=${currentMonth}`}
-          className="absolute left-0 top-0 shrink-0 text-base font-semibold leading-tight text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+          className="absolute left-0 top-0 shrink-0 rounded-md border border-zinc-300 px-2 py-0.5 text-sm font-semibold leading-tight text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-200"
           aria-label={`Go to year view of ${currentMonth.slice(0, 4)}`}
         >
           ‹ {currentMonth.slice(0, 4)}
