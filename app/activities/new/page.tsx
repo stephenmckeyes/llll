@@ -50,8 +50,12 @@ export default async function NewActivityPage() {
     ? rawDensity
     : "compact";
 
+  // No bottom padding on <main>: the form's sticky action bar (bottom-0)
+  // must sit flush against the BottomNav. A pb offsets its sticky anchor
+  // up and leaves a gap where scrolled content (the calendar preview)
+  // shows through.
   return (
-    <main className="mx-auto flex h-full w-full max-w-xl flex-col gap-6 overflow-y-auto p-6">
+    <main className="mx-auto flex h-full w-full max-w-xl flex-col gap-6 overflow-y-auto px-6 pt-6">
       <header className="space-y-1">
         <Link
           href="/"
