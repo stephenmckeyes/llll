@@ -72,8 +72,8 @@ export default async function ChatPage({
   );
 
   return (
-    <main className="mx-auto flex h-svh w-full max-w-2xl flex-col bg-white p-4 dark:bg-zinc-950">
-      <header className="flex flex-col gap-1 border-b border-zinc-200 pb-3 dark:border-zinc-800">
+    <main className="mx-auto flex h-full w-full max-w-2xl flex-col bg-white p-4 dark:bg-zinc-950">
+      <header className="flex shrink-0 flex-col gap-1 border-b border-zinc-200 pb-3 dark:border-zinc-800">
         <PendingLink
           href="/friends"
           className="inline-flex items-center text-sm text-zinc-500 underline-offset-2 hover:underline"
