@@ -75,6 +75,7 @@ import { YearList } from "./_components/year-list";
 import type { MonthBannersByDate, YearCountsByDate } from "./actions/calendar-fetch";
 import { readTimelinePref } from "./actions/timeline-pref";
 import { SectionTabs } from "./_components/section-tabs";
+import { SwipeNav } from "./_components/swipe-nav";
 import { TagDotRow } from "./_components/tag-chip";
 import { TabPending } from "./_components/tab-pending";
 import { listAcknowledgedPairKeys } from "./actions/conflicts";
@@ -1302,8 +1303,14 @@ async function WeekView({
       {/* Same 7-column grid on every viewport. Cells are intentionally
           compact (p-1, gap-1, tiny banner text) so that on a narrow
           viewport (phone width ≈ 320–430px) each cell still fits ~5+
-          characters of activity name per line of the banner. */}
-      <div className="grid grid-cols-7 gap-1">
+          characters of activity name per line of the banner.
+          Wrapped in SwipeNav so a horizontal swipe flips weeks (swipe
+          left = next, right = previous), same targets as the arrows. */}
+      <SwipeNav
+        prevHref={`/?view=week&date=${prevDate}`}
+        nextHref={`/?view=week&date=${nextDate}`}
+        className="grid grid-cols-7 gap-1"
+      >
         {days.map((d) => (
           <Link
             key={d.dateStr}
@@ -1335,7 +1342,7 @@ async function WeekView({
             )}
           </Link>
         ))}
-      </div>
+      </SwipeNav>
     </div>
   );
 }

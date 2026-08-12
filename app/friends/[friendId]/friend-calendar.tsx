@@ -22,6 +22,7 @@ import { useMemo, useState } from "react";
 import type { SharedActivity, SharedInstance } from "@/app/actions/sharing";
 import { DayList as DashboardDayList } from "@/app/_components/day-list";
 import { IncompleteButton } from "@/app/_components/incomplete-button";
+import { SwipeNav } from "@/app/_components/swipe-nav";
 import {
   isPastDuePending,
   unlabeledLandingDay,
@@ -223,7 +224,11 @@ function WeekGrid({
         onNext={() => setRefDate(format(addDays(weekStart, 7), "yyyy-MM-dd"))}
         onToday={() => setRefDate(todayStr)}
       />
-      <div className="grid grid-cols-7 gap-1">
+      <SwipeNav
+        onPrev={() => setRefDate(format(addDays(weekStart, -7), "yyyy-MM-dd"))}
+        onNext={() => setRefDate(format(addDays(weekStart, 7), "yyyy-MM-dd"))}
+        className="grid grid-cols-7 gap-1"
+      >
         {days.map((d) => (
           <div
             key={d.dateStr}
@@ -289,7 +294,7 @@ function WeekGrid({
             )}
           </div>
         ))}
-      </div>
+      </SwipeNav>
     </div>
   );
 }
