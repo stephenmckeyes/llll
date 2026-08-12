@@ -1016,41 +1016,20 @@ export function ActivityForm({
         name="rolloverChangeRhythm"
         value={rolloverChangeRhythm ? "true" : "false"}
       />
-      {isCompact ? (
-        <div className="flex flex-wrap items-center gap-3 text-xs">
-          <label className="flex cursor-pointer items-center gap-1.5">
-            <input
-              type="checkbox"
-              checked={rolloverMissedDays}
-              onChange={(e) => setRolloverMissedDays(e.target.checked)}
-              className="h-4 w-4 accent-zinc-900 dark:accent-zinc-50"
-            />
-            Rollover missed
-          </label>
-          {!isSingleLike && (
-            <label className="flex cursor-pointer items-center gap-1.5">
-              <input
-                type="checkbox"
-                checked={rolloverChangeRhythm}
-                onChange={(e) => setRolloverChangeRhythm(e.target.checked)}
-                className="h-4 w-4 accent-zinc-900 dark:accent-zinc-50"
-              />
-              Change rhythm
-            </label>
-          )}
-        </div>
-      ) : (
-        <RolloverButtonGroup
-          // The standalone form's RhythmKind adds "selection" (Pick Dates)
-          // which the shared type doesn't; treat it as single for the
-          // button-group purposes since it too is a fixed set of dates.
-          rhythmKind={isSelection ? "single" : rhythmKind}
-          rolloverMissedDays={rolloverMissedDays}
-          setRolloverMissedDays={setRolloverMissedDays}
-          rolloverChangeRhythm={rolloverChangeRhythm}
-          setRolloverChangeRhythm={setRolloverChangeRhythm}
-        />
-      )}
+      {/* Yes/No highlighted buttons in both densities (matching the
+          Streaks and Pinned toggles) — the compact prop just shrinks
+          them. Replaces the old bare checkboxes. */}
+      <RolloverButtonGroup
+        // The standalone form's RhythmKind adds "selection" (Pick Dates)
+        // which the shared type doesn't; treat it as single for the
+        // button-group purposes since it too is a fixed set of dates.
+        rhythmKind={isSelection ? "single" : rhythmKind}
+        rolloverMissedDays={rolloverMissedDays}
+        setRolloverMissedDays={setRolloverMissedDays}
+        rolloverChangeRhythm={rolloverChangeRhythm}
+        setRolloverChangeRhythm={setRolloverChangeRhythm}
+        compact={isCompact}
+      />
 
       {/* --- Calendar preview ------------------------------------------ */}
       {/* Kept visible in every density. Compact CSS in globals.css
