@@ -44,7 +44,7 @@ type Group = { key: string; label: string; items: ActivityRow[] };
 export function TotalView({
   activities,
   tagMap,
-  density = "default",
+  density = "compact",
   completedByActivityId = {},
 }: {
   activities: ActivityRow[];

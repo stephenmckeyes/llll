@@ -64,7 +64,7 @@ export function ActivityModal({
   todayStr,
   onClose,
   tagMap,
-  density = "default",
+  density = "compact",
 }: {
   instance: DayInstance;
   todayStr: string;
@@ -445,7 +445,7 @@ function EditActivityBody({
   tagMap,
   onDone,
   onCancel,
-  density = "default",
+  density = "compact",
 }: {
   instance: DayInstance;
   tagMap: TagMap;
@@ -625,7 +625,7 @@ export function EditRhythmBody({
   tagMap,
   onDone,
   onCancel,
-  density = "default",
+  density = "compact",
 }: {
   activity: DayInstance["activity"];
   tagMap: TagMap;

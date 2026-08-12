@@ -70,7 +70,7 @@ export function ActivityDetailModal({
   activity,
   tagMap,
   onClose,
-  density = "default",
+  density = "compact",
 }: {
   activity: ActivityRow;
   tagMap: TagMap;
@@ -190,9 +190,9 @@ export function ActivityDetailModal({
                     isSingle
                   )}
                 </DetailRow>
-                <DetailRow label="Priority">
-                  {PRIORITY_LABEL[activity.priority] ?? "Medium"}
-                </DetailRow>
+                {/* Priority row hidden per user spec (soft removal —
+                    the column still exists so we can bring it back
+                    later; nothing UI-facing reads it right now). */}
               </dl>
 
               {/* Streaks-display toggle — everything is tracked regardless. */}

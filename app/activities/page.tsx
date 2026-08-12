@@ -120,7 +120,7 @@ export default async function ActivitiesPage() {
   )
     ? ((profile as { add_activity_density: AddActivityDensity })
         .add_activity_density)
-    : "default";
+    : "compact";
 
   return (
     <main className="mx-auto flex h-full w-full max-w-2xl flex-col bg-white px-6 pt-6 dark:bg-zinc-950">

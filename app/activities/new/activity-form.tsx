@@ -60,7 +60,7 @@ const DEFAULT_TIME = "12:00";
 
 export function ActivityForm({
   initialTagMap,
-  density = "default",
+  density = "compact",
 }: {
   initialTagMap: TagMap;
   /** Visual density (migration 0023 / /settings/appearance). Falls back

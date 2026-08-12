@@ -9,14 +9,18 @@
 // outside the allowed set.
 // ---------------------------------------------------------------------------
 
-export const ADD_ACTIVITY_DENSITIES = ["default", "compact", "expanded"] as const;
+// The density picker was removed per user spec — the form now always
+// renders in the (previously-optional) Compact style. Enum kept as a
+// single-element union so any existing callers still type-check, and
+// the DB column `profiles.add_activity_density` is preserved in case
+// we want to re-introduce a picker later. Legacy DB values ("default"
+// / "expanded") fail `isAddActivityDensity` and fall back to
+// "compact" wherever they're read.
+export const ADD_ACTIVITY_DENSITIES = ["compact"] as const;
 export type AddActivityDensity = (typeof ADD_ACTIVITY_DENSITIES)[number];
 
 export function isAddActivityDensity(v: unknown): v is AddActivityDensity {
-  return (
-    typeof v === "string" &&
-    (ADD_ACTIVITY_DENSITIES as readonly string[]).includes(v)
-  );
+  return v === "compact";
 }
 
 /**
@@ -42,14 +46,6 @@ export type DensityPreset = {
 };
 
 export const DENSITY_PRESETS: Record<AddActivityDensity, DensityPreset> = {
-  default: {
-    formGap: "gap-6",
-    sectionMt: "mt-4",
-    fieldsetPad: "p-3",
-    fieldGap: "gap-2",
-    inputPy: "py-2",
-    showHelper: true,
-  },
   compact: {
     formGap: "gap-2",
     sectionMt: "mt-2",
@@ -58,30 +54,14 @@ export const DENSITY_PRESETS: Record<AddActivityDensity, DensityPreset> = {
     inputPy: "py-1.5",
     showHelper: false,
   },
-  expanded: {
-    formGap: "gap-8",
-    sectionMt: "mt-6",
-    fieldsetPad: "p-4",
-    fieldGap: "gap-3",
-    inputPy: "py-2.5",
-    showHelper: true,
-  },
 };
 
 export const DENSITY_LABELS: Record<
   AddActivityDensity,
   { title: string; hint: string }
 > = {
-  default: {
-    title: "Default",
-    hint: "The current layout.",
-  },
   compact: {
     title: "Compact",
     hint: "Tighter gaps, smaller padding, minimal helper text — fits more on one screen.",
-  },
-  expanded: {
-    title: "Expanded",
-    hint: "Roomier spacing between sections. Best on desktop.",
   },
 };

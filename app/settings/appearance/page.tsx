@@ -10,15 +10,10 @@ import { SettingsShell } from "../_settings-shell";
 import { requireOnboardedUser } from "@/lib/auth/require-onboarded-user";
 
 import {
-  isAddActivityDensity,
-  type AddActivityDensity,
-} from "@/lib/domain/add-activity-density";
-import {
   isStreaksRange,
   type StreaksRange,
 } from "@/lib/domain/streaks-range";
 import { isTimeFormat, type TimeFormat } from "@/lib/ui/format-time";
-import { AddActivityDensityPicker } from "./add-activity-density-picker";
 import { CalendarSync } from "./calendar-sync";
 import { DefaultCalendarFilterPicker } from "./default-calendar-filter-picker";
 import { DefaultStreaksRangePicker } from "./default-streaks-range-picker";
@@ -33,7 +28,7 @@ export default async function AppearanceSettingsPage() {
     supabase
       .from("profiles")
       .select(
-        "add_activity_density, time_format, ics_token, default_streaks_range, default_calendar_hidden_tags, default_untimed_open"
+        "time_format, ics_token, default_streaks_range, default_calendar_hidden_tags, default_untimed_open"
       )
       .eq("id", user.id)
       .maybeSingle(),
@@ -43,12 +38,6 @@ export default async function AppearanceSettingsPage() {
       .is("archived_at", null)
       .order("name", { ascending: true }),
   ]);
-  const rawDensity =
-    (profile as { add_activity_density?: string } | null)?.add_activity_density ??
-    "default";
-  const initialDensity: AddActivityDensity = isAddActivityDensity(rawDensity)
-    ? rawDensity
-    : "default";
   const rawFormat =
     (profile as { time_format?: string } | null)?.time_format ?? "auto";
   const initialFormat: TimeFormat = isTimeFormat(rawFormat)
@@ -151,17 +140,12 @@ export default async function AppearanceSettingsPage() {
         <CalendarSync initialToken={initialIcsToken} />
       </div>
 
-      <hr className="my-2 border-zinc-200 dark:border-zinc-800" />
-
-      <div className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium">Add Activity form</h2>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Choose how tightly the Add Activity form packs its fields.
-          Same options either way — Compact minimizes scrolling on
-          phones, Expanded gives more breathing room on desktop.
-        </p>
-        <AddActivityDensityPicker initialDensity={initialDensity} />
-      </div>
+      {/* Add Activity density picker removed per user spec — the form
+          now always renders in the (previously-optional) Compact
+          style. The DB column `profiles.add_activity_density` is
+          left in place in case we want to re-introduce the picker
+          later; every reader falls back to "compact" unconditionally
+          now. */}
     </SettingsShell>
   );
 }

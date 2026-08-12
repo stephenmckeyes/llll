@@ -48,7 +48,7 @@ export default async function NewActivityPage() {
     "default";
   const density: AddActivityDensity = isAddActivityDensity(rawDensity)
     ? rawDensity
-    : "default";
+    : "compact";
 
   return (
     <main className="mx-auto flex h-full w-full max-w-xl flex-col gap-6 overflow-y-auto p-6">

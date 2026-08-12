@@ -296,7 +296,7 @@ export default async function HomePage({
     profile.add_activity_density
   )
     ? profile.add_activity_density
-    : "default";
+    : "compact";
 
   // Top up the user's activity_instances out to ~1 year ahead of whatever
   // they're looking at. Indefinite rhythms (no end_date) only get N days
@@ -1356,12 +1356,8 @@ function WeekBanner({
 }) {
   if (!item.activities) return null;
   const isCompleted = item.status === "completed";
-  const priorityDotColor =
-    item.activities.priority === 1
-      ? "bg-red-500"
-      : item.activities.priority === 2
-        ? "bg-amber-500"
-        : "bg-zinc-400";
+  // Priority dot removed per user spec (soft removal — the column
+  // stays, nothing UI-facing reads it right now).
   const firstTime = item.activities.scheduled_times?.[0];
   const tagNames = item.tags ?? [];
 
@@ -1376,11 +1372,6 @@ function WeekBanner({
         tagNames.length > 0 ? ` · ${tagNames.join(", ")}` : ""
       }`}
     >
-      <span
-        aria-hidden
-        title="priority"
-        className={`mt-1 inline-block h-1 w-1 shrink-0 rounded-full ${priorityDotColor}`}
-      />
       <span className="min-w-0 flex-1">
         <span className="block line-clamp-2 break-words font-medium">
           {item.activities.name}

@@ -157,7 +157,7 @@ export function DayList({
   readOnly = false,
   onReadOnlyOpen,
   onUnlabeledJump,
-  density = "default",
+  density = "compact",
   chipsSlot,
   timelineMode = false,
   acknowledgedPairKeys = [],

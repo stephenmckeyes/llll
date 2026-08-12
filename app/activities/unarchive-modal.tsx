@@ -41,7 +41,7 @@ export function UnarchiveModal({
   activity,
   tagMap,
   onClose,
-  density = "default",
+  density = "compact",
 }: {
   /** All fields ActivityFormFields needs, plus the row id for the
    *  unarchive path. */

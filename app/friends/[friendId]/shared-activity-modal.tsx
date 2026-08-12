@@ -134,9 +134,7 @@ export function SharedActivityModal({
             <DetailRow label={isSingle ? "Scheduled" : "Range"}>
               {summarizeDateRange(share.startDate, share.endDate, isSingle)}
             </DetailRow>
-            <DetailRow label="Priority">
-              {PRIORITY_LABEL[share.priority] ?? "Medium"}
-            </DetailRow>
+            {/* Priority row hidden per user spec (soft removal). */}
           </dl>
 
           <div className="mt-5">

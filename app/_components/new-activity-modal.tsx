@@ -54,7 +54,7 @@ export function NewActivityModal({
   startDate,
   tagMap,
   onClose,
-  density = "default",
+  density = "compact",
 }: {
   /** YYYY-MM-DD the user tapped — prefills the form's Start date. */
   startDate: string;

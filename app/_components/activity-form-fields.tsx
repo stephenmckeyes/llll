@@ -108,7 +108,7 @@ export function ActivityFormFields({
   initialValues,
   blankStartDate = false,
   tagMap,
-  density = "default",
+  density = "compact",
 }: {
   initialValues: ActivityFormInitial;
   /** When true, render the start-date input empty regardless of the
