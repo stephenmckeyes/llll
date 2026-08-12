@@ -592,7 +592,7 @@ export function DayList({
         {!readOnly && (
           <Link
             href={`/?view=month&date=${currentDate}`}
-            className="absolute left-0 top-0 shrink-0 text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+            className="absolute left-0 top-0 shrink-0 text-base font-semibold leading-tight text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
             aria-label={`Go to month view of ${format(parseLocalDate(currentDate), "MMMM yyyy")}`}
           >
             ‹ {format(parseLocalDate(currentDate), "MMM yyyy")}

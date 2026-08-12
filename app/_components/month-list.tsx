@@ -381,14 +381,17 @@ export function MonthList({
   };
 
   return (
-    <div className="flex flex-col gap-3">
+    // Fill the outer scroll region: header stays put (shrink-0) and only
+    // the month body below scrolls. min-h-0 lets the flex child shrink
+    // below its content height so the inner overflow-y-auto engages.
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
       {/* Header row — drill-up "< YYYY" on the left, friendly month
           label centered. Mirrors DayList's layout so the two feel
           identical. */}
-      <div className="relative flex flex-col gap-1">
+      <div className="relative flex shrink-0 flex-col gap-1">
         <Link
           href={`/?view=year&date=${currentMonth}`}
-          className="absolute left-0 top-0 shrink-0 text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+          className="absolute left-0 top-0 shrink-0 text-base font-semibold leading-tight text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
           aria-label={`Go to year view of ${currentMonth.slice(0, 4)}`}
         >
           ‹ {currentMonth.slice(0, 4)}
@@ -396,7 +399,10 @@ export function MonthList({
         <p className="text-center text-sm font-medium text-zinc-700 dark:text-zinc-300">
           {format(parseLocalDate(currentMonth), "MMMM yyyy")}
         </p>
-        <div className="flex items-center gap-2">
+        {/* flex-wrap so a narrow phone wraps the controls onto a second
+            line instead of spilling sideways (which would spawn a
+            horizontal scrollbar on the outer page). */}
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => jumpMonths(-1)}
@@ -450,7 +456,7 @@ export function MonthList({
         ref={containerRef}
         data-month-scroll="true"
         style={{ overflowAnchor: "none" }}
-        className="h-[60vh] min-h-[20rem] touch-pan-y overflow-y-auto overflow-x-hidden overscroll-contain pr-2 sm:h-[68vh]"
+        className="min-h-0 flex-1 touch-pan-y overflow-y-auto overflow-x-hidden overscroll-contain pr-2"
       >
         <div className="flex flex-col gap-4">
           {months.map((m) => (

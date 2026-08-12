@@ -320,13 +320,18 @@ export function YearList({
   };
 
   return (
-    <div className="flex flex-col gap-3">
+    // Fill the outer scroll region: header stays put (shrink-0) and only
+    // the year body below scrolls (see MonthList for the rationale).
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
       {/* Header — no drill-up for Year (no parent view). */}
-      <div className="relative flex flex-col gap-1">
+      <div className="relative flex shrink-0 flex-col gap-1">
         <p className="text-center text-sm font-medium text-zinc-700 dark:text-zinc-300">
           {currentYear.slice(0, 4)}
         </p>
-        <div className="flex items-center gap-2">
+        {/* flex-wrap so a narrow phone wraps the controls onto a second
+            line instead of spilling sideways (which would spawn a
+            horizontal scrollbar on the outer page). */}
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => jumpYears(-1)}
@@ -379,7 +384,7 @@ export function YearList({
         ref={containerRef}
         data-year-scroll="true"
         style={{ overflowAnchor: "none" }}
-        className="h-[60vh] min-h-[20rem] touch-pan-y overflow-y-auto overflow-x-hidden overscroll-contain pr-2 sm:h-[68vh]"
+        className="min-h-0 flex-1 touch-pan-y overflow-y-auto overflow-x-hidden overscroll-contain pr-2"
       >
         <div className="flex flex-col gap-6">
           {years.map((y) => (

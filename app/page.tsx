@@ -1487,18 +1487,21 @@ async function MonthView({
     initialData[key] = byDate;
   }
 
+  // No StickyNav wrapper here (unlike Week): MonthList fills the outer
+  // scroll region itself — its header is a shrink-0 flex row and only its
+  // inner month body scrolls. Wrapping it in a fixed-height sticky block
+  // was what made the whole view overflow the page and scroll the date /
+  // "‹ YYYY" controls off the top.
   return (
-    <StickyNav>
-      <MonthList
-        initialMonth={initialMonthKey}
-        initialData={initialData}
-        todayStr={todayStr}
-        incompleteInfo={incompleteInfo}
-        tagMap={tagMap}
-        hiddenTags={Array.from(hiddenTags)}
-        chipsSlot={chipsNode}
-      />
-    </StickyNav>
+    <MonthList
+      initialMonth={initialMonthKey}
+      initialData={initialData}
+      todayStr={todayStr}
+      incompleteInfo={incompleteInfo}
+      tagMap={tagMap}
+      hiddenTags={Array.from(hiddenTags)}
+      chipsSlot={chipsNode}
+    />
   );
 }
 
@@ -1569,17 +1572,17 @@ async function YearView({
     else if (r.status === "completed") c.completed += 1;
   }
 
+  // No StickyNav wrapper (see MonthView) — YearList fills the outer
+  // scroll region and only its inner year body scrolls.
   return (
-    <StickyNav>
-      <YearList
-        initialYear={initialYearKey}
-        initialData={initialData}
-        todayStr={todayStr}
-        incompleteInfo={incompleteInfo}
-        hiddenTags={Array.from(hiddenTags)}
-        chipsSlot={chipsNode}
-      />
-    </StickyNav>
+    <YearList
+      initialYear={initialYearKey}
+      initialData={initialData}
+      todayStr={todayStr}
+      incompleteInfo={incompleteInfo}
+      hiddenTags={Array.from(hiddenTags)}
+      chipsSlot={chipsNode}
+    />
   );
 }
 
