@@ -22,7 +22,7 @@ import { type RhythmKind } from "./activity-form-fields";
 const BUTTON_BASE =
   "flex-1 touch-manipulation rounded-md border px-2 py-1 text-center text-sm font-medium transition-colors";
 const BUTTON_BASE_COMPACT =
-  "flex-1 touch-manipulation rounded-md border px-1.5 py-0.5 text-center text-xs font-medium transition-colors";
+  "flex-1 touch-manipulation rounded-md border px-2 py-1 text-center text-xs font-medium transition-colors";
 const SELECTED =
   "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900";
 const UNSELECTED =
@@ -32,50 +32,41 @@ const UNSELECTED =
 // warns against creating components in the render body — state would
 // reset every render).
 function YesNo({
-  label,
   on,
   setOn,
   compact,
-  yesLabel = "Yes",
-  noLabel = "No",
+  offLabel,
+  onLabel,
 }: {
-  label: string;
   on: boolean;
   setOn: (v: boolean) => void;
   compact: boolean;
-  yesLabel?: string;
-  noLabel?: string;
+  /** Text on the OFF (left) button. */
+  offLabel: string;
+  /** Text on the ON (right) button. */
+  onLabel: string;
 }) {
   const buttonBase = compact ? BUTTON_BASE_COMPACT : BUTTON_BASE;
+  // No left-hand label: the two buttons span the full width and their own
+  // text carries the meaning — matching the Streaks / Pinned toggles.
   return (
-    <div className={compact ? "flex items-center gap-2" : "flex flex-col gap-1"}>
-      <span
-        className={
-          compact
-            ? "shrink-0 text-xs text-zinc-600 dark:text-zinc-400"
-            : "text-sm font-medium"
-        }
+    <div className="flex gap-1.5">
+      <button
+        type="button"
+        onClick={() => setOn(false)}
+        aria-pressed={!on}
+        className={`${buttonBase} ${!on ? SELECTED : UNSELECTED}`}
       >
-        {label}
-      </span>
-      <div className="flex flex-1 gap-1.5">
-        <button
-          type="button"
-          onClick={() => setOn(false)}
-          aria-pressed={!on}
-          className={`${buttonBase} ${!on ? SELECTED : UNSELECTED}`}
-        >
-          {noLabel}
-        </button>
-        <button
-          type="button"
-          onClick={() => setOn(true)}
-          aria-pressed={on}
-          className={`${buttonBase} ${on ? SELECTED : UNSELECTED}`}
-        >
-          {yesLabel}
-        </button>
-      </div>
+        {offLabel}
+      </button>
+      <button
+        type="button"
+        onClick={() => setOn(true)}
+        aria-pressed={on}
+        className={`${buttonBase} ${on ? SELECTED : UNSELECTED}`}
+      >
+        {onLabel}
+      </button>
     </div>
   );
 }
@@ -129,18 +120,20 @@ export function RolloverButtonGroup({
 
   const missedRow = (
     <YesNo
-      label={isSingle ? "Roll forward if missed" : "Rollover missed"}
       on={rolloverMissedDays}
       setOn={setRolloverMissedDays}
       compact={compact}
+      offLabel="Don't roll over"
+      onLabel="Roll over missed"
     />
   );
   const changeRow = !isSingle && (
     <YesNo
-      label="Change rhythm on miss"
       on={rolloverChangeRhythm}
       setOn={setRolloverChangeRhythm}
       compact={compact}
+      offLabel="Keep rhythm"
+      onLabel="Change rhythm"
     />
   );
 
