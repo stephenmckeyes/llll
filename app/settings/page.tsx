@@ -38,6 +38,11 @@ const TILES: TileItem[] = [
     hint: "Light, dark, sleep mode.",
   },
   {
+    href: "/settings/tags",
+    label: "Tags",
+    hint: "Rename or delete tags across every activity that uses them.",
+  },
+  {
     href: "/settings/streaks",
     label: "Streaks",
     hint: "How streaks + statistics are shown.",
