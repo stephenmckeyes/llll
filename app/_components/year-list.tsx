@@ -328,10 +328,7 @@ export function YearList({
         <p className="text-center text-sm font-medium text-zinc-700 dark:text-zinc-300">
           {currentYear.slice(0, 4)}
         </p>
-        {/* flex-wrap so a narrow phone wraps the controls onto a second
-            line instead of spilling sideways (which would spawn a
-            horizontal scrollbar on the outer page). */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={() => jumpYears(-1)}
