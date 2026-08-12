@@ -82,15 +82,31 @@ export async function createTag(
     return { ok: false, error: insertErr.message };
   }
 
+  // 23505 = unique_violation on (user_id, name). Fetch the existing
+  // row and — if it was archived — auto-unarchive it, so a user
+  // re-creating a previously-archived tag from the picker just
+  // resurrects it instead of hitting a mysterious "already exists"
+  // error (archived tags don't show up in the picker, so the user
+  // has no visible cue that the name is taken).
   const { data: existing, error: fetchErr } = await supabase
     .from("tags")
-    .select("id, name, color")
+    .select("id, name, color, archived_at")
     .eq("user_id", user.id)
     .eq("name", trimmed)
     .single();
 
   if (fetchErr || !existing) {
     return { ok: false, error: fetchErr?.message ?? "Tag not found." };
+  }
+
+  if ((existing as { archived_at: string | null }).archived_at) {
+    const { error: unarchiveErr } = await supabase
+      .from("tags")
+      .update({ archived_at: null })
+      .eq("id", (existing as { id: string }).id)
+      .eq("user_id", user.id);
+    if (unarchiveErr) return { ok: false, error: unarchiveErr.message };
+    revalidatePath("/settings/tags");
   }
 
   return {
@@ -106,101 +122,45 @@ export async function createTag(
 
 // ---------------------------------------------------------------------------
 
-export type DeleteTagResult =
-  | { ok: true; removedFromActivities: number; removedFromInstances: number }
-  | { ok: false; error: string };
+export type ArchiveTagResult = { ok: true } | { ok: false; error: string };
 
 /**
- * Delete a tag and strip its name from every activity + instance that
- * references it. Cascades via the delete_tag_cascade RPC (migration
- * 0038) which does all three writes in one transaction. Falls back to
- * per-statement writes if the RPC isn't deployed yet.
+ * Soft-archive a tag. Hides it from every picker + filter surface
+ * while preserving the row (and the tag name inside every activity
+ * and completion history array that already references it — the
+ * banner chips still render with the right color, they just can't be
+ * newly assigned).
+ *
+ * Undo via `unarchiveTag`. Mirrors how activities archive.
  */
-export async function deleteTag(tagId: string): Promise<DeleteTagResult> {
+export async function archiveTag(tagId: string): Promise<ArchiveTagResult> {
   const { supabase, user } = await requireOnboardedUser();
-
-  const { data: tagRow, error: readErr } = await supabase
+  const { error } = await supabase
     .from("tags")
-    .select("id, name, user_id")
+    .update({ archived_at: new Date().toISOString() })
     .eq("id", tagId)
-    .maybeSingle();
-  if (readErr) return { ok: false, error: readErr.message };
-  if (!tagRow) return { ok: false, error: "Tag not found." };
-  if (tagRow.user_id !== user.id) {
-    return { ok: false, error: "Not allowed." };
-  }
-
-  const { data: rpcData, error: rpcErr } = await supabase.rpc(
-    "delete_tag_cascade",
-    { p_tag_id: tagRow.id, p_tag_name: tagRow.name }
-  );
-
-  if (!rpcErr && rpcData) {
-    revalidatePath("/settings/tags");
-    revalidatePath("/");
-    revalidatePath("/activities");
-    const row = Array.isArray(rpcData) ? rpcData[0] : rpcData;
-    return {
-      ok: true,
-      removedFromActivities: Number(row?.removed_from_activities ?? 0),
-      removedFromInstances: Number(row?.removed_from_instances ?? 0),
-    };
-  }
-
-  // Fallback path — RPC not deployed yet. Not atomic but functional.
-  // Fetch each affected row and rewrite its array without the target
-  // name. `.update({ default_skill_tags: [] })` on the whole match
-  // would wipe every OTHER tag too — a subtle data-loss bug.
-  const { data: actRows, error: actReadErr } = await supabase
-    .from("activities")
-    .select("id, default_skill_tags")
-    .eq("user_id", user.id)
-    .contains("default_skill_tags", [tagRow.name]);
-  if (actReadErr) return { ok: false, error: actReadErr.message };
-
-  let removedFromActivities = 0;
-  for (const row of actRows ?? []) {
-    const current = (row as { default_skill_tags: string[] | null })
-      .default_skill_tags ?? [];
-    const next = current.filter((n) => n !== tagRow.name);
-    const { error } = await supabase
-      .from("activities")
-      .update({ default_skill_tags: next })
-      .eq("id", (row as { id: string }).id)
-      .eq("user_id", user.id);
-    if (error) return { ok: false, error: error.message };
-    removedFromActivities += 1;
-  }
-
-  // activity_instances has no direct user_id column — ownership flows
-  // through activity_id → activities.user_id. RLS enforces the scope.
-  const { data: instRows, error: instReadErr } = await supabase
-    .from("activity_instances")
-    .select("id, tags")
-    .contains("tags", [tagRow.name]);
-  if (instReadErr) return { ok: false, error: instReadErr.message };
-
-  let removedFromInstances = 0;
-  for (const row of instRows ?? []) {
-    const current = (row as { tags: string[] | null }).tags ?? [];
-    const next = current.filter((n) => n !== tagRow.name);
-    const { error } = await supabase
-      .from("activity_instances")
-      .update({ tags: next })
-      .eq("id", (row as { id: string }).id);
-    if (error) return { ok: false, error: error.message };
-    removedFromInstances += 1;
-  }
-
-  const { error: delErr } = await supabase
-    .from("tags")
-    .delete()
-    .eq("id", tagRow.id)
     .eq("user_id", user.id);
-  if (delErr) return { ok: false, error: delErr.message };
-
+  if (error) return { ok: false, error: error.message };
   revalidatePath("/settings/tags");
   revalidatePath("/");
   revalidatePath("/activities");
-  return { ok: true, removedFromActivities, removedFromInstances };
+  revalidatePath("/settings/appearance");
+  return { ok: true };
+}
+
+/** Restore an archived tag. Puts it back into the picker + filter
+ *  surfaces. Existing activity references are unaffected either way. */
+export async function unarchiveTag(tagId: string): Promise<ArchiveTagResult> {
+  const { supabase, user } = await requireOnboardedUser();
+  const { error } = await supabase
+    .from("tags")
+    .update({ archived_at: null })
+    .eq("id", tagId)
+    .eq("user_id", user.id);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/settings/tags");
+  revalidatePath("/");
+  revalidatePath("/activities");
+  revalidatePath("/settings/appearance");
+  return { ok: true };
 }

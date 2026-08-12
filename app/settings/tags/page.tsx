@@ -1,10 +1,13 @@
 // ---------------------------------------------------------------------------
-// /settings/tags — list + delete tags.
+// /settings/tags — active + archived tag management.
 //
-// The list is server-rendered against `tags` + a per-tag "used by N
-// activities" count. Delete happens via the shared TagList client
-// component, which opens a confirm dialog before firing the server
-// action.
+// Archiving a tag hides it from the picker and every filter surface
+// but preserves the row (and the tag name inside every activity /
+// completion history that already references it — old banners keep
+// rendering with the right color). "Restore" un-archives.
+//
+// Active section lists archivable tags with a "used by N activities"
+// count. Archived section is a compact list with restore buttons.
 // ---------------------------------------------------------------------------
 
 import { requireOnboardedUser } from "@/lib/auth/require-onboarded-user";
@@ -15,13 +18,13 @@ import { TagList } from "./tag-list";
 export default async function TagsSettingsPage() {
   const { supabase, user } = await requireOnboardedUser();
 
-  // Tags + a rough "used by N activities" count. Query pulls all
-  // activity default_skill_tags for the user in one shot; we do the
-  // per-name tally in JS to avoid needing a separate RPC.
+  // Tags (active + archived) + per-name usage across the user's
+  // active activities. Usage is only informative for the active
+  // section; archived rows don't get a count.
   const [{ data: tagRows }, { data: activityTagRows }] = await Promise.all([
     supabase
       .from("tags")
-      .select("id, name, color")
+      .select("id, name, color, archived_at")
       .eq("user_id", user.id)
       .order("name", { ascending: true }),
     supabase
@@ -40,21 +43,32 @@ export default async function TagsSettingsPage() {
     }
   }
 
-  const tags = ((tagRows ?? []) as Array<{
+  type Row = {
     id: string;
     name: string;
     color: string;
-  }>).map((t) => ({ ...t, usageCount: usage.get(t.name) ?? 0 }));
+    archived_at: string | null;
+  };
+  const rows = (tagRows ?? []) as Row[];
+  const active = rows
+    .filter((r) => !r.archived_at)
+    .map((r) => ({ ...r, usageCount: usage.get(r.name) ?? 0 }));
+  const archived = rows
+    .filter((r) => Boolean(r.archived_at))
+    .map((r) => ({ ...r, usageCount: 0 }));
 
   return (
     <SettingsShell title="Tags">
       <p className="text-sm text-zinc-600 dark:text-zinc-400">
         Tags label your activities and color their calendar banners.
-        Deleting a tag removes it from every activity and completion
-        history that currently references it. This can&rsquo;t be
-        undone.
+        Archiving a tag hides it from the picker and every filter, but
+        the tag name stays on any activity or completion history that
+        already referenced it. Restore any time from below.
       </p>
-      <TagList tags={tags} />
+      <TagList
+        activeTags={active}
+        archivedTags={archived}
+      />
     </SettingsShell>
   );
 }

@@ -37,7 +37,11 @@ export default async function AppearanceSettingsPage() {
       )
       .eq("id", user.id)
       .maybeSingle(),
-    supabase.from("tags").select("name").order("name", { ascending: true }),
+    supabase
+      .from("tags")
+      .select("name")
+      .is("archived_at", null)
+      .order("name", { ascending: true }),
   ]);
   const rawDensity =
     (profile as { add_activity_density?: string } | null)?.add_activity_density ??

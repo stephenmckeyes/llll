@@ -25,7 +25,7 @@ export default async function NewActivityPage() {
   // migration 0023 (defaults to 'default' for anything unrecognized).
   const [{ data: tagRows }, { data: activityTagRows }, { data: profile }] =
     await Promise.all([
-      supabase.from("tags").select("id, name, color"),
+      supabase.from("tags").select("id, name, color").is("archived_at", null),
       supabase
         .from("activities")
         .select("default_skill_tags")

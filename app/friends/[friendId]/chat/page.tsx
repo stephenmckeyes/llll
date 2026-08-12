@@ -35,7 +35,7 @@ export default async function ChatPage({
       getConversation(friendId),
       getSharedWithMe(),
       getWatches(),
-      supabase.from("tags").select("id, name, color"),
+      supabase.from("tags").select("id, name, color").is("archived_at", null),
       supabase
         .from("activities")
         .select("default_skill_tags")

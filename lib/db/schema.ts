@@ -374,6 +374,11 @@ export const tags = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Soft-delete (migration 0039). Archived tags are hidden from the
+    // picker + filter surfaces but the row + any references in
+    // activities.default_skill_tags / activity_instances.tags stay
+    // intact so old banners keep rendering correctly.
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
   },
   (t) => [
     uniqueIndex("tags_user_name_idx").on(t.userId, t.name),

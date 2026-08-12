@@ -87,7 +87,7 @@ export default async function FriendViewPage({
     getSharedWithMe(),
     getSharedInstancesWithMe(from, to),
     getWatches(),
-    supabase.from("tags").select("id, name, color"),
+    supabase.from("tags").select("id, name, color").is("archived_at", null),
     supabase
       .from("activities")
       .select("default_skill_tags")

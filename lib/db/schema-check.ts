@@ -104,6 +104,11 @@ export const EXPECTATIONS: ReadonlyArray<MigrationExpectation> = [
     label: "Default Timeline untimed-dropdown state",
     checks: [{ table: "profiles", column: "default_untimed_open" }],
   },
+  {
+    migration: "0039_archived_tags.sql",
+    label: "Archived tags (tags.archived_at)",
+    checks: [{ table: "tags", column: "archived_at" }],
+  },
 ];
 
 export type MissingMigration = {

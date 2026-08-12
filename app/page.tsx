@@ -226,7 +226,8 @@ export default async function HomePage({
       .eq("id", user.id)
       .maybeSingle(),
     Promise.all([
-      supabase.from("tags").select("id, name, color"),
+      // Archived tags don't show up in the picker or filter surfaces.
+      supabase.from("tags").select("id, name, color").is("archived_at", null),
       supabase
         .from("activities")
         .select("default_skill_tags")
