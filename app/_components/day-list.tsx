@@ -401,7 +401,11 @@ export function DayList({
     // Distinguish user scrolls from our own. A scroll event within
     // ~200 ms of a programmatic write is ours. Anything else is the
     // user, and we bail out of the retry loop immediately.
-    let lastProgrammaticScrollAt = 0;
+    // Seed with `now` so the pre-hydration inline script's own scroll
+    // event (fired during HTML parse, delivered on first tick after
+    // hydration) doesn't get misclassified as a user scroll and kill
+    // the retry loop.
+    let lastProgrammaticScrollAt = performance.now();
     const onScroll = () => {
       if (cancelled) return;
       const dt = performance.now() - lastProgrammaticScrollAt;

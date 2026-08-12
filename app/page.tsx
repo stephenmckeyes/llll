@@ -65,6 +65,14 @@ import { CalendarModifierChips } from "./_components/calendar-modifier-chips";
 import { GridSection } from "./_components/grid-section";
 import { type IncompleteInfo } from "./_components/incomplete-button";
 import { DashboardHeader } from "./_components/dashboard-header";
+import {
+  MONTH_INITIAL_RADIUS,
+  YEAR_INITIAL_RADIUS,
+  type MonthBanner,
+} from "./_components/month-cell";
+import { MonthList } from "./_components/month-list";
+import { YearList } from "./_components/year-list";
+import type { MonthBannersByDate, YearCountsByDate } from "./actions/calendar-fetch";
 import { SectionTabs } from "./_components/section-tabs";
 import { TagDotRow } from "./_components/tag-chip";
 import { TabPending } from "./_components/tab-pending";
@@ -1401,102 +1409,92 @@ async function MonthView({
 }) {
   const supabase = await createClient();
 
+  // Endless-scroll Month is a client component (MonthList). The server
+  // eagerly fetches the initial window (±MONTH_INITIAL_RADIUS months
+  // around the URL's month) so first paint is fully populated without
+  // waiting on a client fetch. Further-out months lazy-load on scroll.
   const refDate = parseDate(monthDate);
-  const monthStart = startOfMonth(refDate);
-  const monthEnd = endOfMonth(refDate);
-  const gridStart = startOfWeek(monthStart, { weekStartsOn: 1 });
+  const initialMonthKey = format(startOfMonth(refDate), "yyyy-MM-01");
 
-  // Fetch over the visible grid (might include neighbor-month days).
-  // The query now also pulls the activity NAME so we can render real
-  // name-banners inside each cell (banner-style month view).
-  // Per-instance tags stay the visual source for color hints — same
-  // immutable-history reasoning that drives Day chips.
-  const gridEnd = addDays(gridStart, 41);
+  // Compute the eager fetch window: grid-start of (month − radius)
+  // through grid-end of (month + radius). One SQL query covers the
+  // whole span.
+  const windowMonths: string[] = [];
+  for (
+    let i = -MONTH_INITIAL_RADIUS;
+    i <= MONTH_INITIAL_RADIUS;
+    i++
+  ) {
+    windowMonths.push(
+      format(startOfMonth(addMonths(refDate, i)), "yyyy-MM-01")
+    );
+  }
+  const firstMonthStart = parseDate(windowMonths[0]);
+  const lastMonthStart = parseDate(windowMonths[windowMonths.length - 1]);
+  const eagerFrom = startOfWeek(firstMonthStart, { weekStartsOn: 1 });
+  const eagerTo = addDays(startOfWeek(lastMonthStart, { weekStartsOn: 1 }), 41);
+
   const { data } = await supabase
     .from("activity_instances")
     .select(
       "id, scheduled_for, status, tags, activities!inner(name, archived_at, default_skill_tags)"
     )
-    .gte("scheduled_for", format(gridStart, "yyyy-MM-dd"))
-    .lte("scheduled_for", format(gridEnd, "yyyy-MM-dd"))
+    .gte("scheduled_for", format(eagerFrom, "yyyy-MM-dd"))
+    .lte("scheduled_for", format(eagerTo, "yyyy-MM-dd"))
     .is("activities.archived_at", null);
 
-  type CellInstance = {
-    id: string;
-    name: string;
-    status: string;
-    tags: string[];
-  };
-  const byDate: Record<string, CellInstance[]> = {};
-  type MonthRow = {
+  type Row = {
     id: string;
     scheduled_for: string;
     status: string;
     tags: string[] | null;
-    // PostgREST returns the inner-join as either an object or an
-    // array-of-one depending on the version — normalize below.
     activities:
       | { name: string; archived_at: string | null; default_skill_tags: string[] | null }
       | Array<{ name: string; archived_at: string | null; default_skill_tags: string[] | null }>
       | null;
   };
-  for (const i of (data ?? []) as MonthRow[]) {
-    const act = Array.isArray(i.activities)
-      ? i.activities[0]
-      : i.activities;
+  // Flat byDate map (from eager fetch), then re-bucket by monthKey to
+  // match the shape MonthList expects (Record<monthKey, MonthBannersByDate>).
+  const flat: Record<string, MonthBanner[]> = {};
+  for (const r of (data ?? []) as Row[]) {
+    const act = Array.isArray(r.activities) ? r.activities[0] : r.activities;
     if (!act) continue;
     if (!keepForCalendar(act.default_skill_tags ?? [], hiddenTags)) continue;
-    (byDate[i.scheduled_for] ??= []).push({
-      id: i.id,
+    (flat[r.scheduled_for] ??= []).push({
+      id: r.id,
       name: act.name,
-      status: i.status,
-      tags: i.tags ?? [],
+      status: r.status,
+      tags: r.tags ?? [],
     });
   }
-
-  const cells = Array.from({ length: 42 }, (_, i) => {
-    const date = addDays(gridStart, i);
-    const dateStr = format(date, "yyyy-MM-dd");
-    return {
-      date,
-      dateStr,
-      inMonth: date >= monthStart && date <= monthEnd,
-      isToday: dateStr === todayStr,
-      instances: byDate[dateStr] ?? [],
-    };
-  });
-
-  const prevDate = format(addMonths(monthStart, -1), "yyyy-MM-dd");
-  const nextDate = format(addMonths(monthStart, 1), "yyyy-MM-dd");
+  const initialData: Record<string, MonthBannersByDate> = {};
+  for (const key of windowMonths) {
+    const monthStart = parseDate(key);
+    const monthEnd = endOfMonth(monthStart);
+    const gridStart = startOfWeek(monthStart, { weekStartsOn: 1 });
+    const gridEnd = addDays(gridStart, 41);
+    const byDate: MonthBannersByDate = {};
+    for (let d = 0; d < 42; d++) {
+      const dt = addDays(gridStart, d);
+      if (dt < gridStart || dt > gridEnd) continue;
+      const ds = format(dt, "yyyy-MM-dd");
+      if (flat[ds]) byDate[ds] = flat[ds];
+    }
+    initialData[key] = byDate;
+  }
 
   return (
-    <div className="flex flex-col gap-3">
-      <StickyNav>
-        <DateNavigator
-          view="month"
-          currentDate={monthDate}
-          prevDate={prevDate}
-          nextDate={nextDate}
-          label={format(refDate, "MMMM yyyy")}
-          incompleteInfo={incompleteInfo}
-          chipsSlot={chipsNode}
-        />
-      </StickyNav>
-
-      <div className="grid grid-cols-7 gap-1">
-        {WEEK_HEADERS.map((d) => (
-          <div
-            key={d}
-            className="text-center text-[10px] font-medium uppercase tracking-wide text-zinc-500"
-          >
-            {d}
-          </div>
-        ))}
-        {cells.map((c) => (
-          <MonthCell key={c.dateStr} {...c} tagMap={tagMap} />
-        ))}
-      </div>
-    </div>
+    <StickyNav>
+      <MonthList
+        initialMonth={initialMonthKey}
+        initialData={initialData}
+        todayStr={todayStr}
+        incompleteInfo={incompleteInfo}
+        tagMap={tagMap}
+        hiddenTags={Array.from(hiddenTags)}
+        chipsSlot={chipsNode}
+      />
+    </StickyNav>
   );
 }
 
@@ -1520,22 +1518,31 @@ async function YearView({
   chipsNode?: React.ReactNode;
 }) {
   const supabase = await createClient();
-  const refDate = parseDate(yearDate);
-  const year = refDate.getFullYear();
+  const refYear = Number(yearDate.slice(0, 4));
+  const initialYearKey = `${refYear}-01-01`;
 
-  const yearStart = `${year}-01-01`;
-  const yearEnd = `${year}-12-31`;
+  // Server-eagerly load the initial window (±YEAR_INITIAL_RADIUS). The
+  // rest lazy-loads on scroll via fetchYearActivities from the client.
+  const eagerYears: number[] = [];
+  for (
+    let i = -YEAR_INITIAL_RADIUS;
+    i <= YEAR_INITIAL_RADIUS;
+    i++
+  ) {
+    eagerYears.push(refYear + i);
+  }
+  const eagerFrom = `${eagerYears[0]}-01-01`;
+  const eagerTo = `${eagerYears[eagerYears.length - 1]}-12-31`;
 
   const { data } = await supabase
     .from("activity_instances")
     .select(
       "scheduled_for, status, activities!inner(archived_at, default_skill_tags)"
     )
-    .gte("scheduled_for", yearStart)
-    .lte("scheduled_for", yearEnd)
+    .gte("scheduled_for", eagerFrom)
+    .lte("scheduled_for", eagerTo)
     .is("activities.archived_at", null);
 
-  const byDate: Record<string, { pending: number; completed: number }> = {};
   type YearRow = {
     scheduled_for: string;
     status: string;
@@ -1544,110 +1551,31 @@ async function YearView({
       | Array<{ default_skill_tags: string[] | null }>
       | null;
   };
-  for (const i of (data ?? []) as YearRow[]) {
-    const act = Array.isArray(i.activities) ? i.activities[0] : i.activities;
+  const initialData: Record<string, YearCountsByDate> = {};
+  for (const y of eagerYears) initialData[`${y}-01-01`] = {};
+  for (const r of (data ?? []) as YearRow[]) {
+    const act = Array.isArray(r.activities) ? r.activities[0] : r.activities;
     if (!act) continue;
     if (!keepForCalendar(act.default_skill_tags ?? [], hiddenTags)) continue;
-    const d = (byDate[i.scheduled_for] ??= { pending: 0, completed: 0 });
-    if (i.status === "pending") d.pending++;
-    else if (i.status === "completed") d.completed++;
+    const yearKey = `${r.scheduled_for.slice(0, 4)}-01-01`;
+    const bucket = initialData[yearKey];
+    if (!bucket) continue;
+    const c = (bucket[r.scheduled_for] ??= { pending: 0, completed: 0 });
+    if (r.status === "pending") c.pending += 1;
+    else if (r.status === "completed") c.completed += 1;
   }
 
-  const months = Array.from({ length: 12 }, (_, m) => ({
-    monthIndex: m,
-    monthStart: new Date(year, m, 1),
-  }));
-
-  const dayOfYear = yearDate.slice(5); // "MM-DD"
-  const prevDate = `${year - 1}-${dayOfYear}`;
-  const nextDate = `${year + 1}-${dayOfYear}`;
-
   return (
-    <div className="flex flex-col gap-3">
-      <StickyNav>
-        <DateNavigator
-          view="year"
-          currentDate={yearDate}
-          prevDate={prevDate}
-          nextDate={nextDate}
-          label={String(year)}
-          incompleteInfo={incompleteInfo}
-          chipsSlot={chipsNode}
-        />
-      </StickyNav>
-      <div className="grid grid-cols-3 gap-4">
-        {months.map((m) => (
-          <MiniMonth
-            key={m.monthIndex}
-            monthStart={m.monthStart}
-            byDate={byDate}
-            todayStr={todayStr}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function MiniMonth({
-  monthStart,
-  byDate,
-  todayStr,
-}: {
-  monthStart: Date;
-  byDate: Record<string, { pending: number; completed: number }>;
-  todayStr: string;
-}) {
-  const monthEnd = endOfMonth(monthStart);
-  const gridStart = startOfWeek(monthStart, { weekStartsOn: 1 });
-  const monthDateStr = format(monthStart, "yyyy-MM-dd");
-  const monthLabel = monthStart.toLocaleString(undefined, { month: "long" });
-
-  const cells = Array.from({ length: 42 }, (_, i) => {
-    const date = addDays(gridStart, i);
-    const dateStr = format(date, "yyyy-MM-dd");
-    const inMonth = date >= monthStart && date <= monthEnd;
-    const counts = byDate[dateStr] ?? { pending: 0, completed: 0 };
-    return {
-      date,
-      dateStr,
-      inMonth,
-      isToday: dateStr === todayStr,
-      hasActivity: inMonth && (counts.pending > 0 || counts.completed > 0),
-    };
-  });
-
-  return (
-    <Link
-      href={`/?view=month&date=${monthDateStr}`}
-      className="flex flex-col gap-1.5 rounded-md border border-zinc-200 p-2 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900"
-    >
-      <h3 className="text-center text-xs font-medium">{monthLabel}</h3>
-      <div className="grid grid-cols-7 gap-px">
-        {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
-          <div
-            key={i}
-            className="text-center text-[8px] font-medium text-zinc-400"
-          >
-            {d}
-          </div>
-        ))}
-        {cells.map((c) => (
-          <div
-            key={c.dateStr}
-            className={`flex aspect-square items-center justify-center rounded text-[8px] ${
-              !c.inMonth
-                ? "text-zinc-200 dark:text-zinc-800"
-                : c.hasActivity
-                  ? "bg-zinc-900 font-semibold text-white dark:bg-zinc-50 dark:text-zinc-900"
-                  : "text-zinc-600 dark:text-zinc-400"
-            } ${c.isToday ? "ring-1 ring-zinc-900 dark:ring-zinc-50" : ""}`}
-          >
-            {c.inMonth ? c.date.getDate() : ""}
-          </div>
-        ))}
-      </div>
-    </Link>
+    <StickyNav>
+      <YearList
+        initialYear={initialYearKey}
+        initialData={initialData}
+        todayStr={todayStr}
+        incompleteInfo={incompleteInfo}
+        hiddenTags={Array.from(hiddenTags)}
+        chipsSlot={chipsNode}
+      />
+    </StickyNav>
   );
 }
 
@@ -2313,159 +2241,9 @@ function toDayInstance(
 
 // ---------------------------------------------------------------------------
 
-// Per-instance banner shape used by MonthCell. Carries the activity
-// name so the cell can render real text, not just a status box.
-type MonthBanner = {
-  id: string;
-  name: string;
-  status: string;
-  tags: string[];
-};
-
-// How many activity-name banners fit inside one month cell before we
-// collapse the rest into an overflow line. Two is a comfortable read
-// for the cell heights at 7-col layout; on mobile (narrower cells)
-// the second banner still fits because cells are wider than tall.
-const MONTH_BANNERS_PER_CELL = 2;
-
-function MonthCell({
-  date,
-  dateStr,
-  inMonth,
-  isToday,
-  instances,
-  tagMap,
-}: {
-  date: Date;
-  dateStr: string;
-  inMonth: boolean;
-  isToday: boolean;
-  instances: MonthBanner[];
-  tagMap: TagMap;
-}) {
-  const hasAny = instances.length > 0;
-  const visible = instances.slice(0, MONTH_BANNERS_PER_CELL);
-  const hidden = instances.slice(MONTH_BANNERS_PER_CELL);
-
-  // Tag-grouped overflow: when more banners exist than fit, group the
-  // hidden ones by their FIRST tag name and report the biggest groups.
-  // "+5 fitness · +3 work" tells the user what KIND of stuff is hiding,
-  // not just how much — far more informative than a bare "+8".
-  const overflowSummary = hidden.length > 0
-    ? summarizeOverflow(hidden)
-    : null;
-
-  // Cell shell. We dropped aspect-square — banners need real vertical
-  // room. min-h-20 keeps cells readable on most screens; on phones
-  // they're naturally wider than tall in a 7-col layout, which suits
-  // text banners.
-  let cls =
-    "relative flex min-h-20 flex-col gap-0.5 rounded p-1 text-xs transition-colors";
-  if (!inMonth) cls += " text-zinc-400 dark:text-zinc-600";
-  else cls += " text-zinc-700 dark:text-zinc-300";
-  if (isToday) cls += " ring-1 ring-zinc-900 dark:ring-zinc-50";
-  if (hasAny && inMonth) cls += " bg-zinc-50 dark:bg-zinc-950";
-
-  return (
-    <div className={cls}>
-      {/* Whole-cell click target → day view. Banners sit on top with
-          pointer-events: none so the whole cell remains clickable. */}
-      <Link
-        href={`/?view=day&date=${dateStr}`}
-        aria-label={`Open ${dateStr}`}
-        className="absolute inset-0 z-0 rounded hover:bg-zinc-100 dark:hover:bg-zinc-900"
-      />
-      <span
-        className={`relative z-10 pointer-events-none self-start ${
-          isToday ? "font-semibold" : ""
-        }`}
-      >
-        {date.getDate()}
-      </span>
-      {inMonth && hasAny && (
-        <div className="relative z-10 flex flex-col gap-0.5">
-          {visible.map((inst) => (
-            <MonthBannerPill
-              key={inst.id}
-              banner={inst}
-              tagMap={tagMap}
-            />
-          ))}
-          {overflowSummary && (
-            <span className="pointer-events-none truncate text-[9px] font-medium text-zinc-500 dark:text-zinc-400">
-              {overflowSummary}
-            </span>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-
-/** Tiny activity-name banner inside a month cell. Background tints with
- *  the activity's first tag (or zinc if untagged). A leading status
- *  glyph ✓/✗/!/· tells the user the outcome at a glance without needing
- *  a separate badge. */
-function MonthBannerPill({
-  banner,
-  tagMap,
-}: {
-  banner: MonthBanner;
-  tagMap: TagMap;
-}) {
-  // Color comes from the FIRST tag — keeps the cell readable when an
-  // activity has many tags. Untagged falls back to zinc.
-  const firstTag = banner.tags[0];
-  const tagInfo = firstTag ? tagMap[firstTag] : undefined;
-  // tagChipClasses returns "bg-X-100 text-X-800 dark:bg-X-900 dark:text-X-200"
-  // — exactly the soft-pastel banner look we want.
-  const colorCls = tagInfo
-    ? tagChipClasses(tagInfo.color)
-    : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300";
-
-  // Status decoration: glyph prefix + strikethrough for missed so a
-  // user scanning the month sees outcomes without reading every name.
-  let glyph = "";
-  let extraCls = "";
-  if (banner.status === "completed") glyph = "✓ ";
-  else if (banner.status === "missed") {
-    glyph = "✗ ";
-    extraCls = " line-through opacity-70";
-  } else if (banner.status === "pending") {
-    // Past-pending = unlabeled; future-pending = scheduled (no glyph).
-    // We can't tell past vs future without today's date here, but the
-    // banner doesn't need that distinction — both are "no verdict yet."
-    glyph = "· ";
-  }
-
-  return (
-    <span
-      title={banner.name}
-      className={`pointer-events-none truncate rounded-sm px-1 py-0.5 text-[10px] font-medium leading-tight ${colorCls}${extraCls}`}
-    >
-      {glyph}
-      {banner.name}
-    </span>
-  );
-}
-
-/** Group hidden banners by first tag and assemble a "+N tag · +M tag"
- *  summary, capping at the top 2 groups so the line still fits. Untagged
- *  banners pool under "(untagged)". */
-function summarizeOverflow(hidden: MonthBanner[]): string {
-  const counts: Record<string, number> = {};
-  for (const b of hidden) {
-    const key = b.tags[0] ?? "(untagged)";
-    counts[key] = (counts[key] ?? 0) + 1;
-  }
-  const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  const top = entries.slice(0, 2);
-  const summarized = top.map(([name, n]) => `+${n} ${name}`).join(" · ");
-  const remainder = entries.length > 2 ? ` · +${entries.length - 2}…` : "";
-  return summarized + remainder;
-}
+/* MonthBanner / MonthCell / MonthBannerPill / summarizeOverflow now
+   live in ./_components/month-cell.tsx (imported above) so the
+   client-side MonthList can reuse them. */
 
 // ---------------------------------------------------------------------------
 
