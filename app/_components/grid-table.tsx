@@ -129,13 +129,13 @@ const WEEK_CELL_GAP_PX = 4;
 const MONTH_CELL_GAP_PX = 4;
 const TOTAL_CELL_GAP_PX = 1;
 
-// Each mode's cells use this aspect ratio. Week stays square. Month
+// Week/Month cells use this aspect ratio. Week stays square. Month
 // uses a wide-rectangle shape so a 5-week calendar grid doesn't tower
 // to a 200+px row height; the row stays compact and more activities
-// fit on-screen. Total stays square since its cells are tiny.
+// fit on-screen. (Total sizes its cells via the grid's own aspect-ratio
+// — see TotalTable — so it needs no per-cell aspect.)
 const WEEK_CELL_ASPECT = "aspect-square";
 const MONTH_CELL_ASPECT = "aspect-[2/1]"; // 2:1, wider than tall
-const TOTAL_CELL_ASPECT = "aspect-square";
 
 // Sticky-thead offset. ViewSwitcher (top-0, ~80px tall incl. py-2)
 // + Navigator (top-[5rem], ~72px tall) stack at the top of the
@@ -871,21 +871,26 @@ function TotalTable({
                 <>
                   <TypeCell row={row} tagMap={tagMap} />
                   <td className="border-b border-zinc-100 px-1 py-0.5 align-top dark:border-zinc-900">
+                    {/* aspect-ratio lives on the GRID (weekCount:7), with
+                        7 equal 1fr rows, instead of aspect-square on each
+                        cell with `auto` rows. That gave the grid an
+                        indefinite height whose rows could balloon and spill
+                        into the next activity's row. Now the strip's height
+                        is fixed at width x 7/weekCount (<= ~7 cells tall),
+                        so it stays confined and the cells stay square. */}
                     <div
-                      className="grid"
+                      className="grid w-full"
                       style={{
                         gridTemplateColumns: `repeat(${weekCount}, minmax(0, 1fr))`,
-                        gridTemplateRows: "repeat(7, auto)",
+                        gridTemplateRows: "repeat(7, minmax(0, 1fr))",
                         gridAutoFlow: "column",
                         gap: `${TOTAL_CELL_GAP_PX}px`,
                         maxWidth: `${stripMaxWidthPx}px`,
+                        aspectRatio: `${weekCount} / 7`,
                       }}
                     >
                       {Array.from({ length: padBefore }, (_, i) => (
-                        <div
-                          key={`pad-b-${i}`}
-                          className={TOTAL_CELL_ASPECT}
-                        />
+                        <div key={`pad-b-${i}`} />
                       ))}
                       {row.cells.map((cell) => (
                         <CellButton
@@ -894,15 +899,12 @@ function TotalTable({
                           todayStr={todayStr}
                           activityName={row.activity.name}
                           showGlyph={false}
-                          aspectClass={TOTAL_CELL_ASPECT}
+                          aspectClass=""
                           onOpen={onOpenInstance}
                         />
                       ))}
                       {Array.from({ length: padAfter }, (_, i) => (
-                        <div
-                          key={`pad-a-${i}`}
-                          className={TOTAL_CELL_ASPECT}
-                        />
+                        <div key={`pad-a-${i}`} />
                       ))}
                     </div>
                   </td>

@@ -540,33 +540,39 @@ export function ActivityForm({
         <div className={`grid grid-cols-2 ${isCompact ? "gap-2" : "gap-3"}`}>
           {isCompact ? (
             <>
-              <input
-                type="date"
-                name="startDate"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className={inputClasses}
-              />
-              <div className="relative">
+              <div className="flex flex-col gap-0.5">
                 <input
                   type="date"
-                  name="endDate"
-                  value={isSingleLike ? "" : endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  disabled={isSingleLike}
-                  className={`${inputClasses} pr-7`}
+                  name="startDate"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className={inputClasses}
                 />
-                {!isSingleLike && endDate && (
-                  <button
-                    type="button"
-                    onClick={() => setEndDate("")}
-                    aria-label="Clear end date (indefinite)"
-                    title="No end date"
-                    className="absolute right-1 top-1/2 -translate-y-1/2 rounded-md p-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                  >
-                    ×
-                  </button>
-                )}
+                <span className="px-1 text-[10px] text-zinc-500">(Start)</span>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <div className="relative">
+                  <input
+                    type="date"
+                    name="endDate"
+                    value={isSingleLike ? "" : endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    disabled={isSingleLike}
+                    className={`${inputClasses} pr-7`}
+                  />
+                  {!isSingleLike && endDate && (
+                    <button
+                      type="button"
+                      onClick={() => setEndDate("")}
+                      aria-label="Clear end date (indefinite)"
+                      title="No end date"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 rounded-md p-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+                <span className="px-1 text-[10px] text-zinc-500">(End)</span>
               </div>
             </>
           ) : (
@@ -960,12 +966,12 @@ export function ActivityForm({
                 : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
             }`}
           >
-            📌 Pinned
+            📌 Pinned on Total View
           </button>
         </div>
       ) : (
         <fieldset className="flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
-          <legend className="px-1 text-sm font-medium">Pinned</legend>
+          <legend className="px-1 text-sm font-medium">Pinned on Total View</legend>
           <div className="flex gap-2">
             <button
               type="button"

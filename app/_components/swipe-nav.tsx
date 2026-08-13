@@ -7,8 +7,11 @@
 // LEFT = next, matching iPhone Calendar and standard carousels.
 //
 // Two ways to navigate, so it works from both server and client callers:
-//   - prevHref / nextHref → router.push (server-rendered Week view, which
-//     drives the week off the URL's ?date=).
+//   - stepView + stepDays → router.push, computing the target from the
+//     LIVE URL's ?date= at swipe time (server-rendered Week view). Reading
+//     the URL fresh each swipe — rather than precomputed prev/next hrefs —
+//     is what makes repeated swipes work: static hrefs baked at render can
+//     go stale and every swipe after the first would target the same week.
 //   - onPrev / onNext callbacks → local state (the friend Week view, which
 //     keeps the reference date in React state).
 //
@@ -26,20 +29,21 @@ import { useRef, type ReactNode } from "react";
 const SWIPE_MIN_X = 50;
 
 export function SwipeNav({
-  prevHref,
-  nextHref,
+  stepView,
+  stepDays,
   onPrev,
   onNext,
   className,
   children,
 }: {
-  /** Navigated to on a swipe RIGHT. Ignored if onPrev is given. */
-  prevHref?: string;
-  /** Navigated to on a swipe LEFT. Ignored if onNext is given. */
-  nextHref?: string;
-  /** Called on a swipe RIGHT (takes precedence over prevHref). */
+  /** view= param to push when stepping via the URL (e.g. "week"). */
+  stepView?: string;
+  /** Days to shift ?date= by per swipe (e.g. 7 for a week). Both this and
+   *  stepView are required for URL stepping. */
+  stepDays?: number;
+  /** Called on a swipe RIGHT (takes precedence over URL stepping). */
   onPrev?: () => void;
-  /** Called on a swipe LEFT (takes precedence over nextHref). */
+  /** Called on a swipe LEFT (takes precedence over URL stepping). */
   onNext?: () => void;
   className?: string;
   children: ReactNode;
@@ -47,13 +51,20 @@ export function SwipeNav({
   const router = useRouter();
   const start = useRef<{ x: number; y: number } | null>(null);
 
+  const stepFromUrl = (deltaDays: number) => {
+    if (typeof window === "undefined" || !stepView) return;
+    const cur = new URLSearchParams(window.location.search).get("date");
+    if (!cur || !/^\d{4}-\d{2}-\d{2}$/.test(cur)) return;
+    router.push(`/?view=${stepView}&date=${shiftYmd(cur, deltaDays)}`);
+  };
+
   const goPrev = () => {
     if (onPrev) onPrev();
-    else if (prevHref) router.push(prevHref);
+    else if (stepDays) stepFromUrl(-stepDays);
   };
   const goNext = () => {
     if (onNext) onNext();
-    else if (nextHref) router.push(nextHref);
+    else if (stepDays) stepFromUrl(stepDays);
   };
 
   return (
@@ -79,4 +90,15 @@ export function SwipeNav({
       {children}
     </div>
   );
+}
+
+// Shift a YYYY-MM-DD by N days using LOCAL date math (no UTC drift).
+function shiftYmd(ymd: string, days: number): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + days);
+  const yy = dt.getFullYear();
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
 }

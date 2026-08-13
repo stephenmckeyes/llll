@@ -48,17 +48,10 @@ function YesNo({
 }) {
   const buttonBase = compact ? BUTTON_BASE_COMPACT : BUTTON_BASE;
   // No left-hand label: the two buttons span the full width and their own
-  // text carries the meaning — matching the Streaks / Pinned toggles.
+  // text carries the meaning — matching the Streaks / Pinned toggles. The
+  // ON option sits on the LEFT (per user request), OFF on the right.
   return (
     <div className="flex gap-1.5">
-      <button
-        type="button"
-        onClick={() => setOn(false)}
-        aria-pressed={!on}
-        className={`${buttonBase} ${!on ? SELECTED : UNSELECTED}`}
-      >
-        {offLabel}
-      </button>
       <button
         type="button"
         onClick={() => setOn(true)}
@@ -66,6 +59,14 @@ function YesNo({
         className={`${buttonBase} ${on ? SELECTED : UNSELECTED}`}
       >
         {onLabel}
+      </button>
+      <button
+        type="button"
+        onClick={() => setOn(false)}
+        aria-pressed={!on}
+        className={`${buttonBase} ${!on ? SELECTED : UNSELECTED}`}
+      >
+        {offLabel}
       </button>
     </div>
   );
