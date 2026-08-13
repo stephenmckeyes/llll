@@ -179,15 +179,32 @@ community_auto_add_prefs (
    per-permission checkboxes, member role picker), **Admittance** (join
    policy / approvals), and **Chat** (enable the chat + who-can-speak).
    `community_ranks` table already exists (0031); needs UI + permission
-   RPCs.
+   RPCs. ✅ DONE — Settings section (migration 0041) with member role
+   management, admittance (join policy / visibility), show-members
+   toggle, and chat settings. NOTE: per-rank custom permissions
+   (`community_ranks`) UI is still NOT built — settings currently use the
+   fixed leader / co_leader / member roles only.
 5. **Clubs discovery** — public search, application flow,
-   outsider_visibility widget.
+   outsider_visibility widget. ✅ MOSTLY DONE — public search
+   (searchPublicCommunities) + handle lookup (findCommunityByHandle,
+   migration 0042) + request-to-join note flow via DiscoverModal. STILL
+   TODO: the `outsider_visibility` widget (what non-members see of a
+   public club — members / activities / feed).
 6. **Invites + notifications** — invite people directly (not just
    request-to-join); notify members of join requests / approvals / new
-   auto-added activities.
+   auto-added activities. ✅ DONE — direct invites by username or friend-
+   search dropdown (migration 0048), leadership sees pending sent invites
+   with cancel + incoming join requests on /notifications (migration
+   0049), and requesters get approved/declined outcome notices (migration
+   0050). All counted in the nav badge. STILL TODO (minor): a per-user
+   notification for a NEW auto-added activity (currently silent by design;
+   the auto_add pref would gate it).
 7. **Community chat** — per-community group chat with filterable system
    notices for community changes. Gated by the Chat settings from
-   phase 4. See "Community chat" below.
+   phase 4. See "Community chat" below. ✅ DONE (migrations 0043/0044) —
+   community_messages + post/read RPCs, system notices for
+   add/remove-activity, join/leave/kick, role change; "Hide updates"
+   filter in the chat header.
 8. **Guild tracks** — the guild-specific progression + Levels feed.
    DEFERRED (per user: "not ready for a bit").
 
