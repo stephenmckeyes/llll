@@ -61,6 +61,7 @@ import { useBodyScrollLock } from "@/lib/ui/body-scroll-lock";
 
 import { TagChipList } from "@/app/_components/tag-chip";
 
+import { CommunityChat } from "./_community-chat";
 import { CopyShareModal } from "./copy-share-modal";
 import { FriendCalendar } from "./[friendId]/friend-calendar";
 
@@ -216,6 +217,16 @@ export function CommunityTab({
           <CommunityOverall detail={detail} />
           {bundle && (
             <CommunityActivitiesSection detail={detail} bundle={bundle} />
+          )}
+          {detail.chatEnabled && (
+            <CommunityChat
+              communityId={detail.id}
+              currentUserId={detail.myUserId}
+              canPost={
+                detail.chatWhoCanSpeak === "everyone" ||
+                isLeadership(detail.myRole)
+              }
+            />
           )}
           {isLeadership(detail.myRole) && (
             <CommunitySettingsSection detail={detail} />

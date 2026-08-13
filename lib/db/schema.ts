@@ -613,6 +613,24 @@ export const communityAutoAddPrefs = pgTable("community_auto_add_prefs", {
   autoAdd: boolean("auto_add").notNull().default(false),
 });
 
+// Per-community group chat (migration 0043). sender_id NULL = a system
+// notice (kind='system'); system_event holds structured change data.
+export const communityMessages = pgTable(
+  "community_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    communityId: uuid("community_id").notNull(),
+    senderId: uuid("sender_id"),
+    kind: text("kind").notNull().default("message"),
+    body: text("body").notNull(),
+    systemEvent: jsonb("system_event").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("community_messages_idx").on(t.communityId, t.createdAt)]
+);
+
 // ===========================================================================
 // Timeline conflict acknowledgements (migration 0036)
 // ---------------------------------------------------------------------------

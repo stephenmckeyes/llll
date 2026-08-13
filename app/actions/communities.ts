@@ -846,6 +846,84 @@ function revalidateCommunityPaths() {
 }
 
 // ---------------------------------------------------------------------------
+// Phase 7 — community chat
+// ---------------------------------------------------------------------------
+
+export type CommunityMessage = {
+  id: string;
+  senderId: string | null;
+  kind: "message" | "system";
+  body: string;
+  createdAt: string;
+  senderDisplayName: string | null;
+  senderUsername: string | null;
+};
+
+// getCommunityMessages — the chat log (members only, via RLS). System
+// notices come back with senderId null and kind='system'.
+export async function getCommunityMessages(
+  communityId: string
+): Promise<CommunityMessage[]> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data } = await supabase
+    .from("community_messages")
+    .select("id, sender_id, kind, body, created_at")
+    .eq("community_id", communityId)
+    .order("created_at", { ascending: true })
+    .limit(500);
+
+  const rows = (data ?? []) as Array<{
+    id: string;
+    sender_id: string | null;
+    kind: string;
+    body: string;
+    created_at: string;
+  }>;
+  const senderIds = Array.from(
+    new Set(rows.map((r) => r.sender_id).filter((x): x is string => Boolean(x)))
+  );
+  const names = await lookupDisplayNames(senderIds);
+
+  return rows.map((r) => {
+    const p = r.sender_id ? names.get(r.sender_id) : undefined;
+    return {
+      id: r.id,
+      senderId: r.sender_id,
+      kind: r.kind === "system" ? "system" : "message",
+      body: r.body,
+      createdAt: r.created_at,
+      senderDisplayName: p?.displayName ?? null,
+      senderUsername: p?.username ?? null,
+    };
+  });
+}
+
+// postCommunityMessage — post a human message (RPC enforces chat_enabled +
+// who_can_speak + membership).
+export async function postCommunityMessage(
+  communityId: string,
+  body: string
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase.rpc("post_community_message", {
+    p_community_id: communityId,
+    p_body: body,
+  });
+  if (error) return { error: error.message };
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
