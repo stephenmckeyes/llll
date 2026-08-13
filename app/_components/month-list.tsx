@@ -469,13 +469,21 @@ export function MonthList({
       </div>
       {/* Pre-hydration scroll anchor. Runs during HTML parse — after
           all month sections are in DOM — and sets scrollTop before
-          the first paint so cold-open never flashes a distant month. */}
-      <script
-        // eslint-disable-next-line react/no-danger
-        dangerouslySetInnerHTML={{
-          __html: `(function(){try{var s=document.querySelector('[data-month-key="${initialMonth}"]');if(!s)return;var c=s.closest('[data-month-scroll]');if(!c)return;c.scrollTop=s.offsetTop;}catch(e){}})();`,
-        }}
-      />
+          the first paint so cold-open never flashes a distant month.
+          Rendered ONLY on the server (inside a hidden, hydration-
+          suppressed wrapper): the client never renders a <script>, which
+          avoids React 19's "scripts inside components aren't executed on
+          the client" warning on client-side navigation. On client nav the
+          useLayoutEffect below handles positioning instead. */}
+      <div hidden suppressHydrationWarning>
+        {typeof window === "undefined" && (
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `(function(){try{var s=document.querySelector('[data-month-key="${initialMonth}"]');if(!s)return;var c=s.closest('[data-month-scroll]');if(!c)return;c.scrollTop=s.offsetTop;}catch(e){}})();`,
+            }}
+          />
+        )}
+      </div>
     </div>
   );
 }

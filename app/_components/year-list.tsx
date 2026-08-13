@@ -394,12 +394,17 @@ export function YearList({
           ))}
         </div>
       </div>
-      <script
-        // eslint-disable-next-line react/no-danger
-        dangerouslySetInnerHTML={{
-          __html: `(function(){try{var s=document.querySelector('[data-year-key="${initialYear}"]');if(!s)return;var c=s.closest('[data-year-scroll]');if(!c)return;c.scrollTop=s.offsetTop;}catch(e){}})();`,
-        }}
-      />
+      {/* Server-only pre-hydration scroll anchor — see MonthList for why
+          it's wrapped this way (avoids React 19's client <script> warning). */}
+      <div hidden suppressHydrationWarning>
+        {typeof window === "undefined" && (
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `(function(){try{var s=document.querySelector('[data-year-key="${initialYear}"]');if(!s)return;var c=s.closest('[data-year-scroll]');if(!c)return;c.scrollTop=s.offsetTop;}catch(e){}})();`,
+            }}
+          />
+        )}
+      </div>
     </div>
   );
 }

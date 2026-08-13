@@ -738,12 +738,18 @@ export function DayList({
           React ignores <script> during hydration; our useLayoutEffect
           also skips its scrollTop=0 reset on the first run so it
           doesn't undo what this script already did. */}
-      <script
-        // eslint-disable-next-line react/no-danger
-        dangerouslySetInnerHTML={{
-          __html: `(function(){try{var s=document.getElementById('day-${initialDate}');if(!s)return;var c=s.closest('[data-day-scroll]');if(!c)return;c.scrollTop=s.offsetTop;}catch(e){}})();`,
-        }}
-      />
+      {/* Server-only pre-hydration scroll anchor — wrapped so the client
+          never renders a <script> (avoids React 19's client <script>
+          warning); the useLayoutEffect handles client-nav positioning. */}
+      <div hidden suppressHydrationWarning>
+        {typeof window === "undefined" && (
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `(function(){try{var s=document.getElementById('day-${initialDate}');if(!s)return;var c=s.closest('[data-day-scroll]');if(!c)return;c.scrollTop=s.offsetTop;}catch(e){}})();`,
+            }}
+          />
+        )}
+      </div>
 
       {/* Mutation modals never mount in read-only mode (openInstance /
           addDay can't be set there). */}
