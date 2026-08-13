@@ -363,6 +363,7 @@ export async function decideJoinRequest(
     p_approve: approve,
   });
   if (error) return { error: error.message };
+  revalidatePath("/notifications");
   revalidatePath("/friends/groups");
   revalidatePath("/friends/clubs");
   revalidatePath("/friends/guilds");
@@ -957,6 +958,100 @@ export async function getMyPendingInvites(): Promise<PendingInvite[]> {
     invitedByName: r.invited_by_name,
     createdAt: r.created_at,
   }));
+}
+
+// ---------------------------------------------------------------------------
+// Phase 6b — leadership-side request + invite administration
+// ---------------------------------------------------------------------------
+
+export type IncomingJoinRequest = {
+  id: string;
+  communityId: string;
+  communityName: string;
+  communityKind: CommunityKind;
+  requesterName: string | null;
+  note: string | null;
+  createdAt: string;
+};
+
+// getIncomingJoinRequests — pending join requests to every community the
+// caller leads (for the Notifications page + badge).
+export async function getIncomingJoinRequests(): Promise<IncomingJoinRequest[]> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data } = await supabase.rpc("get_my_incoming_join_requests");
+  const rows = (data ?? []) as Array<{
+    id: string;
+    community_id: string;
+    community_name: string;
+    community_kind: string;
+    requester_name: string | null;
+    note: string | null;
+    created_at: string;
+  }>;
+  return rows.map((r) => ({
+    id: r.id,
+    communityId: r.community_id,
+    communityName: r.community_name,
+    communityKind: r.community_kind as CommunityKind,
+    requesterName: r.requester_name,
+    note: r.note,
+    createdAt: r.created_at,
+  }));
+}
+
+export type CommunityPendingInvite = {
+  id: string;
+  inviteeName: string | null;
+  createdAt: string;
+};
+
+// getCommunityPendingInvites — the community's outstanding invites
+// (leadership-gated server-side).
+export async function getCommunityPendingInvites(
+  communityId: string
+): Promise<CommunityPendingInvite[]> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data } = await supabase.rpc("get_community_pending_invites", {
+    p_community_id: communityId,
+  });
+  const rows = (data ?? []) as Array<{
+    id: string;
+    invitee_name: string | null;
+    created_at: string;
+  }>;
+  return rows.map((r) => ({
+    id: r.id,
+    inviteeName: r.invitee_name,
+    createdAt: r.created_at,
+  }));
+}
+
+// cancelCommunityInvite — leadership withdraws a pending invite.
+export async function cancelCommunityInvite(
+  inviteId: string
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase.rpc("cancel_community_invite", {
+    p_invite_id: inviteId,
+  });
+  if (error) return { error: error.message };
+  revalidateCommunityPaths();
+  return { ok: true };
 }
 
 // ---------------------------------------------------------------------------

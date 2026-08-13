@@ -9,7 +9,10 @@
 import { startOfWeek, format } from "date-fns";
 import Link from "next/link";
 
-import { getMyPendingInvites } from "@/app/actions/communities";
+import {
+  getIncomingJoinRequests,
+  getMyPendingInvites,
+} from "@/app/actions/communities";
 import { getUnacknowledgedConflictsForDate } from "@/app/actions/conflicts";
 import { getSocialOverview, type SocialEntry } from "@/app/actions/friends";
 import { getUnreadCounts } from "@/app/actions/messages";
@@ -26,6 +29,7 @@ import { PendingLink } from "@/app/_components/pending-link";
 
 import { buildFriendActivityNotifications } from "./friend-activity";
 import { CommunityInvites } from "./community-invites";
+import { CommunityJoinRequests } from "./community-join-requests";
 import { ConflictsList } from "./conflicts-list";
 import { FriendActivityNotifications } from "./friend-activity-notifications";
 import { RequestActions } from "./request-actions";
@@ -73,16 +77,25 @@ export default async function NotificationsPage() {
     return format(d, "yyyy-MM-dd");
   })();
 
-  const [entries, shares, watches, sharedInstances, unread, conflicts, invites] =
-    await Promise.all([
-      getSocialOverview(),
-      getSharedWithMe(),
-      getWatches(),
-      getSharedInstancesWithMe(from, todayStr),
-      getUnreadCounts(),
-      getUnacknowledgedConflictsForDate(todayStr),
-      getMyPendingInvites(),
-    ]);
+  const [
+    entries,
+    shares,
+    watches,
+    sharedInstances,
+    unread,
+    conflicts,
+    invites,
+    joinRequests,
+  ] = await Promise.all([
+    getSocialOverview(),
+    getSharedWithMe(),
+    getWatches(),
+    getSharedInstancesWithMe(from, todayStr),
+    getUnreadCounts(),
+    getUnacknowledgedConflictsForDate(todayStr),
+    getMyPendingInvites(),
+    getIncomingJoinRequests(),
+  ]);
   const incoming = entries.filter(
     (e) => e.status === "pending" && e.direction === "incoming"
   );
@@ -224,8 +237,11 @@ export default async function NotificationsPage() {
         )}
       </section>
 
-      {/* 1a. Community invites */}
+      {/* 1a. Community invites (to you) */}
       <CommunityInvites invites={invites} />
+
+      {/* 1a. Community join requests (to communities you lead) */}
+      <CommunityJoinRequests requests={joinRequests} />
 
       {/* 1a. Messages */}
       <section className="flex flex-col gap-3">

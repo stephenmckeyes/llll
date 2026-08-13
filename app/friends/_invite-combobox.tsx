@@ -9,10 +9,22 @@
 // invite_to_community (migration 0048), which is leadership-gated server-side.
 // ---------------------------------------------------------------------------
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { useRouter } from "next/navigation";
 
-import { inviteToCommunity } from "@/app/actions/communities";
+import {
+  cancelCommunityInvite,
+  getCommunityPendingInvites,
+  inviteToCommunity,
+  type CommunityPendingInvite,
+} from "@/app/actions/communities";
 import { getSocialOverview } from "@/app/actions/friends";
 
 type Friend = { id: string; username: string; displayName: string | null };
@@ -25,7 +37,21 @@ export function InviteCombobox({ communityId }: { communityId: string }) {
   const [open, setOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState<CommunityPendingInvite[]>([]);
   const boxRef = useRef<HTMLDivElement>(null);
+
+  const loadPending = useCallback(() => {
+    getCommunityPendingInvites(communityId)
+      .then(setPending)
+      .catch(() => {
+        /* non-fatal */
+      });
+  }, [communityId]);
+
+  // Load outstanding invites on mount and whenever the community changes.
+  useEffect(() => {
+    loadPending();
+  }, [loadPending]);
 
   // Load accepted friends once (those with a username — invites resolve by
   // username, so a friend without one can't be picked from the list).
@@ -93,6 +119,21 @@ export function InviteCombobox({ communityId }: { communityId: string }) {
       } else {
         setQuery("");
         setNotice(`Invited ${label ?? `@${u}`}.`);
+        loadPending();
+        router.refresh();
+      }
+    });
+  }
+
+  function cancel(inviteId: string) {
+    setError(null);
+    setNotice(null);
+    startTransition(async () => {
+      const res = await cancelCommunityInvite(inviteId);
+      if ("error" in res) {
+        setError(res.error);
+      } else {
+        setPending((prev) => prev.filter((p) => p.id !== inviteId));
         router.refresh();
       }
     });
@@ -164,6 +205,34 @@ export function InviteCombobox({ communityId }: { communityId: string }) {
       )}
       {error && (
         <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
+      )}
+
+      {pending.length > 0 && (
+        <div className="mt-1 flex flex-col gap-1.5">
+          <p className="text-xs font-medium text-zinc-500">
+            Pending invites ({pending.length})
+          </p>
+          <ul className="flex flex-col gap-1.5">
+            {pending.map((p) => (
+              <li
+                key={p.id}
+                className="flex items-center justify-between gap-3 rounded-md border border-zinc-200 bg-white px-3 py-1.5 dark:border-zinc-800 dark:bg-zinc-950"
+              >
+                <span className="min-w-0 truncate text-sm">
+                  {p.inviteeName ?? "Someone"}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => cancel(p.id)}
+                  disabled={isPending}
+                  className="shrink-0 rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                >
+                  Cancel
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </section>
   );
