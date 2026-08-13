@@ -162,19 +162,62 @@ community_auto_add_prefs (
 
 **Phasing (biggest → smallest):**
 1. **Schema + RLS** — all tables above, plus the SECURITY DEFINER
-   permission helpers. Ship as a single migration once designed.
+   permission helpers. Ship as a single migration once designed. ✅ DONE
+   (migration 0031).
 2. **Groups end-to-end** — dropdown, create modal, overall page,
-   members, basic invite/request. No calendar or auto-add yet.
+   members, basic invite/request. No calendar or auto-add yet. ✅ DONE
+   (shared `CommunityTab` across all three types).
 3. **Calendar + auto-add** — shared component so all three types
-   inherit it.
-4. **Leadership settings** — ranks, per-permission checkboxes,
-   member role picker.
+   inherit it. Base = the full personal-style calendar; a leadership
+   `calendar_display` setting ('full' | 'light') trims what members
+   see (most leaders will pick 'light'). 🔶 IN PROGRESS — migration
+   0040 + server actions done; calendar UI + leadership controls +
+   auto-add fan-out still to build.
+4. **Community Settings** — a per-community Settings AREA (expandable),
+   not a single screen. First sections: **Leadership** (ranks,
+   per-permission checkboxes, member role picker), **Admittance** (join
+   policy / approvals), and **Chat** (enable the chat + who-can-speak).
+   `community_ranks` table already exists (0031); needs UI + permission
+   RPCs.
 5. **Clubs discovery** — public search, application flow,
    outsider_visibility widget.
-6. **Guild tracks** — the guild-specific progression + Levels feed.
+6. **Invites + notifications** — invite people directly (not just
+   request-to-join); notify members of join requests / approvals / new
+   auto-added activities.
+7. **Community chat** — per-community group chat with filterable system
+   notices for community changes. Gated by the Chat settings from
+   phase 4. See "Community chat" below.
+8. **Guild tracks** — the guild-specific progression + Levels feed.
+   DEFERRED (per user: "not ready for a bit").
 
 Meaningful build — pick up one phase per session, don't try to land
 it all at once.
+
+**Community chat (phase 7).** Every community gets a group chat, distinct
+from the 1:1 friend DMs (`messages` table + `ChatThread`). Reuse that
+machinery where practical.
+- **Schema:** a `community_messages` table (id, community_id, sender_id
+  NULLABLE for system posts, kind text `'message' | 'system'`,
+  system_event jsonb for structured change data, body text, created_at).
+  RLS: members read (via `is_community_member`); INSERT gated by a
+  SECURITY DEFINER RPC that checks the community's who-can-speak setting
+  + the caller's role.
+- **System notices:** community changes auto-post a `kind='system'`
+  message — activity added/removed, member joined/left/kicked, rank or
+  permission change, settings change, name/description edit. Emit these
+  from the existing mutation RPCs/actions as each lands (e.g.
+  `add_community_activity` already exists — hook it when chat ships).
+  Render like the existing `is_help_request` / `is_share_notification`
+  message kinds (full-width panel, not a normal bubble).
+- **Filter:** a toggle in the chat header to hide/show system notices
+  (default show; "Only messages" hides them). Client-side filter over
+  the fetched list.
+- **Settings (phase 4 → Chat section):** `communities.chat_enabled`
+  bool + `communities.chat_who_can_speak` text
+  (`'everyone' | 'leadership' | 'ranked'`). Non-speakers see the chat
+  read-only. Disabling chat hides the surface.
+- **Notifications:** new messages can notify members (respect a future
+  per-user mute) — ties into phase 6.
 
 ### AI-assistant pairing
 
