@@ -124,8 +124,8 @@ export function RolloverButtonGroup({
       on={rolloverMissedDays}
       setOn={setRolloverMissedDays}
       compact={compact}
-      offLabel="Don't roll over"
-      onLabel="Roll over missed"
+      offLabel="Drop if Missed"
+      onLabel="Push Tomorrow if Missed"
     />
   );
   const changeRow = !isSingle && (
@@ -140,7 +140,7 @@ export function RolloverButtonGroup({
 
   if (compact) {
     return (
-      <div className="mt-2 flex flex-col gap-1.5">
+      <div className="flex flex-col gap-2">
         {missedRow}
         {changeRow}
       </div>

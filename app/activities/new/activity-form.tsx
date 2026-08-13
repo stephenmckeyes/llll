@@ -540,39 +540,46 @@ export function ActivityForm({
         <div className={`grid grid-cols-2 ${isCompact ? "gap-2" : "gap-3"}`}>
           {isCompact ? (
             <>
-              <div className="flex flex-col gap-0.5">
+              {/* "(Start)" / "(End)" sit inside each box, right-aligned: the
+                  bordered wrapper is the visible field, the native date input
+                  is borderless on the left, the label is a right suffix. */}
+              <div className={dateBoxClasses}>
                 <input
                   type="date"
                   name="startDate"
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
-                  className={inputClasses}
+                  className={dateInnerClasses}
                 />
-                <span className="px-1 text-[10px] text-zinc-500">(Start)</span>
+                <span className="shrink-0 pl-1 text-xs text-zinc-500 dark:text-zinc-400">
+                  (Start)
+                </span>
               </div>
-              <div className="flex flex-col gap-0.5">
-                <div className="relative">
-                  <input
-                    type="date"
-                    name="endDate"
-                    value={isSingleLike ? "" : endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    disabled={isSingleLike}
-                    className={`${inputClasses} pr-7`}
-                  />
-                  {!isSingleLike && endDate && (
-                    <button
-                      type="button"
-                      onClick={() => setEndDate("")}
-                      aria-label="Clear end date (indefinite)"
-                      title="No end date"
-                      className="absolute right-1 top-1/2 -translate-y-1/2 rounded-md p-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                    >
-                      ×
-                    </button>
-                  )}
-                </div>
-                <span className="px-1 text-[10px] text-zinc-500">(End)</span>
+              <div
+                className={`${dateBoxClasses} ${isSingleLike ? "opacity-60" : ""}`}
+              >
+                <input
+                  type="date"
+                  name="endDate"
+                  value={isSingleLike ? "" : endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  disabled={isSingleLike}
+                  className={dateInnerClasses}
+                />
+                <span className="shrink-0 pl-1 text-xs text-zinc-500 dark:text-zinc-400">
+                  (End)
+                </span>
+                {!isSingleLike && endDate && (
+                  <button
+                    type="button"
+                    onClick={() => setEndDate("")}
+                    aria-label="Clear end date (indefinite)"
+                    title="No end date"
+                    className="ml-0.5 shrink-0 rounded p-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                  >
+                    ×
+                  </button>
+                )}
               </div>
             </>
           ) : (
@@ -867,6 +874,9 @@ export function ActivityForm({
         <RemindersField reminders={reminders} setReminders={setReminders} />
       )}
 
+      {/* Streaks / Pinned / Rollover toggles grouped with one uniform,
+          tight vertical gap so every toggle row is evenly spaced. */}
+      <div className="flex flex-col gap-2">
       {/* --- 7. Show on Streaks (moved to bottom per user request) ---- */}
       {/* Compact: drop the "Streaks" legend + fieldset border, keep
           just two tight toggle buttons on one row. */}
@@ -966,7 +976,7 @@ export function ActivityForm({
                 : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
             }`}
           >
-            📌 Pinned on Total View
+            Pinned on Total View
           </button>
         </div>
       ) : (
@@ -995,7 +1005,7 @@ export function ActivityForm({
                   : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
               }`}
             >
-              📌 Pinned
+              Pinned
             </button>
           </div>
           <p className="text-xs text-zinc-500">
@@ -1036,6 +1046,7 @@ export function ActivityForm({
         setRolloverChangeRhythm={setRolloverChangeRhythm}
         compact={isCompact}
       />
+      </div>
 
       {/* --- Calendar preview ------------------------------------------ */}
       {/* Kept visible in every density. Compact CSS in globals.css
@@ -1184,6 +1195,13 @@ function derivePreviewRhythm({
 // shrink and push the parent wider.
 const inputClasses =
   "w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none disabled:cursor-not-allowed disabled:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-zinc-50 dark:disabled:bg-zinc-950";
+
+// A bordered "field" wrapping a borderless native date input + a right-hand
+// "(Start)"/"(End)" suffix, so the label reads inside the box.
+const dateBoxClasses =
+  "flex w-full min-w-0 items-center gap-1 rounded-md border border-zinc-300 bg-white px-3 py-2 shadow-sm focus-within:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:focus-within:border-zinc-50";
+const dateInnerClasses =
+  "min-w-0 flex-1 border-0 bg-transparent p-0 text-sm outline-none disabled:cursor-not-allowed";
 
 function FieldLabel({
   label,
