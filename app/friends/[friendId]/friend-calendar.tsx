@@ -22,7 +22,14 @@ import { useMemo, useState } from "react";
 import type { SharedActivity, SharedInstance } from "@/app/actions/sharing";
 import { DayList as DashboardDayList } from "@/app/_components/day-list";
 import { IncompleteButton } from "@/app/_components/incomplete-button";
+import {
+  MONTH_BANNERS_PER_CELL,
+  MonthBannerPill,
+  summarizeOverflow,
+  type MonthBanner,
+} from "@/app/_components/month-cell";
 import { SwipeNav } from "@/app/_components/swipe-nav";
+import { TagDotRow } from "@/app/_components/tag-chip";
 import {
   isPastDuePending,
   unlabeledLandingDay,
@@ -157,6 +164,7 @@ export function FriendCalendar({
         <WeekGrid
           instances={instances}
           byId={byId}
+          tagMap={tagMap}
           todayStr={todayStr}
           refDate={refDate}
           setRefDate={setRefDate}
@@ -166,9 +174,12 @@ export function FriendCalendar({
       {sub === "month" && (
         <MonthGrid
           instances={instances}
+          byId={byId}
+          tagMap={tagMap}
           todayStr={todayStr}
           refDate={refDate}
           setRefDate={setRefDate}
+          onJumpToDay={jumpToDay}
         />
       )}
       {sub === "year" && (
@@ -191,6 +202,7 @@ type ById = Map<string, SharedActivity>;
 function WeekGrid({
   instances,
   byId,
+  tagMap,
   todayStr,
   refDate,
   setRefDate,
@@ -198,6 +210,7 @@ function WeekGrid({
 }: {
   instances: SharedInstance[];
   byId: ById;
+  tagMap: TagMap;
   todayStr: string;
   refDate: string;
   setRefDate: (s: string) => void;
@@ -261,6 +274,8 @@ function WeekGrid({
                 {d.items.map((inst) => {
                   const act = byId.get(inst.activityId);
                   const done = inst.status === "completed";
+                  const firstTime = act?.scheduledTimes?.[0];
+                  const tagNames = act?.defaultSkillTags ?? [];
                   return (
                     <li key={inst.instanceId}>
                       <button
@@ -276,8 +291,10 @@ function WeekGrid({
                             comment: inst.comment,
                           })
                         }
-                        title={act?.name ?? "Activity"}
-                        className={`block w-full truncate rounded px-1 py-0.5 text-left text-[9px] leading-tight ${
+                        title={`${act?.name ?? "Activity"}${
+                          firstTime ? ` @ ${firstTime}` : ""
+                        }${tagNames.length > 0 ? ` · ${tagNames.join(", ")}` : ""}`}
+                        className={`block w-full min-w-0 rounded px-1 py-0.5 text-left text-[9px] leading-tight ${
                           done
                             ? "bg-zinc-100 text-zinc-400 line-through dark:bg-zinc-900 dark:text-zinc-600"
                             : inst.status === "missed"
@@ -285,7 +302,20 @@ function WeekGrid({
                               : "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
                         }`}
                       >
-                        {act?.name ?? "Activity"}
+                        <span className="block line-clamp-2 break-words font-medium">
+                          {act?.name ?? "Activity"}
+                        </span>
+                        {firstTime && (
+                          <span className="block opacity-75">{firstTime}</span>
+                        )}
+                        {tagNames.length > 0 && (
+                          <TagDotRow
+                            names={tagNames}
+                            tags={tagMap}
+                            dotClassName="h-1 w-1"
+                            max={4}
+                          />
+                        )}
                       </button>
                     </li>
                   );
@@ -305,24 +335,43 @@ function WeekGrid({
 
 function MonthGrid({
   instances,
+  byId,
+  tagMap,
   todayStr,
   refDate,
   setRefDate,
+  onJumpToDay,
 }: {
   instances: SharedInstance[];
+  byId: ById;
+  tagMap: TagMap;
   todayStr: string;
   refDate: string;
   setRefDate: (s: string) => void;
+  onJumpToDay: (date: string) => void;
 }) {
   const ref = parseYmd(refDate);
   const monthStart = startOfMonth(ref);
   const gridStart = startOfWeek(monthStart, { weekStartsOn: 1 });
-  const countByDate = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const i of instances)
-      m.set(i.scheduledFor, (m.get(i.scheduledFor) ?? 0) + 1);
+
+  // Name banners per day, colored by first tag — matches the personal
+  // Month view (MonthCell). Time-of-day order within a day.
+  const bannersByDate = useMemo(() => {
+    const m = new Map<string, MonthBanner[]>();
+    for (const inst of sortByTime(instances, byId)) {
+      const act = byId.get(inst.activityId);
+      const banner: MonthBanner = {
+        id: inst.instanceId,
+        name: act?.name ?? "Activity",
+        status: inst.status,
+        tags: act?.defaultSkillTags ?? [],
+      };
+      const arr = m.get(inst.scheduledFor);
+      if (arr) arr.push(banner);
+      else m.set(inst.scheduledFor, [banner]);
+    }
     return m;
-  }, [instances]);
+  }, [instances, byId]);
 
   const cells = Array.from({ length: 42 }, (_, i) => {
     const date = addDays(gridStart, i);
@@ -331,7 +380,7 @@ function MonthGrid({
       date,
       dateStr,
       inMonth: date.getMonth() === monthStart.getMonth(),
-      count: countByDate.get(dateStr) ?? 0,
+      banners: bannersByDate.get(dateStr) ?? [],
     };
   });
 
@@ -352,25 +401,45 @@ function MonthGrid({
             {d}
           </div>
         ))}
-        {cells.map((c) => (
-          <div
-            key={c.dateStr}
-            className={`flex min-h-[3.5rem] flex-col items-center gap-1 rounded-md border p-1 ${
-              c.dateStr === todayStr
-                ? "border-zinc-900 dark:border-zinc-50"
-                : "border-zinc-200 dark:border-zinc-800"
-            } ${c.inMonth ? "" : "opacity-40"}`}
-          >
-            <span className="text-xs text-zinc-600 dark:text-zinc-400">
-              {c.date.getDate()}
-            </span>
-            {c.count > 0 && (
-              <span className="rounded-full bg-zinc-900 px-1.5 text-[10px] font-semibold text-white dark:bg-zinc-50 dark:text-zinc-900">
-                {c.count}
+        {cells.map((c) => {
+          const visible = c.banners.slice(0, MONTH_BANNERS_PER_CELL);
+          const hidden = c.banners.slice(MONTH_BANNERS_PER_CELL);
+          const overflow = hidden.length > 0 ? summarizeOverflow(hidden) : null;
+          return (
+            <button
+              key={c.dateStr}
+              type="button"
+              onClick={() => onJumpToDay(c.dateStr)}
+              className={`flex min-h-20 flex-col gap-0.5 rounded-md border p-1 text-left transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-900 ${
+                c.dateStr === todayStr
+                  ? "border-zinc-900 dark:border-zinc-50"
+                  : "border-zinc-200 dark:border-zinc-800"
+              } ${c.inMonth ? "" : "opacity-40"}`}
+            >
+              <span
+                className={`self-start text-xs ${
+                  c.dateStr === todayStr
+                    ? "font-semibold"
+                    : "text-zinc-600 dark:text-zinc-400"
+                }`}
+              >
+                {c.date.getDate()}
               </span>
-            )}
-          </div>
-        ))}
+              {c.inMonth && c.banners.length > 0 && (
+                <div className="flex flex-col gap-0.5">
+                  {visible.map((b) => (
+                    <MonthBannerPill key={b.id} banner={b} tagMap={tagMap} />
+                  ))}
+                  {overflow && (
+                    <span className="truncate text-[9px] font-medium text-zinc-500 dark:text-zinc-400">
+                      {overflow}
+                    </span>
+                  )}
+                </div>
+              )}
+            </button>
+          );
+        })}
       </div>
     </div>
   );

@@ -93,7 +93,7 @@ export function MonthCell({
   );
 }
 
-function MonthBannerPill({
+export function MonthBannerPill({
   banner,
   tagMap,
 }: {
@@ -127,7 +127,7 @@ function MonthBannerPill({
   );
 }
 
-function summarizeOverflow(hidden: MonthBanner[]): string {
+export function summarizeOverflow(hidden: MonthBanner[]): string {
   const counts: Record<string, number> = {};
   for (const b of hidden) {
     const key = b.tags[0] ?? "(untagged)";
