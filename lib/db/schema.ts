@@ -529,6 +529,9 @@ export const communities = pgTable(
     // Chat settings (migration 0041). who_can_speak: 'everyone' | 'leadership'.
     chatEnabled: boolean("chat_enabled").notNull().default(true),
     chatWhoCanSpeak: text("chat_who_can_speak").notNull().default("everyone"),
+    // Homepage + member visibility (migration 0045).
+    homeContent: text("home_content"),
+    showMembers: boolean("show_members").notNull().default(true),
     outsiderVisibility: jsonb("outsider_visibility")
       .$type<Record<string, boolean>>()
       .notNull()

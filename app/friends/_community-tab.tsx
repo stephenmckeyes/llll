@@ -35,7 +35,9 @@ import {
   setAutoAdd,
   setCommunityCalendarDisplay,
   setCommunityChatSettings,
+  setCommunityHome,
   setCommunityJoinPolicy,
+  setCommunityShowMembers,
   setCommunityVisibility,
   setMemberRole,
   type CommunityActivityBundle,
@@ -213,25 +215,7 @@ export function CommunityTab({
       </div>
 
       {detail ? (
-        <>
-          <CommunityOverall detail={detail} />
-          {bundle && (
-            <CommunityActivitiesSection detail={detail} bundle={bundle} />
-          )}
-          {detail.chatEnabled && (
-            <CommunityChat
-              communityId={detail.id}
-              currentUserId={detail.myUserId}
-              canPost={
-                detail.chatWhoCanSpeak === "everyone" ||
-                isLeadership(detail.myRole)
-              }
-            />
-          )}
-          {isLeadership(detail.myRole) && (
-            <CommunitySettingsSection detail={detail} />
-          )}
-        </>
+        <CommunityBody detail={detail} bundle={bundle} />
       ) : (
         <div className="rounded-md border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700">
           Loading&hellip;
@@ -434,22 +418,98 @@ function DiscoverModal({
 }
 
 // ---------------------------------------------------------------------------
-// Overall page — top card, members list, pending requests (leadership),
-// leave button.
+// Community body — sub-tab navigation: Home / Calendar / Chat / Settings.
 // ---------------------------------------------------------------------------
 
-function CommunityOverall({ detail }: { detail: CommunityDetail }) {
+type CommunityView = "home" | "calendar" | "chat" | "settings";
+
+function CommunityBody({
+  detail,
+  bundle,
+}: {
+  detail: CommunityDetail;
+  bundle: CommunityActivityBundle | null;
+}) {
+  const canManage = isLeadership(detail.myRole);
+  const [view, setView] = useState<CommunityView>("home");
+  const active: CommunityView =
+    view === "settings" && !canManage ? "home" : view;
+
+  const tabs = [
+    { v: "home", label: "Home" },
+    { v: "calendar", label: "Calendar" },
+    { v: "chat", label: "Chat" },
+    ...(canManage ? [{ v: "settings", label: "Settings" }] : []),
+  ] as Array<{ v: CommunityView; label: string }>;
+
+  return (
+    <div className="flex flex-col gap-4">
+      <nav className="flex gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800">
+        {tabs.map(({ v, label }) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => setView(v)}
+            className={`flex flex-1 items-center justify-center rounded px-3 py-1 text-center text-sm font-medium transition-colors ${
+              active === v
+                ? "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
+                : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
+
+      {active === "home" && <CommunityHome detail={detail} />}
+      {active === "calendar" &&
+        (bundle ? (
+          <CommunityActivitiesSection detail={detail} bundle={bundle} />
+        ) : (
+          <p className="rounded-md border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700">
+            Loading&hellip;
+          </p>
+        ))}
+      {active === "chat" &&
+        (detail.chatEnabled ? (
+          <CommunityChat
+            communityId={detail.id}
+            currentUserId={detail.myUserId}
+            canPost={detail.chatWhoCanSpeak === "everyone" || canManage}
+          />
+        ) : (
+          <p className="rounded-md border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700">
+            Chat is turned off for this {KIND_LABEL[detail.kind].one}.
+          </p>
+        ))}
+      {active === "settings" && canManage && (
+        <CommunitySettingsSection detail={detail} />
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Home — editable landing page + community info + members (if shown) + leave.
+// ---------------------------------------------------------------------------
+
+function CommunityHome({ detail }: { detail: CommunityDetail }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
-  const canDecide = isLeadership(detail.myRole);
+  const canManage = isLeadership(detail.myRole);
+  const [editing, setEditing] = useState(false);
+  const [content, setContent] = useState(detail.homeContent ?? "");
 
-  function onDecide(requestId: string, approve: boolean) {
+  function onSaveHome() {
     setError(null);
     startTransition(async () => {
-      const res = await decideJoinRequest(requestId, approve);
+      const res = await setCommunityHome(detail.id, content);
       if ("error" in res) setError(res.error);
-      else router.refresh();
+      else {
+        setEditing(false);
+        router.refresh();
+      }
     });
   }
 
@@ -471,20 +531,18 @@ function CommunityOverall({ detail }: { detail: CommunityDetail }) {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="truncate text-xl font-semibold tracking-tight">
-              {detail.name}
-            </h2>
-            <p className="mt-0.5 text-xs uppercase tracking-wide text-zinc-500">
-              {detail.visibility === "public" ? "Public" : "Private"} ·{" "}
-              {policyLabel(detail.joinPolicy)} ·{" "}
-              {detail.memberCount}{" "}
-              {detail.memberCount === 1 ? "member" : "members"}
-              {detail.handle && ` · @${detail.handle}`}
-            </p>
-          </div>
-        </div>
+        <h2 className="truncate text-xl font-semibold tracking-tight">
+          {detail.name}
+        </h2>
+        <p className="text-xs uppercase tracking-wide text-zinc-500">
+          {detail.visibility === "public" ? "Public" : "Private"} ·{" "}
+          {policyLabel(detail.joinPolicy)}
+          {detail.showMembers &&
+            ` · ${detail.memberCount} ${
+              detail.memberCount === 1 ? "member" : "members"
+            }`}
+          {detail.handle && ` · @${detail.handle}`}
+        </p>
         {detail.description && (
           <p className="whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">
             {detail.description}
@@ -492,77 +550,96 @@ function CommunityOverall({ detail }: { detail: CommunityDetail }) {
         )}
       </div>
 
-      {canDecide && detail.pendingRequests.length > 0 && (
+      {/* Editable homepage content (leadership edits). */}
+      <section className="flex flex-col gap-2">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+            Home
+          </h3>
+          {canManage && !editing && (
+            <button
+              type="button"
+              onClick={() => {
+                setContent(detail.homeContent ?? "");
+                setEditing(true);
+              }}
+              className="text-xs font-medium text-zinc-500 underline-offset-2 hover:underline dark:text-zinc-400"
+            >
+              Edit
+            </button>
+          )}
+        </div>
+        {editing ? (
+          <div className="flex flex-col gap-2">
+            <textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              rows={6}
+              maxLength={8000}
+              placeholder="Welcome message, description, rules, links…"
+              className="w-full resize-y rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-900 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-zinc-50"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setEditing(false)}
+                className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={onSaveHome}
+                disabled={isPending}
+                className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        ) : detail.homeContent ? (
+          <p className="whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">
+            {detail.homeContent}
+          </p>
+        ) : (
+          <p className="rounded-md border border-dashed border-zinc-300 p-4 text-center text-sm text-zinc-500 dark:border-zinc-700">
+            {canManage
+              ? "No homepage yet — tap Edit to add a welcome."
+              : "No homepage yet."}
+          </p>
+        )}
+      </section>
+
+      {/* Members — shown only when leadership has enabled it. */}
+      {detail.showMembers && (
         <section className="flex flex-col gap-2">
           <h3 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-            Pending requests ({detail.pendingRequests.length})
+            Members ({detail.memberCount})
           </h3>
-          <ul className="flex flex-col gap-2">
-            {detail.pendingRequests.map((r) => (
-              <li
-                key={r.id}
-                className="flex items-start justify-between gap-3 rounded-md border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">
-                    {r.displayName ??
-                      (r.username ? `@${r.username}` : "Someone")}
-                  </p>
-                  {r.note && (
-                    <p className="mt-1 whitespace-pre-wrap break-words text-xs text-zinc-600 dark:text-zinc-400">
-                      {r.note}
-                    </p>
-                  )}
-                </div>
-                <div className="flex shrink-0 gap-1">
-                  <button
-                    type="button"
-                    onClick={() => onDecide(r.id, false)}
-                    disabled={isPending}
-                    className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
-                  >
-                    Decline
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onDecide(r.id, true)}
-                    disabled={isPending}
-                    className="rounded-md bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
-                  >
-                    Approve
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
+          {detail.members.length > 0 && (
+            <ul className="flex flex-col gap-1">
+              {detail.members.map((m) => (
+                <li
+                  key={m.userId}
+                  className="flex items-center justify-between gap-3 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                >
+                  <span className="min-w-0 truncate">
+                    {m.displayName ??
+                      (m.username ? `@${m.username}` : "A member")}
+                  </span>
+                  <span className="shrink-0 text-xs uppercase tracking-wide text-zinc-500">
+                    {m.role === "leader"
+                      ? "Leader"
+                      : m.role === "co_leader"
+                        ? "Co-leader"
+                        : "Member"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
       )}
-
-      <section className="flex flex-col gap-2">
-        <h3 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-          Members ({detail.members.length})
-        </h3>
-        <ul className="flex flex-col gap-1">
-          {detail.members.map((m) => (
-            <li
-              key={m.userId}
-              className="flex items-center justify-between gap-3 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-            >
-              <span className="min-w-0 truncate">
-                {m.displayName ??
-                  (m.username ? `@${m.username}` : "A member")}
-              </span>
-              <span className="shrink-0 text-xs uppercase tracking-wide text-zinc-500">
-                {m.role === "leader"
-                  ? "Leader"
-                  : m.role === "co_leader"
-                    ? "Co-leader"
-                    : "Member"}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </section>
 
       {error && (
         <p
@@ -842,16 +919,59 @@ function CommunitySettingsSection({ detail }: { detail: CommunityDetail }) {
     "rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-900";
 
   return (
-    <details className="rounded-md border border-zinc-200 dark:border-zinc-800">
-      <summary className="cursor-pointer px-4 py-3 text-sm font-medium uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
-        Settings
-      </summary>
-      <div className="flex flex-col gap-6 border-t border-zinc-200 p-4 dark:border-zinc-800">
-        {/* Members */}
+    <div className="flex flex-col gap-6">
+      {/* Pending join requests */}
+      {detail.pendingRequests.length > 0 && (
         <section className="flex flex-col gap-2">
           <h4 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-            Members ({detail.members.length})
+            Pending requests ({detail.pendingRequests.length})
           </h4>
+          <ul className="flex flex-col gap-2">
+            {detail.pendingRequests.map((r) => (
+              <li
+                key={r.id}
+                className="flex items-start justify-between gap-3 rounded-md border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">
+                    {r.displayName ??
+                      (r.username ? `@${r.username}` : "Someone")}
+                  </p>
+                  {r.note && (
+                    <p className="mt-1 whitespace-pre-wrap break-words text-xs text-zinc-600 dark:text-zinc-400">
+                      {r.note}
+                    </p>
+                  )}
+                </div>
+                <div className="flex shrink-0 gap-1">
+                  <button
+                    type="button"
+                    onClick={() => run(decideJoinRequest(r.id, false))}
+                    disabled={isPending}
+                    className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+                  >
+                    Decline
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => run(decideJoinRequest(r.id, true))}
+                    disabled={isPending}
+                    className="rounded-md bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
+                  >
+                    Approve
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* Members */}
+      <section className="flex flex-col gap-2">
+        <h4 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+          Members ({detail.members.length})
+        </h4>
           <ul className="flex flex-col gap-1">
             {detail.members.map((m) => {
               const isSelf = m.userId === detail.myUserId;
@@ -959,6 +1079,18 @@ function CommunitySettingsSection({ detail }: { detail: CommunityDetail }) {
               </select>
             </label>
           )}
+          <label className="flex items-center justify-between gap-2 text-sm">
+            <span>Show members</span>
+            <input
+              type="checkbox"
+              checked={detail.showMembers}
+              disabled={isPending}
+              onChange={(e) =>
+                run(setCommunityShowMembers(detail.id, e.target.checked))
+              }
+              className="h-4 w-4 accent-zinc-900 dark:accent-zinc-50"
+            />
+          </label>
         </section>
 
         {/* Chat */}
@@ -1005,8 +1137,7 @@ function CommunitySettingsSection({ detail }: { detail: CommunityDetail }) {
             </select>
           </label>
           <p className="text-xs text-zinc-500">
-            The chat itself ships in a later phase — these settings are ready
-            for it.
+            Turn the chat off to hide it entirely, or limit who can post.
           </p>
         </section>
 
@@ -1019,7 +1150,6 @@ function CommunitySettingsSection({ detail }: { detail: CommunityDetail }) {
           </p>
         )}
       </div>
-    </details>
   );
 }
 

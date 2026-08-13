@@ -61,6 +61,10 @@ export type CommunityDetail = CommunitySummary & {
   /** Chat settings (Phase 4). */
   chatEnabled: boolean;
   chatWhoCanSpeak: CommunityChatWhoCanSpeak;
+  /** Editable homepage content (null = none yet). */
+  homeContent: string | null;
+  /** Whether the member roster + count are shown on Home. */
+  showMembers: boolean;
   members: CommunityMember[];
   /** Pending join requests, visible only to members (RLS enforced). Empty
    *  for non-leadership viewers — the UI decides whether to show the
@@ -155,7 +159,7 @@ export async function getCommunity(
   const { data: community } = await supabase
     .from("communities")
     .select(
-      "id, kind, name, handle, description, visibility, join_policy, created_at, calendar_display, chat_enabled, chat_who_can_speak"
+      "id, kind, name, handle, description, visibility, join_policy, created_at, calendar_display, chat_enabled, chat_who_can_speak, home_content, show_members"
     )
     .eq("id", communityId)
     .maybeSingle();
@@ -172,6 +176,8 @@ export async function getCommunity(
     calendar_display: string | null;
     chat_enabled: boolean | null;
     chat_who_can_speak: string | null;
+    home_content: string | null;
+    show_members: boolean | null;
   };
 
   // Members — RLS returns rows only when the caller is a member. Non-
@@ -225,6 +231,8 @@ export async function getCommunity(
     calendarDisplay: c.calendar_display === "full" ? "full" : "light",
     chatEnabled: c.chat_enabled ?? true,
     chatWhoCanSpeak: c.chat_who_can_speak === "leadership" ? "leadership" : "everyone",
+    homeContent: c.home_content ?? null,
+    showMembers: c.show_members ?? true,
     myRole: (myRow?.role as CommunityRole) ?? null,
     memberCount: members.length,
     members: members.map((m) => {
@@ -823,6 +831,28 @@ export async function setCommunityVisibility(
   return callSettingsRpc("set_community_visibility", {
     p_community_id: communityId,
     p_visibility: visibility,
+  });
+}
+
+// setCommunityHome — leadership edit the homepage content.
+export async function setCommunityHome(
+  communityId: string,
+  content: string
+): Promise<{ error: string } | { ok: true }> {
+  return callSettingsRpc("set_community_home", {
+    p_community_id: communityId,
+    p_content: content,
+  });
+}
+
+// setCommunityShowMembers — leadership toggle member-roster visibility.
+export async function setCommunityShowMembers(
+  communityId: string,
+  show: boolean
+): Promise<{ error: string } | { ok: true }> {
+  return callSettingsRpc("set_community_show_members", {
+    p_community_id: communityId,
+    p_show: show,
   });
 }
 

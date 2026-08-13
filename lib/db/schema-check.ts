@@ -124,6 +124,11 @@ export const EXPECTATIONS: ReadonlyArray<MigrationExpectation> = [
     label: "Community chat (Phase 7)",
     checks: [{ table: "community_messages", column: "kind" }],
   },
+  {
+    migration: "0045_community_home.sql",
+    label: "Community homepage + member visibility",
+    checks: [{ table: "communities", column: "show_members" }],
+  },
 ];
 
 export type MissingMigration = {
