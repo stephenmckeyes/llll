@@ -10,7 +10,6 @@
 // own onClick, no event-bubbling games required.
 // ---------------------------------------------------------------------------
 
-import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
 import {
@@ -94,7 +93,6 @@ export function InstanceRow({
   // are NOT disabled while the action is in flight, so rapid taps (e.g.
   // +1 +1 +1) all register instead of being eaten by a disabled state.
   const [, startTransition] = useTransition();
-  const router = useRouter();
   const [commentOpen, setCommentOpen] = useState(false);
   const timeFormat = useTimeFormat();
   const activity = instance.activity;
@@ -219,18 +217,18 @@ export function InstanceRow({
       );
       if (!ok) return;
     }
-    // Optimistic mark-in-place. For single tasks the server rescheduler
-    // may push this row to a new date instead of accepting the miss —
-    // when that happens we router.refresh() below and the resolved-map
-    // clears on the next render (day-list's instancesKey includes
-    // scheduled_for, so a moved row resets its slot).
+    // Optimistic mark-in-place — same as Complete. We deliberately do NOT
+    // router.refresh() here, even when the server reschedules a single to a
+    // new day: a refresh would reset day-list's resolved map and yank every
+    // just-resolved row (completed ones included) off the day. The "✗ Missed"
+    // row stays in its slot so there's time to Unlabel / Comment; the
+    // reschedule surfaces on the next real navigation / reload.
     onResolve(instance.id, "missed");
     if (isCurrentlyUnlabeled) {
       dispatchInstanceResolved({ wasUnlabeled: true });
     }
     startTransition(async () => {
-      const result = await missInstance(instance.id);
-      if (result?.rescheduled) router.refresh();
+      await missInstance(instance.id);
     });
   }
 
