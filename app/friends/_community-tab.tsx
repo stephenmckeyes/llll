@@ -26,9 +26,12 @@ import {
   addCommunityActivity,
   createCommunity,
   decideJoinRequest,
+  findCommunityByHandle,
   kickMember,
   leaveCommunity,
   removeCommunityActivity,
+  requestJoinCommunity,
+  searchPublicCommunities,
   setAutoAdd,
   setCommunityCalendarDisplay,
   setCommunityChatSettings,
@@ -40,6 +43,7 @@ import {
   type CommunityChatWhoCanSpeak,
   type CommunityDetail,
   type CommunitySummary,
+  type DiscoveredCommunity,
 } from "@/app/actions/communities";
 import type { SharedActivity } from "@/app/actions/sharing";
 import {
@@ -99,6 +103,7 @@ export function CommunityTab({
   const router = useRouter();
   const params = useSearchParams();
   const [creating, setCreating] = useState(false);
+  const [discovering, setDiscovering] = useState(false);
 
   const activeId = params.get("id");
 
@@ -139,13 +144,22 @@ export function CommunityTab({
               {KIND_COPY[kind].emptyBody}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => setCreating(true)}
-            className="inline-flex shrink-0 items-center rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-          >
-            + New
-          </button>
+          <div className="flex shrink-0 gap-2">
+            <button
+              type="button"
+              onClick={() => setDiscovering(true)}
+              className="inline-flex items-center rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            >
+              Find
+            </button>
+            <button
+              type="button"
+              onClick={() => setCreating(true)}
+              className="inline-flex items-center rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            >
+              + New
+            </button>
+          </div>
         </div>
         <div className="rounded-md border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500 dark:border-zinc-700">
           You&rsquo;re not in any {KIND_LABEL[kind].many} yet.
@@ -155,6 +169,9 @@ export function CommunityTab({
             kind={kind}
             onClose={() => setCreating(false)}
           />
+        )}
+        {discovering && (
+          <DiscoverModal kind={kind} onClose={() => setDiscovering(false)} />
         )}
       </div>
     );
@@ -178,6 +195,13 @@ export function CommunityTab({
             </option>
           ))}
         </select>
+        <button
+          type="button"
+          onClick={() => setDiscovering(true)}
+          className="inline-flex shrink-0 items-center rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+        >
+          Find
+        </button>
         <button
           type="button"
           onClick={() => setCreating(true)}
@@ -209,6 +233,191 @@ export function CommunityTab({
           onClose={() => setCreating(false)}
         />
       )}
+      {discovering && (
+        <DiscoverModal kind={kind} onClose={() => setDiscovering(false)} />
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Discover (Phase 5) — find a community to join. Public clubs/guilds via
+// name/handle search; private groups by exact handle. Joining runs through
+// requestJoinCommunity (open → joined, application → requested, invite →
+// error).
+// ---------------------------------------------------------------------------
+
+function DiscoverModal({
+  kind,
+  onClose,
+}: {
+  kind: CommunityKind;
+  onClose: () => void;
+}) {
+  const router = useRouter();
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<DiscoveredCommunity[]>([]);
+  const [searched, setSearched] = useState(false);
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  useBodyScrollLock();
+
+  // Groups are private → handle-only lookup. Clubs/guilds → public search.
+  const handleOnly = kind === "group";
+
+  function onSearch() {
+    const q = query.trim();
+    if (!q) return;
+    setError(null);
+    setNotice(null);
+    startTransition(async () => {
+      if (handleOnly) {
+        const found = await findCommunityByHandle(q);
+        setResults(found ? [found] : []);
+      } else {
+        setResults(await searchPublicCommunities(kind, q));
+      }
+      setSearched(true);
+    });
+  }
+
+  function onJoin(c: DiscoveredCommunity) {
+    setError(null);
+    setNotice(null);
+    startTransition(async () => {
+      const res = await requestJoinCommunity(c.id);
+      if ("error" in res) {
+        setError(res.error);
+        return;
+      }
+      if (res.result === "joined" || res.result === "already_member") {
+        router.push(`/friends/${kind}s?id=${c.id}`);
+        router.refresh();
+        onClose();
+      } else {
+        setNotice(`Request sent to ${c.name}. A leader will review it.`);
+      }
+    });
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="discover-title"
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 sm:items-center"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="flex max-h-[92svh] w-full max-w-md flex-col overflow-hidden rounded-t-2xl bg-white shadow-xl dark:bg-zinc-950 sm:rounded-2xl"
+      >
+        <div className="flex items-start justify-between gap-2 border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
+          <h2 id="discover-title" className="text-xl font-semibold tracking-tight">
+            Find a {KIND_LABEL[kind].one}
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="-mr-1 shrink-0 rounded-md p-1 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900"
+          >
+            <span className="text-xl leading-none">×</span>
+          </button>
+        </div>
+
+        <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-5 py-4">
+          <p className="text-xs text-zinc-500">
+            {handleOnly
+              ? "Groups are private — enter a group's exact handle to request to join."
+              : `Search public ${KIND_LABEL[kind].many} by name or handle.`}
+          </p>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  onSearch();
+                }
+              }}
+              placeholder={handleOnly ? "group-handle" : "Search…"}
+              className="min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            />
+            <button
+              type="button"
+              onClick={onSearch}
+              disabled={isPending || query.trim().length === 0}
+              className="shrink-0 rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
+            >
+              Search
+            </button>
+          </div>
+
+          {notice && (
+            <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
+              {notice}
+            </p>
+          )}
+          {error && (
+            <p
+              role="alert"
+              className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300"
+            >
+              {error}
+            </p>
+          )}
+
+          {searched && results.length === 0 && !error && (
+            <p className="rounded-md border border-dashed border-zinc-300 p-4 text-center text-sm text-zinc-500 dark:border-zinc-700">
+              No {KIND_LABEL[kind].many} found.
+            </p>
+          )}
+
+          <ul className="flex flex-col gap-2">
+            {results.map((c) => (
+              <li
+                key={c.id}
+                className="flex items-start justify-between gap-3 rounded-md border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{c.name}</p>
+                  <p className="truncate text-xs text-zinc-500">
+                    {c.handle ? `@${c.handle} · ` : ""}
+                    {policyLabel(c.joinPolicy)}
+                  </p>
+                  {c.description && (
+                    <p className="mt-0.5 line-clamp-2 text-xs text-zinc-600 dark:text-zinc-400">
+                      {c.description}
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onJoin(c)}
+                  disabled={isPending || c.joinPolicy === "invite"}
+                  title={
+                    c.joinPolicy === "invite"
+                      ? "Invite-only — ask a member for an invite"
+                      : undefined
+                  }
+                  className="shrink-0 rounded-md bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
+                >
+                  {c.joinPolicy === "open"
+                    ? "Join"
+                    : c.joinPolicy === "application"
+                      ? "Request"
+                      : "Invite-only"}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
     </div>
   );
 }

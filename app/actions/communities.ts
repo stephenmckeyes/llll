@@ -383,6 +383,93 @@ export async function leaveCommunity(
 }
 
 // ---------------------------------------------------------------------------
+// Phase 5 — discovery
+// ---------------------------------------------------------------------------
+
+/** A community surfaced through search / handle lookup (before joining). */
+export type DiscoveredCommunity = {
+  id: string;
+  kind: CommunityKind;
+  name: string;
+  handle: string | null;
+  description: string | null;
+  visibility: CommunityVisibility;
+  joinPolicy: CommunityJoinPolicy;
+};
+
+function mapDiscovered(r: {
+  id: string;
+  kind: string;
+  name: string;
+  handle: string | null;
+  description: string | null;
+  visibility: string;
+  join_policy: string;
+}): DiscoveredCommunity {
+  return {
+    id: r.id,
+    kind: r.kind as CommunityKind,
+    name: r.name,
+    handle: r.handle,
+    description: r.description,
+    visibility: r.visibility as CommunityVisibility,
+    joinPolicy: r.join_policy as CommunityJoinPolicy,
+  };
+}
+
+// searchPublicCommunities — name/handle search over PUBLIC clubs/guilds
+// (RLS already restricts SELECT to public + member communities, and we
+// pin visibility=public here so private groups never leak).
+export async function searchPublicCommunities(
+  kind: CommunityKind,
+  query: string
+): Promise<DiscoveredCommunity[]> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  // Strip characters that would break PostgREST's or()/ilike filter syntax.
+  const safe = query.replace(/[,()*%\\]/g, " ").trim();
+  if (safe.length === 0) return [];
+  const like = `%${safe}%`;
+
+  const { data } = await supabase
+    .from("communities")
+    .select("id, kind, name, handle, description, visibility, join_policy")
+    .eq("kind", kind)
+    .eq("visibility", "public")
+    .or(`name.ilike.${like},handle.ilike.${like}`)
+    .order("name", { ascending: true })
+    .limit(20);
+
+  return (
+    (data ?? []) as Array<Parameters<typeof mapDiscovered>[0]>
+  ).map(mapDiscovered);
+}
+
+// findCommunityByHandle — exact-handle lookup, incl. private groups (via the
+// SECURITY DEFINER RPC). Returns null if no community has that handle.
+export async function findCommunityByHandle(
+  handle: string
+): Promise<DiscoveredCommunity | null> {
+  const h = handle.trim();
+  if (h.length === 0) return null;
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data } = await supabase.rpc("find_community_by_handle", {
+    p_handle: h,
+  });
+  const rows = (data ?? []) as Array<Parameters<typeof mapDiscovered>[0]>;
+  return rows.length > 0 ? mapDiscovered(rows[0]) : null;
+}
+
+// ---------------------------------------------------------------------------
 // Phase 3 — community activities (calendar) + auto-add
 // ---------------------------------------------------------------------------
 
