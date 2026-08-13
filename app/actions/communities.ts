@@ -26,6 +26,9 @@ import { buildTagMap, computeTagUsage, type TagMap } from "@/lib/domain/tags";
 /** How much of the community calendar members see (leadership-set). */
 export type CommunityCalendarDisplay = "full" | "light";
 
+/** Who may post in a community's chat (leadership-set). */
+export type CommunityChatWhoCanSpeak = "everyone" | "leadership";
+
 export type CommunitySummary = {
   id: string;
   kind: CommunityKind;
@@ -51,8 +54,13 @@ export type CommunityMember = {
 };
 
 export type CommunityDetail = CommunitySummary & {
+  /** The caller's own user id — lets the UI hide self-actions (kick/role). */
+  myUserId: string;
   /** Leadership setting: how much of the calendar members see. */
   calendarDisplay: CommunityCalendarDisplay;
+  /** Chat settings (Phase 4). */
+  chatEnabled: boolean;
+  chatWhoCanSpeak: CommunityChatWhoCanSpeak;
   members: CommunityMember[];
   /** Pending join requests, visible only to members (RLS enforced). Empty
    *  for non-leadership viewers — the UI decides whether to show the
@@ -147,7 +155,7 @@ export async function getCommunity(
   const { data: community } = await supabase
     .from("communities")
     .select(
-      "id, kind, name, handle, description, visibility, join_policy, created_at, calendar_display"
+      "id, kind, name, handle, description, visibility, join_policy, created_at, calendar_display, chat_enabled, chat_who_can_speak"
     )
     .eq("id", communityId)
     .maybeSingle();
@@ -162,6 +170,8 @@ export async function getCommunity(
     join_policy: string;
     created_at: string;
     calendar_display: string | null;
+    chat_enabled: boolean | null;
+    chat_who_can_speak: string | null;
   };
 
   // Members — RLS returns rows only when the caller is a member. Non-
@@ -211,7 +221,10 @@ export async function getCommunity(
     visibility: c.visibility as CommunityVisibility,
     joinPolicy: c.join_policy as CommunityJoinPolicy,
     createdAt: c.created_at,
+    myUserId: user.id,
     calendarDisplay: c.calendar_display === "full" ? "full" : "light",
+    chatEnabled: c.chat_enabled ?? true,
+    chatWhoCanSpeak: c.chat_who_can_speak === "leadership" ? "leadership" : "everyone",
     myRole: (myRow?.role as CommunityRole) ?? null,
     memberCount: members.length,
     members: members.map((m) => {
@@ -659,6 +672,84 @@ function shiftYmd(ymd: string, days: number): string {
   const mm = String(dt.getMonth() + 1).padStart(2, "0");
   const dd = String(dt.getDate()).padStart(2, "0");
   return `${yy}-${mm}-${dd}`;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4 — community settings (member management, admittance, chat)
+// ---------------------------------------------------------------------------
+
+async function callSettingsRpc(
+  fn: string,
+  args: Record<string, unknown>
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  const { error } = await supabase.rpc(fn, args);
+  if (error) return { error: error.message };
+  revalidateCommunityPaths();
+  return { ok: true };
+}
+
+// setMemberRole — leadership promote/demote a member (leader/co_leader/member).
+export async function setMemberRole(
+  communityId: string,
+  userId: string,
+  role: CommunityRole
+): Promise<{ error: string } | { ok: true }> {
+  return callSettingsRpc("set_member_role", {
+    p_community_id: communityId,
+    p_user_id: userId,
+    p_role: role,
+  });
+}
+
+// kickMember — leadership remove a (non-leader) member.
+export async function kickMember(
+  communityId: string,
+  userId: string
+): Promise<{ error: string } | { ok: true }> {
+  return callSettingsRpc("kick_member", {
+    p_community_id: communityId,
+    p_user_id: userId,
+  });
+}
+
+// setCommunityJoinPolicy — leadership change how people join.
+export async function setCommunityJoinPolicy(
+  communityId: string,
+  policy: CommunityJoinPolicy
+): Promise<{ error: string } | { ok: true }> {
+  return callSettingsRpc("set_community_join_policy", {
+    p_community_id: communityId,
+    p_policy: policy,
+  });
+}
+
+// setCommunityVisibility — leadership change public/private.
+export async function setCommunityVisibility(
+  communityId: string,
+  visibility: CommunityVisibility
+): Promise<{ error: string } | { ok: true }> {
+  return callSettingsRpc("set_community_visibility", {
+    p_community_id: communityId,
+    p_visibility: visibility,
+  });
+}
+
+// setCommunityChatSettings — leadership enable the chat + set who can speak.
+export async function setCommunityChatSettings(
+  communityId: string,
+  enabled: boolean,
+  whoCanSpeak: CommunityChatWhoCanSpeak
+): Promise<{ error: string } | { ok: true }> {
+  return callSettingsRpc("set_community_chat_settings", {
+    p_community_id: communityId,
+    p_enabled: enabled,
+    p_who_can_speak: whoCanSpeak,
+  });
 }
 
 function revalidateCommunityPaths() {

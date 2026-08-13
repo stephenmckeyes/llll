@@ -526,6 +526,9 @@ export const communities = pgTable(
     // Leadership setting: how much of the community calendar members see
     // ('full' | 'light'). Added in migration 0040.
     calendarDisplay: text("calendar_display").notNull().default("light"),
+    // Chat settings (migration 0041). who_can_speak: 'everyone' | 'leadership'.
+    chatEnabled: boolean("chat_enabled").notNull().default(true),
+    chatWhoCanSpeak: text("chat_who_can_speak").notNull().default("everyone"),
     outsiderVisibility: jsonb("outsider_visibility")
       .$type<Record<string, boolean>>()
       .notNull()

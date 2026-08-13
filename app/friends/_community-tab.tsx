@@ -26,12 +26,18 @@ import {
   addCommunityActivity,
   createCommunity,
   decideJoinRequest,
+  kickMember,
   leaveCommunity,
   removeCommunityActivity,
   setAutoAdd,
   setCommunityCalendarDisplay,
+  setCommunityChatSettings,
+  setCommunityJoinPolicy,
+  setCommunityVisibility,
+  setMemberRole,
   type CommunityActivityBundle,
   type CommunityCalendarDisplay,
+  type CommunityChatWhoCanSpeak,
   type CommunityDetail,
   type CommunitySummary,
 } from "@/app/actions/communities";
@@ -43,6 +49,7 @@ import {
   KIND_LABEL,
   type CommunityJoinPolicy,
   type CommunityKind,
+  type CommunityRole,
   type CommunityVisibility,
 } from "@/lib/domain/community";
 import { summarizeRhythm } from "@/lib/domain/rhythm-summary";
@@ -185,6 +192,9 @@ export function CommunityTab({
           <CommunityOverall detail={detail} />
           {bundle && (
             <CommunityActivitiesSection detail={detail} bundle={bundle} />
+          )}
+          {isLeadership(detail.myRole) && (
+            <CommunitySettingsSection detail={detail} />
           )}
         </>
       ) : (
@@ -582,6 +592,214 @@ function CommunityActivitiesSection({
         />
       )}
     </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Settings (Phase 4) — leadership-only. A collapsible area with member
+// management, admittance, and chat settings. Expandable later (custom
+// ranks, discovery/outsider-visibility, etc.).
+// ---------------------------------------------------------------------------
+
+function CommunitySettingsSection({ detail }: { detail: CommunityDetail }) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  const policies = ALLOWED_JOIN_POLICIES[detail.kind];
+  const visibilities = ALLOWED_VISIBILITIES[detail.kind];
+
+  function run(action: Promise<{ error: string } | { ok: true }>) {
+    setError(null);
+    startTransition(async () => {
+      const res = await action;
+      if ("error" in res) setError(res.error);
+      else router.refresh();
+    });
+  }
+
+  const selectCls =
+    "rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-900";
+
+  return (
+    <details className="rounded-md border border-zinc-200 dark:border-zinc-800">
+      <summary className="cursor-pointer px-4 py-3 text-sm font-medium uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
+        Settings
+      </summary>
+      <div className="flex flex-col gap-6 border-t border-zinc-200 p-4 dark:border-zinc-800">
+        {/* Members */}
+        <section className="flex flex-col gap-2">
+          <h4 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+            Members ({detail.members.length})
+          </h4>
+          <ul className="flex flex-col gap-1">
+            {detail.members.map((m) => {
+              const isSelf = m.userId === detail.myUserId;
+              return (
+                <li
+                  key={m.userId}
+                  className="flex items-center justify-between gap-2 rounded-md border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-800"
+                >
+                  <span className="min-w-0 truncate">
+                    {m.displayName ??
+                      (m.username ? `@${m.username}` : "A member")}
+                    {isSelf && (
+                      <span className="ml-1 text-xs text-zinc-400">(you)</span>
+                    )}
+                  </span>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <select
+                      value={m.role}
+                      disabled={isPending || isSelf}
+                      aria-label={`Role for ${m.displayName ?? "member"}`}
+                      onChange={(e) =>
+                        run(
+                          setMemberRole(
+                            detail.id,
+                            m.userId,
+                            e.target.value as CommunityRole
+                          )
+                        )
+                      }
+                      className={selectCls}
+                    >
+                      <option value="leader">Leader</option>
+                      <option value="co_leader">Co-leader</option>
+                      <option value="member">Member</option>
+                    </select>
+                    {!isSelf && m.role !== "leader" && (
+                      <button
+                        type="button"
+                        disabled={isPending}
+                        onClick={() => run(kickMember(detail.id, m.userId))}
+                        className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
+                      >
+                        Kick
+                      </button>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+
+        {/* Admittance */}
+        <section className="flex flex-col gap-2">
+          <h4 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+            Admittance
+          </h4>
+          <label className="flex items-center justify-between gap-2 text-sm">
+            <span>Join policy</span>
+            <select
+              value={detail.joinPolicy}
+              disabled={isPending}
+              onChange={(e) =>
+                run(
+                  setCommunityJoinPolicy(
+                    detail.id,
+                    e.target.value as CommunityJoinPolicy
+                  )
+                )
+              }
+              className={selectCls}
+            >
+              {policies.map((p) => (
+                <option key={p} value={p}>
+                  {p === "open"
+                    ? "Open"
+                    : p === "application"
+                      ? "Application"
+                      : "Invite-only"}
+                </option>
+              ))}
+            </select>
+          </label>
+          {visibilities.length > 1 && (
+            <label className="flex items-center justify-between gap-2 text-sm">
+              <span>Visibility</span>
+              <select
+                value={detail.visibility}
+                disabled={isPending}
+                onChange={(e) =>
+                  run(
+                    setCommunityVisibility(
+                      detail.id,
+                      e.target.value as CommunityVisibility
+                    )
+                  )
+                }
+                className={selectCls}
+              >
+                {visibilities.map((v) => (
+                  <option key={v} value={v}>
+                    {v === "public" ? "Public" : "Private"}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </section>
+
+        {/* Chat */}
+        <section className="flex flex-col gap-2">
+          <h4 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+            Chat
+          </h4>
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={detail.chatEnabled}
+              disabled={isPending}
+              onChange={(e) =>
+                run(
+                  setCommunityChatSettings(
+                    detail.id,
+                    e.target.checked,
+                    detail.chatWhoCanSpeak
+                  )
+                )
+              }
+              className="h-4 w-4 accent-zinc-900 dark:accent-zinc-50"
+            />
+            Enable community chat
+          </label>
+          <label className="flex items-center justify-between gap-2 text-sm">
+            <span>Who can speak</span>
+            <select
+              value={detail.chatWhoCanSpeak}
+              disabled={isPending || !detail.chatEnabled}
+              onChange={(e) =>
+                run(
+                  setCommunityChatSettings(
+                    detail.id,
+                    detail.chatEnabled,
+                    e.target.value as CommunityChatWhoCanSpeak
+                  )
+                )
+              }
+              className={selectCls}
+            >
+              <option value="everyone">Everyone</option>
+              <option value="leadership">Leadership only</option>
+            </select>
+          </label>
+          <p className="text-xs text-zinc-500">
+            The chat itself ships in a later phase — these settings are ready
+            for it.
+          </p>
+        </section>
+
+        {error && (
+          <p
+            role="alert"
+            className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300"
+          >
+            {error}
+          </p>
+        )}
+      </div>
+    </details>
   );
 }
 
