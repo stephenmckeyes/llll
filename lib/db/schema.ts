@@ -616,6 +616,20 @@ export const communityAutoAddPrefs = pgTable("community_auto_add_prefs", {
   communityId: uuid("community_id").notNull(),
   userId: uuid("user_id").notNull(),
   autoAdd: boolean("auto_add").notNull().default(false),
+  // Opt-in: notify me when a new activity is auto-added (migration 0055).
+  notify: boolean("notify").notNull().default(false),
+});
+
+// Dismissible per-user feed of auto-added activities (migration 0055).
+export const communityAutoAddEvents = pgTable("community_auto_add_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  communityId: uuid("community_id").notNull(),
+  userId: uuid("user_id").notNull(),
+  activityName: text("activity_name").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  dismissed: boolean("dismissed").notNull().default(false),
 });
 
 // Per-community group chat (migration 0043). sender_id NULL = a system

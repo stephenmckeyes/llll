@@ -751,8 +751,10 @@ export async function setCommunityCalendarDisplay(
   return { ok: true };
 }
 
-// getAutoAddPref — whether the caller has auto-add enabled for a community.
-export async function getAutoAddPref(communityId: string): Promise<boolean> {
+// getAutoAddPref — the caller's auto-add + notify prefs for a community.
+export async function getAutoAddPref(
+  communityId: string
+): Promise<{ autoAdd: boolean; notify: boolean }> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -761,11 +763,12 @@ export async function getAutoAddPref(communityId: string): Promise<boolean> {
 
   const { data } = await supabase
     .from("community_auto_add_prefs")
-    .select("auto_add")
+    .select("auto_add, notify")
     .eq("community_id", communityId)
     .eq("user_id", user.id)
     .maybeSingle();
-  return Boolean((data as { auto_add?: boolean } | null)?.auto_add);
+  const row = data as { auto_add?: boolean; notify?: boolean } | null;
+  return { autoAdd: Boolean(row?.auto_add), notify: Boolean(row?.notify) };
 }
 
 // setAutoAdd — the caller opts in/out of auto-adding this community's new
@@ -788,6 +791,81 @@ export async function setAutoAdd(
   return { ok: true };
 }
 
+// setAutoAddNotify — the caller opts in/out of being notified when a new
+// activity is auto-added to their schedule.
+export async function setAutoAddNotify(
+  communityId: string,
+  notify: boolean
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase.from("community_auto_add_prefs").upsert(
+    { community_id: communityId, user_id: user.id, notify },
+    { onConflict: "community_id,user_id" }
+  );
+  if (error) return { error: error.message };
+  return { ok: true };
+}
+
+export type AutoAddEvent = {
+  id: string;
+  communityId: string;
+  communityName: string;
+  communityKind: CommunityKind;
+  activityName: string;
+  createdAt: string;
+};
+
+// getMyAutoAddEvents — undismissed "an activity was auto-added" notices for
+// the caller (for /notifications + the badge).
+export async function getMyAutoAddEvents(): Promise<AutoAddEvent[]> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data } = await supabase.rpc("get_my_auto_add_events");
+  const rows = (data ?? []) as Array<{
+    id: string;
+    community_id: string;
+    community_name: string;
+    community_kind: string;
+    activity_name: string;
+    created_at: string;
+  }>;
+  return rows.map((r) => ({
+    id: r.id,
+    communityId: r.community_id,
+    communityName: r.community_name,
+    communityKind: r.community_kind as CommunityKind,
+    activityName: r.activity_name,
+    createdAt: r.created_at,
+  }));
+}
+
+// dismissAutoAddEvent — clear one auto-add notice from the caller's feed.
+export async function dismissAutoAddEvent(
+  eventId: string
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase.rpc("dismiss_auto_add_event", {
+    p_event_id: eventId,
+  });
+  if (error) return { error: error.message };
+  revalidatePath("/notifications");
+  return { ok: true };
+}
+
 // getCommunityActivityBundle — everything the Activities section of a
 // community needs in one round of fetches: the shared activities, the
 // caller's auto-add pref, the caller's OWN activities (for the leadership
@@ -798,6 +876,7 @@ export type CommunityActivityBundle = {
    *  calendar render. */
   instances: SharedInstance[];
   autoAdd: boolean;
+  autoAddNotify: boolean;
   myActivities: Array<{ id: string; name: string }>;
   tagMap: TagMap;
   /** Caller's "today" in their own timezone (anchors the calendar). */
@@ -816,7 +895,7 @@ export async function getCommunityActivityBundle(
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const [activities, autoAdd, myActsRes, tagRes, actTagRes, profRes] =
+  const [activities, autoAddPref, myActsRes, tagRes, actTagRes, profRes] =
     await Promise.all([
       getCommunityActivities(communityId),
       getAutoAddPref(communityId),
@@ -853,7 +932,8 @@ export async function getCommunityActivityBundle(
   return {
     activities,
     instances,
-    autoAdd,
+    autoAdd: autoAddPref.autoAdd,
+    autoAddNotify: autoAddPref.notify,
     myActivities: (myActsRes.data ?? []) as Array<{ id: string; name: string }>,
     tagMap,
     todayStr,

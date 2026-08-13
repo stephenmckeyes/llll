@@ -139,6 +139,11 @@ export const EXPECTATIONS: ReadonlyArray<MigrationExpectation> = [
     label: "Join-request outcome notifications",
     checks: [{ table: "community_join_requests", column: "dismissed" }],
   },
+  {
+    migration: "0055_auto_add_notifications.sql",
+    label: "Auto-added activity notifications",
+    checks: [{ table: "community_auto_add_events", column: "id" }],
+  },
 ];
 
 export type MissingMigration = {

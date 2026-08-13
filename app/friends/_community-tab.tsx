@@ -36,6 +36,7 @@ import {
   requestJoinCommunity,
   searchPublicCommunities,
   setAutoAdd,
+  setAutoAddNotify,
   setCommunityCalendarDisplay,
   setCommunityChatSettings,
   setCommunityHome,
@@ -779,6 +780,7 @@ function CommunityActivitiesSection({
   const [error, setError] = useState<string | null>(null);
   const [copying, setCopying] = useState<SharedActivity | null>(null);
   const [autoAdd, setAutoAddState] = useState(bundle.autoAdd);
+  const [notify, setNotifyState] = useState(bundle.autoAddNotify);
   const [addPick, setAddPick] = useState("");
 
   const canManageActivities = detail.myPermissions.can_add_activities;
@@ -817,6 +819,17 @@ function CommunityActivitiesSection({
       }
     });
   }
+  function onToggleNotify() {
+    const next = !notify;
+    setNotifyState(next); // optimistic
+    startTransition(async () => {
+      const res = await setAutoAddNotify(detail.id, next);
+      if ("error" in res) {
+        setNotifyState(!next);
+        setError(res.error);
+      }
+    });
+  }
   function onSetDisplay(mode: CommunityCalendarDisplay) {
     if (mode === detail.calendarDisplay) return;
     setError(null);
@@ -833,15 +846,28 @@ function CommunityActivitiesSection({
         <h3 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
           Shared activities ({bundle.activities.length})
         </h3>
-        <label className="flex cursor-pointer items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
-          <input
-            type="checkbox"
-            checked={autoAdd}
-            onChange={onToggleAutoAdd}
-            className="h-4 w-4 accent-zinc-900 dark:accent-zinc-50"
-          />
-          Auto-add new ones to my calendar
-        </label>
+        <div className="flex flex-col items-end gap-1">
+          <label className="flex cursor-pointer items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
+            <input
+              type="checkbox"
+              checked={autoAdd}
+              onChange={onToggleAutoAdd}
+              className="h-4 w-4 accent-zinc-900 dark:accent-zinc-50"
+            />
+            Auto-add new ones to my calendar
+          </label>
+          {autoAdd && (
+            <label className="flex cursor-pointer items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
+              <input
+                type="checkbox"
+                checked={notify}
+                onChange={onToggleNotify}
+                className="h-4 w-4 accent-zinc-900 dark:accent-zinc-50"
+              />
+              Notify me when they&rsquo;re added
+            </label>
+          )}
+        </div>
       </div>
 
       {canEditDisplay && (

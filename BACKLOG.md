@@ -206,9 +206,11 @@ community_auto_add_prefs (
    search dropdown (migration 0048), leadership sees pending sent invites
    with cancel + incoming join requests on /notifications (migration
    0049), and requesters get approved/declined outcome notices (migration
-   0050). All counted in the nav badge. STILL TODO (minor): a per-user
-   notification for a NEW auto-added activity (currently silent by design;
-   the auto_add pref would gate it).
+   0050). All counted in the nav badge. Auto-add notifications shipped too
+   (migration 0055): an opt-in "Notify me when they're added" toggle
+   (shown next to Auto-add), a community_auto_add_events feed that the
+   add-activity fan-out writes to for opted-in members, and a dismissible
+   "Added to your calendar" section on /notifications + badge count.
 7. **Community chat** — per-community group chat with filterable system
    notices for community changes. Gated by the Chat settings from
    phase 4. See "Community chat" below. ✅ DONE (migrations 0043/0044) —

@@ -10,6 +10,7 @@
 
 import {
   getIncomingJoinRequests,
+  getMyAutoAddEvents,
   getMyPendingInvites,
   getMyRequestOutcomes,
 } from "@/app/actions/communities";
@@ -22,15 +23,23 @@ function todayYmd(): string {
 }
 
 export async function NotificationsBadge() {
-  const [unread, social, conflicts, invites, joinRequests, outcomes] =
-    await Promise.all([
-      getUnreadCounts(),
-      getSocialOverview(),
-      getUnacknowledgedConflictsForDate(todayYmd()),
-      getMyPendingInvites(),
-      getIncomingJoinRequests(),
-      getMyRequestOutcomes(),
-    ]);
+  const [
+    unread,
+    social,
+    conflicts,
+    invites,
+    joinRequests,
+    outcomes,
+    autoAddEvents,
+  ] = await Promise.all([
+    getUnreadCounts(),
+    getSocialOverview(),
+    getUnacknowledgedConflictsForDate(todayYmd()),
+    getMyPendingInvites(),
+    getIncomingJoinRequests(),
+    getMyRequestOutcomes(),
+    getMyAutoAddEvents(),
+  ]);
   const messages = Object.values(unread).reduce((s, n) => s + n, 0);
   const requests = social.filter(
     (e) => e.status === "pending" && e.direction === "incoming"
@@ -41,7 +50,8 @@ export async function NotificationsBadge() {
     conflicts.length +
     invites.length +
     joinRequests.length +
-    outcomes.length;
+    outcomes.length +
+    autoAddEvents.length;
   if (total <= 0) return null;
   return (
     <span
