@@ -876,6 +876,90 @@ function revalidateCommunityPaths() {
 }
 
 // ---------------------------------------------------------------------------
+// Phase 6 — invites
+// ---------------------------------------------------------------------------
+
+export type PendingInvite = {
+  id: string;
+  communityId: string;
+  communityName: string;
+  communityKind: CommunityKind;
+  invitedByName: string | null;
+  createdAt: string;
+};
+
+// inviteToCommunity — leadership invite a user by username.
+export async function inviteToCommunity(
+  communityId: string,
+  username: string
+): Promise<{ error: string } | { ok: true }> {
+  const u = username.trim().replace(/^@/, "");
+  if (u.length === 0) return { error: "Enter a username." };
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase.rpc("invite_to_community", {
+    p_community_id: communityId,
+    p_username: u,
+  });
+  if (error) return { error: error.message };
+  revalidateCommunityPaths();
+  return { ok: true };
+}
+
+// respondToInvite — the invitee accepts (joins) or declines.
+export async function respondToInvite(
+  inviteId: string,
+  accept: boolean
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase.rpc("respond_to_invite", {
+    p_invite_id: inviteId,
+    p_accept: accept,
+  });
+  if (error) return { error: error.message };
+  revalidatePath("/notifications");
+  revalidateCommunityPaths();
+  return { ok: true };
+}
+
+// getMyPendingInvites — the caller's pending community invites (for the
+// Notifications page + badge).
+export async function getMyPendingInvites(): Promise<PendingInvite[]> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data } = await supabase.rpc("get_my_pending_invites");
+  const rows = (data ?? []) as Array<{
+    id: string;
+    community_id: string;
+    community_name: string;
+    community_kind: string;
+    invited_by_name: string | null;
+    created_at: string;
+  }>;
+  return rows.map((r) => ({
+    id: r.id,
+    communityId: r.community_id,
+    communityName: r.community_name,
+    communityKind: r.community_kind as CommunityKind,
+    invitedByName: r.invited_by_name,
+    createdAt: r.created_at,
+  }));
+}
+
+// ---------------------------------------------------------------------------
 // Phase 7 — community chat
 // ---------------------------------------------------------------------------
 

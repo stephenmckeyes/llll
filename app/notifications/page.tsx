@@ -9,6 +9,7 @@
 import { startOfWeek, format } from "date-fns";
 import Link from "next/link";
 
+import { getMyPendingInvites } from "@/app/actions/communities";
 import { getUnacknowledgedConflictsForDate } from "@/app/actions/conflicts";
 import { getSocialOverview, type SocialEntry } from "@/app/actions/friends";
 import { getUnreadCounts } from "@/app/actions/messages";
@@ -24,6 +25,7 @@ import type { Rhythm } from "@/lib/validators/rhythm";
 import { PendingLink } from "@/app/_components/pending-link";
 
 import { buildFriendActivityNotifications } from "./friend-activity";
+import { CommunityInvites } from "./community-invites";
 import { ConflictsList } from "./conflicts-list";
 import { FriendActivityNotifications } from "./friend-activity-notifications";
 import { RequestActions } from "./request-actions";
@@ -71,7 +73,7 @@ export default async function NotificationsPage() {
     return format(d, "yyyy-MM-dd");
   })();
 
-  const [entries, shares, watches, sharedInstances, unread, conflicts] =
+  const [entries, shares, watches, sharedInstances, unread, conflicts, invites] =
     await Promise.all([
       getSocialOverview(),
       getSharedWithMe(),
@@ -79,6 +81,7 @@ export default async function NotificationsPage() {
       getSharedInstancesWithMe(from, todayStr),
       getUnreadCounts(),
       getUnacknowledgedConflictsForDate(todayStr),
+      getMyPendingInvites(),
     ]);
   const incoming = entries.filter(
     (e) => e.status === "pending" && e.direction === "incoming"
@@ -220,6 +223,9 @@ export default async function NotificationsPage() {
           </ul>
         )}
       </section>
+
+      {/* 1a. Community invites */}
+      <CommunityInvites invites={invites} />
 
       {/* 1a. Messages */}
       <section className="flex flex-col gap-3">

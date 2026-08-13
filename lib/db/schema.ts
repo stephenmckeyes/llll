@@ -635,6 +635,23 @@ export const communityMessages = pgTable(
   (t) => [index("community_messages_idx").on(t.communityId, t.createdAt)]
 );
 
+// Community invites (migration 0048) — leadership invites a user; the
+// invitee accepts/declines from Notifications.
+export const communityInvites = pgTable(
+  "community_invites",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    communityId: uuid("community_id").notNull(),
+    invitedUserId: uuid("invited_user_id").notNull(),
+    invitedBy: uuid("invited_by"),
+    status: text("status").notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("community_invites_invitee_idx").on(t.invitedUserId, t.status)]
+);
+
 // ===========================================================================
 // Timeline conflict acknowledgements (migration 0036)
 // ---------------------------------------------------------------------------
