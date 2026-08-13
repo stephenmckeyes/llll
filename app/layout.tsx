@@ -3,6 +3,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 
+import { cookies } from "next/headers";
+
 import { createClient } from "@/lib/supabase/server";
 
 import { BottomNav } from "./_components/bottom-nav";
@@ -91,6 +93,16 @@ export default async function RootLayout({
     data: { user },
   } = await supabase.auth.getUser();
 
+  // Read the theme from a cookie so the correct classes are on <html> in the
+  // FIRST byte of HTML — no flash, and nothing for React to strip on
+  // hydration. (localStorage is client-only, so it can't do this; the picker
+  // + ThemeApplier keep the cookie in sync.) 'system'/'light'/absent add no
+  // class — the <head> script resolves those against the OS pre-paint.
+  const cookieStore = await cookies();
+  const themePref = cookieStore.get("mission-theme")?.value;
+  const themeClass =
+    themePref === "dark" ? " dark" : themePref === "sleep" ? " dark sleep" : "";
+
   return (
     <html
       lang="en"
@@ -107,7 +119,7 @@ export default async function RootLayout({
       // friends/levels/etc buttons so that if there is a section that
       // is supposed to scroll, that section scrolls, but the outlying
       // parts of the app do not move."
-      className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} antialiased${themeClass}`}
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />

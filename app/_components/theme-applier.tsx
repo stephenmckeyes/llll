@@ -31,6 +31,10 @@ function applySavedTheme() {
       saved === "dark" || saved === "sleep" || (saved === "system" && prefersDark);
     root.classList.toggle("dark", dark);
     root.classList.toggle("sleep", saved === "sleep");
+    // Mirror the saved theme into a cookie so the SERVER can render the
+    // theme class on the next load (killing the flash). Existing users who
+    // only have localStorage get their cookie set here on first load.
+    document.cookie = `${STORAGE_KEY}=${saved}; path=/; max-age=31536000; samesite=lax`;
   } catch {
     // localStorage blocked (privacy mode) — leave whatever the <head>
     // script applied.

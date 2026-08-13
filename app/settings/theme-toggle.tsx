@@ -95,6 +95,9 @@ export function ThemeToggle() {
   const pick = useCallback((next: ThemeMode) => {
     try {
       localStorage.setItem(STORAGE_KEY, next);
+      // Also persist to a cookie so the server can render the theme class
+      // into the first byte of HTML on the next load — no flash.
+      document.cookie = `${STORAGE_KEY}=${next}; path=/; max-age=31536000; samesite=lax`;
     } catch {
       // Quota / privacy mode — still apply the visual change, just
       // don't persist it.
