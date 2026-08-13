@@ -19,6 +19,11 @@ import {
   type CommunityRole,
   type CommunityVisibility,
 } from "@/lib/domain/community";
+import type { SharedActivity, SharedInstance } from "@/app/actions/sharing";
+import type { Rhythm } from "@/lib/validators/rhythm";
+
+/** How much of the community calendar members see (leadership-set). */
+export type CommunityCalendarDisplay = "full" | "light";
 
 export type CommunitySummary = {
   id: string;
@@ -45,6 +50,8 @@ export type CommunityMember = {
 };
 
 export type CommunityDetail = CommunitySummary & {
+  /** Leadership setting: how much of the calendar members see. */
+  calendarDisplay: CommunityCalendarDisplay;
   members: CommunityMember[];
   /** Pending join requests, visible only to members (RLS enforced). Empty
    *  for non-leadership viewers — the UI decides whether to show the
@@ -139,7 +146,7 @@ export async function getCommunity(
   const { data: community } = await supabase
     .from("communities")
     .select(
-      "id, kind, name, handle, description, visibility, join_policy, created_at"
+      "id, kind, name, handle, description, visibility, join_policy, created_at, calendar_display"
     )
     .eq("id", communityId)
     .maybeSingle();
@@ -153,6 +160,7 @@ export async function getCommunity(
     visibility: string;
     join_policy: string;
     created_at: string;
+    calendar_display: string | null;
   };
 
   // Members — RLS returns rows only when the caller is a member. Non-
@@ -202,6 +210,7 @@ export async function getCommunity(
     visibility: c.visibility as CommunityVisibility,
     joinPolicy: c.join_policy as CommunityJoinPolicy,
     createdAt: c.created_at,
+    calendarDisplay: c.calendar_display === "full" ? "full" : "light",
     myRole: (myRow?.role as CommunityRole) ?? null,
     memberCount: members.length,
     members: members.map((m) => {
@@ -357,6 +366,208 @@ export async function leaveCommunity(
   revalidatePath("/friends/clubs");
   revalidatePath("/friends/guilds");
   return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3 — community activities (calendar) + auto-add
+// ---------------------------------------------------------------------------
+
+// getCommunityActivities — the community's shared activities, returned in the
+// SharedActivity shape so the friend-calendar components can render them
+// verbatim. (Community activities have no share row: shareId reuses the
+// activity id, and shareProgress is always true.)
+export async function getCommunityActivities(
+  communityId: string
+): Promise<SharedActivity[]> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data } = await supabase.rpc("get_community_activities", {
+    p_community_id: communityId,
+  });
+  const rows = (data ?? []) as Array<{
+    activity_id: string;
+    owner_id: string;
+    owner_username: string | null;
+    owner_display_name: string | null;
+    name: string;
+    notes: string | null;
+    rhythm: Rhythm;
+    priority: number;
+    scheduled_times: string[] | null;
+    scheduled_end_times: string[] | null;
+    default_skill_tags: string[] | null;
+    start_date: string;
+    end_date: string | null;
+    archived_at: string | null;
+    added_at: string;
+  }>;
+  return rows.map((r) => ({
+    shareId: r.activity_id,
+    activityId: r.activity_id,
+    ownerId: r.owner_id,
+    ownerUsername: r.owner_username,
+    ownerDisplayName: r.owner_display_name,
+    shareProgress: true,
+    name: r.name,
+    notes: r.notes,
+    rhythm: r.rhythm,
+    priority: r.priority,
+    scheduledTimes: r.scheduled_times ?? [],
+    scheduledEndTimes: r.scheduled_end_times ?? [],
+    defaultSkillTags: r.default_skill_tags ?? [],
+    startDate: r.start_date,
+    endDate: r.end_date,
+    archivedAt: r.archived_at,
+    createdAt: r.added_at,
+  }));
+}
+
+// getCommunityInstances — occurrences of the community's shared activities in
+// [from, to], in the SharedInstance shape (mirrors getSharedInstancesWithMe).
+export async function getCommunityInstances(
+  communityId: string,
+  from: string,
+  to: string
+): Promise<SharedInstance[]> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data } = await supabase.rpc("get_community_instances", {
+    p_community_id: communityId,
+    p_from: from,
+    p_to: to,
+  });
+  const rows = (data ?? []) as Array<{
+    owner_id: string;
+    activity_id: string;
+    instance_id: string;
+    scheduled_for: string;
+    status: string;
+    completion_count: number;
+    completion_dates?: string[] | null;
+    comment?: string | null;
+  }>;
+  return rows.map((r) => ({
+    ownerId: r.owner_id,
+    activityId: r.activity_id,
+    instanceId: r.instance_id,
+    scheduledFor: r.scheduled_for,
+    status: r.status as SharedInstance["status"],
+    completionCount: r.completion_count,
+    completionDates: r.completion_dates ?? [],
+    comment: r.comment ?? null,
+  }));
+}
+
+// addCommunityActivity — leadership links one of their own activities in.
+export async function addCommunityActivity(
+  communityId: string,
+  activityId: string
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase.rpc("add_community_activity", {
+    p_community_id: communityId,
+    p_activity_id: activityId,
+  });
+  if (error) return { error: error.message };
+  revalidateCommunityPaths();
+  return { ok: true };
+}
+
+// removeCommunityActivity — leadership unlinks an activity.
+export async function removeCommunityActivity(
+  communityId: string,
+  activityId: string
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase.rpc("remove_community_activity", {
+    p_community_id: communityId,
+    p_activity_id: activityId,
+  });
+  if (error) return { error: error.message };
+  revalidateCommunityPaths();
+  return { ok: true };
+}
+
+// setCommunityCalendarDisplay — leadership set how much of the calendar
+// members see ('full' | 'light').
+export async function setCommunityCalendarDisplay(
+  communityId: string,
+  mode: CommunityCalendarDisplay
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase.rpc("set_community_calendar_display", {
+    p_community_id: communityId,
+    p_mode: mode,
+  });
+  if (error) return { error: error.message };
+  revalidateCommunityPaths();
+  return { ok: true };
+}
+
+// getAutoAddPref — whether the caller has auto-add enabled for a community.
+export async function getAutoAddPref(communityId: string): Promise<boolean> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data } = await supabase
+    .from("community_auto_add_prefs")
+    .select("auto_add")
+    .eq("community_id", communityId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  return Boolean((data as { auto_add?: boolean } | null)?.auto_add);
+}
+
+// setAutoAdd — the caller opts in/out of auto-adding this community's new
+// activities to their own schedule. Written directly (RLS gates to own row).
+export async function setAutoAdd(
+  communityId: string,
+  on: boolean
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase.from("community_auto_add_prefs").upsert(
+    { community_id: communityId, user_id: user.id, auto_add: on },
+    { onConflict: "community_id,user_id" }
+  );
+  if (error) return { error: error.message };
+  return { ok: true };
+}
+
+function revalidateCommunityPaths() {
+  revalidatePath("/friends/groups");
+  revalidatePath("/friends/clubs");
+  revalidatePath("/friends/guilds");
 }
 
 // ---------------------------------------------------------------------------

@@ -109,6 +109,11 @@ export const EXPECTATIONS: ReadonlyArray<MigrationExpectation> = [
     label: "Archived tags (tags.archived_at)",
     checks: [{ table: "tags", column: "archived_at" }],
   },
+  {
+    migration: "0040_community_activities.sql",
+    label: "Community activities + calendar (Phase 3)",
+    checks: [{ table: "communities", column: "calendar_display" }],
+  },
 ];
 
 export type MissingMigration = {

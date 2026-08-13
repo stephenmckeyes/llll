@@ -523,6 +523,9 @@ export const communities = pgTable(
     description: text("description"),
     visibility: text("visibility").notNull(),
     joinPolicy: text("join_policy").notNull(),
+    // Leadership setting: how much of the community calendar members see
+    // ('full' | 'light'). Added in migration 0040.
+    calendarDisplay: text("calendar_display").notNull().default("light"),
     outsiderVisibility: jsonb("outsider_visibility")
       .$type<Record<string, boolean>>()
       .notNull()
