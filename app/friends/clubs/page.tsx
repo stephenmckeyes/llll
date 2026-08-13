@@ -6,6 +6,7 @@
 
 import {
   getCommunity,
+  getCommunityActivityBundle,
   listMyCommunities,
 } from "@/app/actions/communities";
 import { requireOnboardedUser } from "@/lib/auth/require-onboarded-user";
@@ -28,11 +29,21 @@ export default async function ClubsTabPage({
     id && communities.some((c) => c.id === id)
       ? id
       : (communities[0]?.id ?? null);
-  const detail = effectiveId ? await getCommunity(effectiveId) : null;
+  const [detail, bundle] = effectiveId
+    ? await Promise.all([
+        getCommunity(effectiveId),
+        getCommunityActivityBundle(effectiveId),
+      ])
+    : [null, null];
 
   return (
     <CommunityShell active="clubs">
-      <CommunityTab kind="club" communities={communities} detail={detail} />
+      <CommunityTab
+        kind="club"
+        communities={communities}
+        detail={detail}
+        bundle={bundle}
+      />
     </CommunityShell>
   );
 }

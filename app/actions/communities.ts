@@ -21,6 +21,7 @@ import {
 } from "@/lib/domain/community";
 import type { SharedActivity, SharedInstance } from "@/app/actions/sharing";
 import type { Rhythm } from "@/lib/validators/rhythm";
+import { buildTagMap, computeTagUsage, type TagMap } from "@/lib/domain/tags";
 
 /** How much of the community calendar members see (leadership-set). */
 export type CommunityCalendarDisplay = "full" | "light";
@@ -562,6 +563,58 @@ export async function setAutoAdd(
   );
   if (error) return { error: error.message };
   return { ok: true };
+}
+
+// getCommunityActivityBundle — everything the Activities section of a
+// community needs in one round of fetches: the shared activities, the
+// caller's auto-add pref, the caller's OWN activities (for the leadership
+// "+ Add" picker), and the tag palette (for tag chips).
+export type CommunityActivityBundle = {
+  activities: SharedActivity[];
+  autoAdd: boolean;
+  myActivities: Array<{ id: string; name: string }>;
+  tagMap: TagMap;
+};
+
+export async function getCommunityActivityBundle(
+  communityId: string
+): Promise<CommunityActivityBundle> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const [activities, autoAdd, myActsRes, tagRes, actTagRes] = await Promise.all([
+    getCommunityActivities(communityId),
+    getAutoAddPref(communityId),
+    supabase
+      .from("activities")
+      .select("id, name")
+      .eq("user_id", user.id)
+      .is("archived_at", null)
+      .order("name", { ascending: true }),
+    supabase.from("tags").select("id, name, color").is("archived_at", null),
+    supabase
+      .from("activities")
+      .select("default_skill_tags")
+      .is("archived_at", null),
+  ]);
+
+  const usageByName = computeTagUsage(
+    (actTagRes.data ?? []) as Array<{ default_skill_tags: string[] | null }>
+  );
+  const tagMap = buildTagMap(
+    (tagRes.data ?? []) as Array<{ id: string; name: string; color: string }>,
+    usageByName
+  );
+
+  return {
+    activities,
+    autoAdd,
+    myActivities: (myActsRes.data ?? []) as Array<{ id: string; name: string }>,
+    tagMap,
+  };
 }
 
 function revalidateCommunityPaths() {
