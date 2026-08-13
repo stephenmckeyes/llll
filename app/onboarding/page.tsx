@@ -38,7 +38,7 @@ export default async function OnboardingPage() {
           Welcome to Mission
         </h1>
         <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-          Two quick questions before we get started. You can change
+          A few quick details before we get started. You can change
           everything later in Settings.
         </p>
       </header>

@@ -24,6 +24,9 @@ import { createClient } from "@/lib/supabase/server";
 // math falls back to UTC, which is the existing default.
 const TZ_NAME_RE = /^[A-Za-z][A-Za-z0-9_+\-/]{0,99}$/;
 
+// Same rule as /settings/account's username field (app/actions/profile.ts).
+const USERNAME_RE = /^[a-zA-Z0-9_.]{3,30}$/;
+
 export type OnboardingState = { error: string } | { ok: true } | null;
 
 export async function completeOnboarding(
@@ -38,6 +41,7 @@ export async function completeOnboarding(
 
   const tzRaw = String(formData.get("timezone") ?? "").trim();
   const displayNameRaw = String(formData.get("displayName") ?? "").trim();
+  const usernameRaw = String(formData.get("username") ?? "").trim();
 
   if (!tzRaw || !TZ_NAME_RE.test(tzRaw)) {
     return { error: "Please pick a valid timezone." };
@@ -48,16 +52,33 @@ export async function completeOnboarding(
     return { error: "Display name is too long (max 80)." };
   }
 
+  // Username is now required so every user is invitable to communities
+  // by their handle.
+  if (!usernameRaw) {
+    return { error: "Please choose a username." };
+  }
+  if (!USERNAME_RE.test(usernameRaw)) {
+    return {
+      error:
+        "Username must be 3–30 characters: letters, numbers, dot or underscore.",
+    };
+  }
+
   // Upsert (rather than UPDATE) defends against the rare race where
   // requireOnboardedUser ran before the auth trigger created the row.
   const { error } = await supabase.from("profiles").upsert({
     id: user.id,
     timezone: tzRaw,
     display_name: displayName,
+    username: usernameRaw,
     onboarded_at: new Date().toISOString(),
   });
 
   if (error) {
+    // Unique-violation on the username index → friendly message.
+    if (error.code === "23505") {
+      return { error: "That username is already taken." };
+    }
     return { error: error.message };
   }
 
