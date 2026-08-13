@@ -524,8 +524,9 @@ export const communities = pgTable(
     visibility: text("visibility").notNull(),
     joinPolicy: text("join_policy").notNull(),
     // Leadership setting: how much of the community calendar members see
-    // ('full' | 'light'). Added in migration 0040.
-    calendarDisplay: text("calendar_display").notNull().default("light"),
+    // ('full' | 'light'). Added in 0040; default flipped to 'full' in 0046
+    // so a community's calendar matches the full personal calendar by default.
+    calendarDisplay: text("calendar_display").notNull().default("full"),
     // Chat settings (migration 0041). who_can_speak: 'everyone' | 'leadership'.
     chatEnabled: boolean("chat_enabled").notNull().default(true),
     chatWhoCanSpeak: text("chat_who_can_speak").notNull().default("everyone"),
