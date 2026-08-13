@@ -1306,12 +1306,7 @@ async function WeekView({
           characters of activity name per line of the banner.
           Wrapped in SwipeNav so a horizontal swipe flips weeks (swipe
           left = next, right = previous), same targets as the arrows. */}
-      <SwipeNav
-        baseDate={weekDate}
-        stepView="week"
-        stepDays={7}
-        className="grid grid-cols-7 gap-1"
-      >
+      <SwipeNav clickNav className="grid grid-cols-7 gap-1">
         {days.map((d) => (
           <Link
             key={d.dateStr}

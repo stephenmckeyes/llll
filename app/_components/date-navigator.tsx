@@ -88,6 +88,7 @@ export function DateNavigator({
         <Link
           href={hrefFor(view, prevDate)}
           aria-label="Previous"
+          data-datenav="prev"
           className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
         >
           ←
@@ -106,6 +107,7 @@ export function DateNavigator({
         <Link
           href={hrefFor(view, nextDate)}
           aria-label="Next"
+          data-datenav="next"
           className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
         >
           →
