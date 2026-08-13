@@ -67,8 +67,8 @@ export default async function SettingsPage() {
   await requireOnboardedUser();
 
   return (
-    <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-8 bg-white p-6 dark:bg-zinc-950">
-      <header className="flex items-start justify-between gap-3">
+    <main className="mx-auto flex h-full w-full max-w-2xl flex-col bg-white px-6 pt-6 dark:bg-zinc-950">
+      <header className="mb-4 flex shrink-0 items-start justify-between gap-3">
         <div className="min-w-0">
           <PendingLink
             href="/"
@@ -83,12 +83,15 @@ export default async function SettingsPage() {
         <NotificationBell />
       </header>
 
-      <ul className="flex flex-col gap-2">
+      {/* Tiles scroll only when they don't fit — the header and Sign out
+          stay pinned, so Sign out is always visible. A scrollbar appears
+          here automatically once there are too many tiles to fit. */}
+      <ul className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto">
         {TILES.map((t) => (
           <li key={t.href}>
             <PendingLink
               href={t.href}
-              className="flex items-center justify-between gap-3 rounded-md border border-zinc-200 bg-white px-4 py-3 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900"
+              className="flex items-center justify-between gap-3 rounded-md border border-zinc-200 bg-white px-4 py-2.5 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900"
             >
               <span className="flex flex-col">
                 <span className="text-sm font-medium">{t.label}</span>
@@ -107,9 +110,9 @@ export default async function SettingsPage() {
         ))}
       </ul>
 
-      {/* Sign-out at the very bottom — keeps it out of the "primary
-          actions" lane visually, but still one click away. */}
-      <section className="mt-auto flex flex-col gap-3 border-t border-zinc-200 pt-6 dark:border-zinc-800">
+      {/* Sign-out pinned at the very bottom (shrink-0) — always visible,
+          never scrolled off. */}
+      <section className="mt-4 flex shrink-0 flex-col gap-2 border-t border-zinc-200 pt-4 pb-3 dark:border-zinc-800">
         <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
           Session
         </h2>
