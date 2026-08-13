@@ -7,11 +7,13 @@
 // LEFT = next, matching iPhone Calendar and standard carousels.
 //
 // Two ways to navigate, so it works from both server and client callers:
-//   - stepView + stepDays → router.push, computing the target from the
-//     LIVE URL's ?date= at swipe time (server-rendered Week view). Reading
-//     the URL fresh each swipe — rather than precomputed prev/next hrefs —
-//     is what makes repeated swipes work: static hrefs baked at render can
-//     go stale and every swipe after the first would target the same week.
+//   - baseDate + stepView + stepDays → router.push (server-rendered Week
+//     view). We DON'T read the URL back between swipes: router.push defers
+//     the URL update, so a second swipe would re-read the old ?date= and
+//     re-navigate to the same week ("only works once"). Instead we keep a
+//     local day-offset from baseDate and step it each swipe. The offset
+//     resets whenever baseDate changes (a navigation committed new props),
+//     so it's correct whether or not the server re-rendered between swipes.
 //   - onPrev / onNext callbacks → local state (the friend Week view, which
 //     keeps the reference date in React state).
 //
@@ -23,12 +25,13 @@
 // ---------------------------------------------------------------------------
 
 import { useRouter } from "next/navigation";
-import { useRef, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 
 // Minimum horizontal travel (px) to count as a swipe.
 const SWIPE_MIN_X = 50;
 
 export function SwipeNav({
+  baseDate,
   stepView,
   stepDays,
   onPrev,
@@ -36,10 +39,12 @@ export function SwipeNav({
   className,
   children,
 }: {
-  /** view= param to push when stepping via the URL (e.g. "week"). */
+  /** Current reference date (YYYY-MM-DD) the view is showing. Required
+   *  (with stepView + stepDays) for URL stepping. */
+  baseDate?: string;
+  /** view= param to push when stepping (e.g. "week"). */
   stepView?: string;
-  /** Days to shift ?date= by per swipe (e.g. 7 for a week). Both this and
-   *  stepView are required for URL stepping. */
+  /** Days to shift by per swipe (e.g. 7 for a week). */
   stepDays?: number;
   /** Called on a swipe RIGHT (takes precedence over URL stepping). */
   onPrev?: () => void;
@@ -51,20 +56,31 @@ export function SwipeNav({
   const router = useRouter();
   const start = useRef<{ x: number; y: number } | null>(null);
 
-  const stepFromUrl = (deltaDays: number) => {
-    if (typeof window === "undefined" || !stepView) return;
-    const cur = new URLSearchParams(window.location.search).get("date");
-    if (!cur || !/^\d{4}-\d{2}-\d{2}$/.test(cur)) return;
-    router.push(`/?view=${stepView}&date=${shiftYmd(cur, deltaDays)}`);
+  // Accumulated day-offset from baseDate. Reset when baseDate changes so
+  // each swipe steps exactly one period from where we currently are —
+  // independent of when router.push commits the URL. (React's "adjust
+  // state during render on prop change" pattern.)
+  const [snapshot, setSnapshot] = useState(baseDate);
+  const [offsetDays, setOffsetDays] = useState(0);
+  if (snapshot !== baseDate) {
+    setSnapshot(baseDate);
+    setOffsetDays(0);
+  }
+
+  const stepUrl = (deltaDays: number) => {
+    if (!baseDate || !stepView) return;
+    const next = offsetDays + deltaDays;
+    setOffsetDays(next);
+    router.push(`/?view=${stepView}&date=${shiftYmd(baseDate, next)}`);
   };
 
   const goPrev = () => {
     if (onPrev) onPrev();
-    else if (stepDays) stepFromUrl(-stepDays);
+    else if (stepDays) stepUrl(-stepDays);
   };
   const goNext = () => {
     if (onNext) onNext();
-    else if (stepDays) stepFromUrl(stepDays);
+    else if (stepDays) stepUrl(stepDays);
   };
 
   return (
