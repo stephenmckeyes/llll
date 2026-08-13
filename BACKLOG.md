@@ -604,3 +604,16 @@ Calendar's vertical-scrolling year layout). Add as a follow-up: render
 - `vite-tsconfig-paths` plugin shows a deprecation hint at every test
   run; Vitest 4 supports it natively via `resolve.tsconfigPaths: true`.
   Swap when convenient.
+- **Two tabs in one browser share the same login.** Auth is cookie-based
+  (`@supabase/ssr` — `createBrowserClient` + server/middleware read the
+  same cookies), and cookies are per-browser-profile, not per-tab. So
+  signing into account B in one tab silently switches the other tab to
+  account B too. This only bites multi-account *testing*; for that use an
+  incognito window, a second browser, separate Chrome profiles, or
+  Firefox containers (each has its own cookie jar). Making the app itself
+  support two logins in two normal tabs would mean moving the session off
+  SSR cookies (or layering a tab-scoped `sessionStorage` token on top),
+  with real security/page-load tradeoffs. Assume this is moot once this
+  becomes a real end-user app (nobody runs two of their own accounts at
+  once) — only revisit if simultaneous multi-account in one browser
+  becomes an actual product feature.
