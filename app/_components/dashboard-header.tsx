@@ -13,12 +13,9 @@
 // second/third rows are gone.
 // ---------------------------------------------------------------------------
 
-import { NotificationsBadge } from "./notifications-badge";
+import { NotificationBell } from "./notification-bell";
 import { PendingLink } from "./pending-link";
 import { TimeChip } from "./time-chip";
-
-const iconBtnClasses =
-  "relative inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-zinc-300 text-zinc-700 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900";
 
 export function DashboardHeader({ userEmail }: { userEmail: string }) {
   return (
@@ -47,14 +44,7 @@ export function DashboardHeader({ userEmail }: { userEmail: string }) {
           and the primary "+ Add Activity" CTA. Settings + Friends live
           in the BottomNav now. */}
       <div className="flex shrink-0 items-center gap-2">
-        <PendingLink
-          href="/notifications"
-          aria-label="Notifications"
-          className={iconBtnClasses}
-        >
-          <BellIcon />
-          <NotificationsBadge />
-        </PendingLink>
+        <NotificationBell />
         <PendingLink
           href="/activities/new"
           className="inline-flex items-center rounded-md bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
@@ -63,24 +53,5 @@ export function DashboardHeader({ userEmail }: { userEmail: string }) {
         </PendingLink>
       </div>
     </div>
-  );
-}
-
-function BellIcon() {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.75}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="h-5 w-5"
-      aria-hidden
-    >
-      <path d="M18 16v-5a6 6 0 0 0-12 0v5l-2 2h16z" />
-      <path d="M10 20a2 2 0 1 0 4 0" />
-    </svg>
   );
 }

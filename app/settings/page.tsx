@@ -10,6 +10,7 @@
 // thing the user sees).
 // ---------------------------------------------------------------------------
 
+import { NotificationBell } from "@/app/_components/notification-bell";
 import { PendingLink } from "@/app/_components/pending-link";
 
 import { signOut } from "@/app/actions/auth";
@@ -67,16 +68,19 @@ export default async function SettingsPage() {
 
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-8 bg-white p-6 dark:bg-zinc-950">
-      <header>
-        <PendingLink
-          href="/"
-          className="inline-flex items-center text-sm text-zinc-500 underline-offset-2 hover:underline"
-        >
-          ← Mission
-        </PendingLink>
-        <h1 className="mt-1 text-3xl font-semibold tracking-tight">
-          Settings
-        </h1>
+      <header className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <PendingLink
+            href="/"
+            className="inline-flex items-center text-sm text-zinc-500 underline-offset-2 hover:underline"
+          >
+            ← Mission
+          </PendingLink>
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight">
+            Settings
+          </h1>
+        </div>
+        <NotificationBell />
       </header>
 
       <ul className="flex flex-col gap-2">
