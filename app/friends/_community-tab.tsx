@@ -51,6 +51,7 @@ import { useBodyScrollLock } from "@/lib/ui/body-scroll-lock";
 import { TagChipList } from "@/app/_components/tag-chip";
 
 import { CopyShareModal } from "./copy-share-modal";
+import { FriendCalendar } from "./[friendId]/friend-calendar";
 
 // Per-type copy — kept here so every page passes the same props and
 // deltas are one edit.
@@ -493,6 +494,24 @@ function CommunityActivitiesSection({
             </button>
           </div>
         </div>
+      )}
+
+      {/* Full mode: the whole Day/Week/Month/Year calendar (reusing the
+          read-only FriendCalendar). The list below stays as the copy +
+          manage surface. Light mode shows just the list. */}
+      {detail.calendarDisplay === "full" && bundle.activities.length > 0 && (
+        <FriendCalendar
+          shares={bundle.activities}
+          instances={bundle.instances}
+          todayStr={bundle.todayStr}
+          tagMap={bundle.tagMap}
+          onOpenActivity={(activityId) => {
+            const act = bundle.activities.find(
+              (a) => a.activityId === activityId
+            );
+            if (act) setCopying(act);
+          }}
+        />
       )}
 
       {bundle.activities.length === 0 ? (

@@ -571,10 +571,18 @@ export async function setAutoAdd(
 // "+ Add" picker), and the tag palette (for tag chips).
 export type CommunityActivityBundle = {
   activities: SharedActivity[];
+  /** Occurrences of the shared activities in a rolling window, for the Full
+   *  calendar render. */
+  instances: SharedInstance[];
   autoAdd: boolean;
   myActivities: Array<{ id: string; name: string }>;
   tagMap: TagMap;
+  /** Caller's "today" in their own timezone (anchors the calendar). */
+  todayStr: string;
 };
+
+// How many days each way the Full community calendar loads occurrences for.
+const COMMUNITY_CAL_WINDOW = 35;
 
 export async function getCommunityActivityBundle(
   communityId: string
@@ -585,21 +593,31 @@ export async function getCommunityActivityBundle(
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const [activities, autoAdd, myActsRes, tagRes, actTagRes] = await Promise.all([
-    getCommunityActivities(communityId),
-    getAutoAddPref(communityId),
-    supabase
-      .from("activities")
-      .select("id, name")
-      .eq("user_id", user.id)
-      .is("archived_at", null)
-      .order("name", { ascending: true }),
-    supabase.from("tags").select("id, name, color").is("archived_at", null),
-    supabase
-      .from("activities")
-      .select("default_skill_tags")
-      .is("archived_at", null),
-  ]);
+  const [activities, autoAdd, myActsRes, tagRes, actTagRes, profRes] =
+    await Promise.all([
+      getCommunityActivities(communityId),
+      getAutoAddPref(communityId),
+      supabase
+        .from("activities")
+        .select("id, name")
+        .eq("user_id", user.id)
+        .is("archived_at", null)
+        .order("name", { ascending: true }),
+      supabase.from("tags").select("id, name, color").is("archived_at", null),
+      supabase
+        .from("activities")
+        .select("default_skill_tags")
+        .is("archived_at", null),
+      supabase.from("profiles").select("timezone").eq("id", user.id).maybeSingle(),
+    ]);
+
+  const tz = (profRes.data as { timezone?: string } | null)?.timezone ?? "UTC";
+  const todayStr = todayInTimeZone(tz);
+  const instances = await getCommunityInstances(
+    communityId,
+    shiftYmd(todayStr, -COMMUNITY_CAL_WINDOW),
+    shiftYmd(todayStr, COMMUNITY_CAL_WINDOW)
+  );
 
   const usageByName = computeTagUsage(
     (actTagRes.data ?? []) as Array<{ default_skill_tags: string[] | null }>
@@ -611,10 +629,36 @@ export async function getCommunityActivityBundle(
 
   return {
     activities,
+    instances,
     autoAdd,
     myActivities: (myActsRes.data ?? []) as Array<{ id: string; name: string }>,
     tagMap,
+    todayStr,
   };
+}
+
+// Local date helpers (mirror the dashboard's timezone-correct "today").
+function todayInTimeZone(tz: string): string {
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+}
+
+function shiftYmd(ymd: string, days: number): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + days);
+  const yy = dt.getFullYear();
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
 }
 
 function revalidateCommunityPaths() {
