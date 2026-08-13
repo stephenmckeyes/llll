@@ -969,13 +969,14 @@ export type PendingInvite = {
   createdAt: string;
 };
 
-// inviteToCommunity — leadership invite a user by username.
+// inviteToCommunity — invite a user by username OR email (permission-gated
+// server-side). Resolution mirrors the friend-add flow.
 export async function inviteToCommunity(
   communityId: string,
-  username: string
+  usernameOrEmail: string
 ): Promise<{ error: string } | { ok: true }> {
-  const u = username.trim().replace(/^@/, "");
-  if (u.length === 0) return { error: "Enter a username." };
+  const u = usernameOrEmail.trim().replace(/^@/, "");
+  if (u.length === 0) return { error: "Enter a username or email." };
   const supabase = await createClient();
   const {
     data: { user },

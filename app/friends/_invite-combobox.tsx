@@ -106,19 +106,21 @@ export function InviteCombobox({ communityId }: { communityId: string }) {
     return base.slice(0, 8);
   }, [friends, q]);
 
-  function invite(username: string, label?: string) {
-    const u = username.trim().replace(/^@/, "");
+  function invite(usernameOrEmail: string, label?: string) {
+    const u = usernameOrEmail.trim().replace(/^@/, "");
     if (!u) return;
     setError(null);
     setNotice(null);
     setOpen(false);
+    // Emails contain "@" — show them as-is; bare handles get an "@" prefix.
+    const shown = label ?? (u.includes("@") ? u : `@${u}`);
     startTransition(async () => {
       const res = await inviteToCommunity(communityId, u);
       if ("error" in res) {
         setError(res.error);
       } else {
         setQuery("");
-        setNotice(`Invited ${label ?? `@${u}`}.`);
+        setNotice(`Invited ${shown}.`);
         loadPending();
         router.refresh();
       }
@@ -162,7 +164,7 @@ export function InviteCombobox({ communityId }: { communityId: string }) {
                 setOpen(false);
               }
             }}
-            placeholder="Search friends or type a username"
+            placeholder="Search friends, or type a username or email"
             className="min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
           />
           <button
