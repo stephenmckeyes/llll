@@ -25,7 +25,9 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import {
   addCommunityActivity,
   createCommunity,
+  createCommunityRank,
   decideJoinRequest,
+  deleteCommunityRank,
   findCommunityByHandle,
   kickMember,
   leaveCommunity,
@@ -40,6 +42,7 @@ import {
   setCommunityShowMembers,
   setCommunityVisibility,
   setMemberRole,
+  updateCommunityRank,
   type CommunityActivityBundle,
   type CommunityCalendarDisplay,
   type CommunityChatWhoCanSpeak,
@@ -51,11 +54,18 @@ import type { SharedActivity } from "@/app/actions/sharing";
 import {
   ALLOWED_JOIN_POLICIES,
   ALLOWED_VISIBILITIES,
+  COMMUNITY_PERMISSION_KEYS,
+  COMMUNITY_PERMISSION_META,
+  hasAnyManagementPermission,
   isLeadership,
   KIND_LABEL,
+  NO_PERMISSIONS,
+  rankRoleValue,
   type CommunityJoinPolicy,
   type CommunityKind,
-  type CommunityRole,
+  type CommunityPermission,
+  type CommunityPermissions,
+  type CommunityRank,
   type CommunityVisibility,
 } from "@/lib/domain/community";
 import { summarizeRhythm } from "@/lib/domain/rhythm-summary";
@@ -431,16 +441,18 @@ function CommunityBody({
   detail: CommunityDetail;
   bundle: CommunityActivityBundle | null;
 }) {
+  const perms = detail.myPermissions;
   const canManage = isLeadership(detail.myRole);
+  const canSeeSettings = hasAnyManagementPermission(perms);
   const [view, setView] = useState<CommunityView>("home");
   const active: CommunityView =
-    view === "settings" && !canManage ? "home" : view;
+    view === "settings" && !canSeeSettings ? "home" : view;
 
   const tabs = [
     { v: "home", label: "Home" },
     { v: "calendar", label: "Calendar" },
     { v: "chat", label: "Chat" },
-    ...(canManage ? [{ v: "settings", label: "Settings" }] : []),
+    ...(canSeeSettings ? [{ v: "settings", label: "Settings" }] : []),
   ] as Array<{ v: CommunityView; label: string }>;
 
   return (
@@ -483,7 +495,7 @@ function CommunityBody({
             Chat is turned off for this {KIND_LABEL[detail.kind].one}.
           </p>
         ))}
-      {active === "settings" && canManage && (
+      {active === "settings" && canSeeSettings && (
         <CommunitySettingsSection detail={detail} />
       )}
     </div>
@@ -498,7 +510,7 @@ function CommunityHome({ detail }: { detail: CommunityDetail }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
-  const canManage = isLeadership(detail.myRole);
+  const canManage = detail.myPermissions.can_edit_settings;
   const [editing, setEditing] = useState(false);
   const [content, setContent] = useState(detail.homeContent ?? "");
 
@@ -688,7 +700,8 @@ function CommunityActivitiesSection({
   const [autoAdd, setAutoAddState] = useState(bundle.autoAdd);
   const [addPick, setAddPick] = useState("");
 
-  const canManage = isLeadership(detail.myRole);
+  const canManageActivities = detail.myPermissions.can_add_activities;
+  const canEditDisplay = detail.myPermissions.can_edit_settings;
   const addedIds = new Set(bundle.activities.map((a) => a.activityId));
   const addable = bundle.myActivities.filter((a) => !addedIds.has(a.id));
 
@@ -750,7 +763,7 @@ function CommunityActivitiesSection({
         </label>
       </div>
 
-      {canManage && (
+      {canEditDisplay && (
         <div className="flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
           <div className="flex items-center gap-2">
             <span className="shrink-0 text-xs text-zinc-500">
@@ -774,6 +787,11 @@ function CommunityActivitiesSection({
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {canManageActivities && (
+        <div className="flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
           <div className="flex items-center gap-2">
             <select
               value={addPick}
@@ -856,7 +874,7 @@ function CommunityActivitiesSection({
                 >
                   Add to my calendar
                 </button>
-                {canManage && (
+                {canManageActivities && (
                   <button
                     type="button"
                     onClick={() => onRemove(a.activityId)}
@@ -919,10 +937,13 @@ function CommunitySettingsSection({ detail }: { detail: CommunityDetail }) {
   const selectCls =
     "rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-900";
 
+  const perms = detail.myPermissions;
+  const canSetLeadership = isLeadership(detail.myRole);
+
   return (
     <div className="flex flex-col gap-6">
       {/* Pending join requests */}
-      {detail.pendingRequests.length > 0 && (
+      {perms.can_approve_requests && detail.pendingRequests.length > 0 && (
         <section className="flex flex-col gap-2">
           <h4 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
             Pending requests ({detail.pendingRequests.length})
@@ -969,13 +990,23 @@ function CommunitySettingsSection({ detail }: { detail: CommunityDetail }) {
       )}
 
       {/* Members */}
-      <section className="flex flex-col gap-2">
-        <h4 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-          Members ({detail.members.length})
-        </h4>
+      {(perms.can_promote || perms.can_kick) && (
+        <section className="flex flex-col gap-2">
+          <h4 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+            Members ({detail.members.length})
+          </h4>
           <ul className="flex flex-col gap-1">
             {detail.members.map((m) => {
               const isSelf = m.userId === detail.myUserId;
+              const targetIsLeadership =
+                m.role === "leader" || m.role === "co_leader";
+              // A can_promote holder who isn't real leadership can't touch
+              // leadership members or grant leadership roles.
+              const roleDisabled =
+                isPending ||
+                isSelf ||
+                !perms.can_promote ||
+                (targetIsLeadership && !canSetLeadership);
               return (
                 <li
                   key={m.userId}
@@ -991,24 +1022,27 @@ function CommunitySettingsSection({ detail }: { detail: CommunityDetail }) {
                   <div className="flex shrink-0 items-center gap-1">
                     <select
                       value={m.role}
-                      disabled={isPending || isSelf}
+                      disabled={roleDisabled}
                       aria-label={`Role for ${m.displayName ?? "member"}`}
                       onChange={(e) =>
-                        run(
-                          setMemberRole(
-                            detail.id,
-                            m.userId,
-                            e.target.value as CommunityRole
-                          )
-                        )
+                        run(setMemberRole(detail.id, m.userId, e.target.value))
                       }
                       className={selectCls}
                     >
-                      <option value="leader">Leader</option>
-                      <option value="co_leader">Co-leader</option>
+                      {canSetLeadership && (
+                        <>
+                          <option value="leader">Leader</option>
+                          <option value="co_leader">Co-leader</option>
+                        </>
+                      )}
                       <option value="member">Member</option>
+                      {detail.ranks.map((r) => (
+                        <option key={r.id} value={rankRoleValue(r.id)}>
+                          {r.name}
+                        </option>
+                      ))}
                     </select>
-                    {!isSelf && m.role !== "leader" && (
+                    {perms.can_kick && !isSelf && m.role !== "leader" && (
                       <button
                         type="button"
                         disabled={isPending}
@@ -1024,10 +1058,16 @@ function CommunitySettingsSection({ detail }: { detail: CommunityDetail }) {
             })}
           </ul>
         </section>
+      )}
 
-        {/* Invite */}
-        <InviteCombobox communityId={detail.id} />
+      {/* Invite */}
+      {perms.can_invite && <InviteCombobox communityId={detail.id} />}
 
+      {/* Ranks */}
+      {perms.can_edit_settings && <RanksEditor detail={detail} />}
+
+      {perms.can_edit_settings && (
+        <>
         {/* Admittance */}
         <section className="flex flex-col gap-2">
           <h4 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
@@ -1144,6 +1184,8 @@ function CommunitySettingsSection({ detail }: { detail: CommunityDetail }) {
             Turn the chat off to hide it entirely, or limit who can post.
           </p>
         </section>
+        </>
+      )}
 
         {error && (
           <p
@@ -1154,6 +1196,222 @@ function CommunitySettingsSection({ detail }: { detail: CommunityDetail }) {
           </p>
         )}
       </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Ranks editor (Settings → Ranks). Create custom roles with a permission
+// bitmap, edit them inline, and delete them. Assigned to members via the
+// role picker above (migration 0051).
+// ---------------------------------------------------------------------------
+
+function RanksEditor({ detail }: { detail: CommunityDetail }) {
+  return (
+    <section className="flex flex-col gap-2">
+      <h4 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+        Ranks
+      </h4>
+      <p className="text-xs text-zinc-500">
+        Custom roles with specific permissions. Assign them to members in the
+        list above.
+      </p>
+      {detail.ranks.length > 0 && (
+        <ul className="flex flex-col gap-2">
+          {detail.ranks.map((r) => (
+            <RankRow key={r.id} rank={r} />
+          ))}
+        </ul>
+      )}
+      <NewRankForm communityId={detail.id} />
+    </section>
+  );
+}
+
+function PermissionChecks({
+  value,
+  onToggle,
+  disabled,
+}: {
+  value: CommunityPermissions;
+  onToggle: (k: CommunityPermission) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
+      {COMMUNITY_PERMISSION_KEYS.map((k) => (
+        <label
+          key={k}
+          title={COMMUNITY_PERMISSION_META[k].help}
+          className="flex cursor-pointer items-center gap-1.5 text-xs"
+        >
+          <input
+            type="checkbox"
+            checked={value[k]}
+            disabled={disabled}
+            onChange={() => onToggle(k)}
+            className="h-3.5 w-3.5 accent-zinc-900 dark:accent-zinc-50"
+          />
+          {COMMUNITY_PERMISSION_META[k].label}
+        </label>
+      ))}
+    </div>
+  );
+}
+
+function RankRow({ rank }: { rank: CommunityRank }) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [name, setName] = useState(rank.name);
+  const [perms, setPerms] = useState<CommunityPermissions>(rank.permissions);
+  const [error, setError] = useState<string | null>(null);
+
+  const dirty =
+    name !== rank.name ||
+    COMMUNITY_PERMISSION_KEYS.some((k) => perms[k] !== rank.permissions[k]);
+
+  function toggle(k: CommunityPermission) {
+    setPerms((p) => ({ ...p, [k]: !p[k] }));
+  }
+
+  function save() {
+    setError(null);
+    startTransition(async () => {
+      const res = await updateCommunityRank(rank.id, name, perms);
+      if ("error" in res) setError(res.error);
+      else router.refresh();
+    });
+  }
+
+  function remove() {
+    if (
+      !window.confirm(
+        `Delete the "${rank.name}" rank? Members who have it become plain members.`
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    startTransition(async () => {
+      const res = await deleteCommunityRank(rank.id);
+      if ("error" in res) setError(res.error);
+      else router.refresh();
+    });
+  }
+
+  return (
+    <li className="flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          value={name}
+          maxLength={40}
+          onChange={(e) => setName(e.target.value)}
+          aria-label="Rank name"
+          className="min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+        />
+        <button
+          type="button"
+          onClick={remove}
+          disabled={isPending}
+          className="shrink-0 rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
+        >
+          Delete
+        </button>
+      </div>
+      <PermissionChecks value={perms} onToggle={toggle} disabled={isPending} />
+      {dirty && (
+        <button
+          type="button"
+          onClick={save}
+          disabled={isPending || name.trim().length === 0}
+          className="self-start rounded-md bg-zinc-900 px-3 py-1 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
+        >
+          Save changes
+        </button>
+      )}
+      {error && (
+        <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
+      )}
+    </li>
+  );
+}
+
+function NewRankForm({ communityId }: { communityId: string }) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [perms, setPerms] = useState<CommunityPermissions>({
+    ...NO_PERMISSIONS,
+  });
+  const [error, setError] = useState<string | null>(null);
+
+  function toggle(k: CommunityPermission) {
+    setPerms((p) => ({ ...p, [k]: !p[k] }));
+  }
+
+  function create() {
+    setError(null);
+    startTransition(async () => {
+      const res = await createCommunityRank(communityId, name, perms);
+      if ("error" in res) {
+        setError(res.error);
+      } else {
+        setName("");
+        setPerms({ ...NO_PERMISSIONS });
+        setOpen(false);
+        router.refresh();
+      }
+    });
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="self-start rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+      >
+        + New rank
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2 rounded-md border border-dashed border-zinc-300 p-3 dark:border-zinc-700">
+      <input
+        type="text"
+        value={name}
+        maxLength={40}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="Rank name (e.g. Officer)"
+        className="rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+      />
+      <PermissionChecks value={perms} onToggle={toggle} disabled={isPending} />
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={create}
+          disabled={isPending || name.trim().length === 0}
+          className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
+        >
+          Create rank
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setOpen(false);
+            setError(null);
+          }}
+          className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+        >
+          Cancel
+        </button>
+      </div>
+      {error && (
+        <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
+      )}
+    </div>
   );
 }
 

@@ -181,9 +181,16 @@ community_auto_add_prefs (
    `community_ranks` table already exists (0031); needs UI + permission
    RPCs. ✅ DONE — Settings section (migration 0041) with member role
    management, admittance (join policy / visibility), show-members
-   toggle, and chat settings. NOTE: per-rank custom permissions
-   (`community_ranks`) UI is still NOT built — settings currently use the
-   fixed leader / co_leader / member roles only.
+   toggle, and chat settings. Custom per-rank permissions now shipped
+   too (migration 0051): a `has_community_permission` resolver gates every
+   operational RPC (invite / approve / add-remove activity / kick /
+   promote), a Ranks editor in Settings creates ranks with a
+   per-permission bitmap, and members can be assigned a `rank:<id>` via
+   the role picker. Leadership (leader/co_leader) still resolves to all
+   permissions; the role picker guards against non-leaders granting
+   leadership. Each Settings section is now gated on its specific
+   permission, and the Settings tab shows for anyone with any management
+   permission.
 5. **Clubs discovery** — public search, application flow,
    outsider_visibility widget. ✅ MOSTLY DONE — public search
    (searchPublicCommunities) + handle lookup (findCommunityByHandle,

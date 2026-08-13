@@ -14,9 +14,12 @@ import {
   ALLOWED_JOIN_POLICIES,
   ALLOWED_VISIBILITIES,
   isCommunityKind,
+  normalizePermissions,
+  resolvePermissions,
   type CommunityJoinPolicy,
   type CommunityKind,
-  type CommunityRole,
+  type CommunityPermissions,
+  type CommunityRank,
   type CommunityVisibility,
 } from "@/lib/domain/community";
 import type { SharedActivity, SharedInstance } from "@/app/actions/sharing";
@@ -41,13 +44,15 @@ export type CommunitySummary = {
   /** The caller's role in this community — null if they're not a member
    *  (which happens for public clubs/guilds the user has stumbled onto
    *  but not joined). */
-  myRole: CommunityRole | null;
+  /** Fixed role ("leader"|"co_leader"|"member") or a custom "rank:<id>". */
+  myRole: string | null;
   memberCount: number;
 };
 
 export type CommunityMember = {
   userId: string;
-  role: CommunityRole;
+  /** Fixed role or a custom "rank:<id>" (migration 0051). */
+  role: string;
   joinedAt: string;
   displayName: string | null;
   username: string | null;
@@ -65,6 +70,10 @@ export type CommunityDetail = CommunitySummary & {
   homeContent: string | null;
   /** Whether the member roster + count are shown on Home. */
   showMembers: boolean;
+  /** Custom ranks defined for this community (migration 0051). */
+  ranks: CommunityRank[];
+  /** The caller's effective permissions (leadership → all true). */
+  myPermissions: CommunityPermissions;
   members: CommunityMember[];
   /** Pending join requests, visible only to members (RLS enforced). Empty
    *  for non-leadership viewers — the UI decides whether to show the
@@ -140,7 +149,7 @@ export async function listMyCommunities(
     visibility: c.visibility as CommunityVisibility,
     joinPolicy: c.join_policy as CommunityJoinPolicy,
     createdAt: c.created_at,
-    myRole: (roleById.get(c.id) ?? "member") as CommunityRole,
+    myRole: roleById.get(c.id) ?? "member",
     memberCount: counts.get(c.id) ?? 0,
   }));
 }
@@ -218,6 +227,27 @@ export async function getCommunity(
   );
   const nameLookup = await lookupDisplayNames(nameIds);
 
+  // Ranks — members only (the RPC gates on membership). Non-members of a
+  // public club get an empty list.
+  let ranks: CommunityRank[] = [];
+  if (myRow) {
+    const { data: rankRows } = await supabase.rpc("get_community_ranks", {
+      p_community_id: communityId,
+    });
+    ranks = ((rankRows ?? []) as Array<{
+      id: string;
+      name: string;
+      sort_order: number;
+      permissions: Record<string, unknown> | null;
+    }>).map((r) => ({
+      id: r.id,
+      name: r.name,
+      sortOrder: r.sort_order,
+      permissions: normalizePermissions(r.permissions),
+    }));
+  }
+  const myPermissions = resolvePermissions(myRow?.role ?? null, ranks);
+
   return {
     id: c.id,
     kind: c.kind as CommunityKind,
@@ -233,13 +263,15 @@ export async function getCommunity(
     chatWhoCanSpeak: c.chat_who_can_speak === "leadership" ? "leadership" : "everyone",
     homeContent: c.home_content ?? null,
     showMembers: c.show_members ?? true,
-    myRole: (myRow?.role as CommunityRole) ?? null,
+    ranks,
+    myPermissions,
+    myRole: myRow?.role ?? null,
     memberCount: members.length,
     members: members.map((m) => {
       const p = nameLookup.get(m.user_id);
       return {
         userId: m.user_id,
-        role: m.role as CommunityRole,
+        role: m.role,
         joinedAt: m.joined_at,
         displayName: p?.displayName ?? null,
         username: p?.username ?? null,
@@ -789,16 +821,64 @@ async function callSettingsRpc(
   return { ok: true };
 }
 
-// setMemberRole — leadership promote/demote a member (leader/co_leader/member).
+// setMemberRole — leadership/can_promote change a member's role. `role` is a
+// fixed role ("leader"|"co_leader"|"member") or a custom "rank:<id>".
 export async function setMemberRole(
   communityId: string,
   userId: string,
-  role: CommunityRole
+  role: string
 ): Promise<{ error: string } | { ok: true }> {
   return callSettingsRpc("set_member_role", {
     p_community_id: communityId,
     p_user_id: userId,
     p_role: role,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Custom ranks (migration 0051)
+// ---------------------------------------------------------------------------
+
+// createCommunityRank — define a new rank with a permission bitmap.
+export async function createCommunityRank(
+  communityId: string,
+  name: string,
+  permissions: CommunityPermissions
+): Promise<{ error: string } | { ok: true }> {
+  const trimmed = name.trim();
+  if (trimmed.length === 0 || trimmed.length > 40) {
+    return { error: "Rank name must be 1–40 characters." };
+  }
+  return callSettingsRpc("create_community_rank", {
+    p_community_id: communityId,
+    p_name: trimmed,
+    p_permissions: permissions,
+  });
+}
+
+// updateCommunityRank — rename a rank and/or change its permissions.
+export async function updateCommunityRank(
+  rankId: string,
+  name: string,
+  permissions: CommunityPermissions
+): Promise<{ error: string } | { ok: true }> {
+  const trimmed = name.trim();
+  if (trimmed.length === 0 || trimmed.length > 40) {
+    return { error: "Rank name must be 1–40 characters." };
+  }
+  return callSettingsRpc("update_community_rank", {
+    p_rank_id: rankId,
+    p_name: trimmed,
+    p_permissions: permissions,
+  });
+}
+
+// deleteCommunityRank — remove a rank; holders fall back to plain member.
+export async function deleteCommunityRank(
+  rankId: string
+): Promise<{ error: string } | { ok: true }> {
+  return callSettingsRpc("delete_community_rank", {
+    p_rank_id: rankId,
   });
 }
 
