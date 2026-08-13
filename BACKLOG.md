@@ -170,9 +170,10 @@ community_auto_add_prefs (
 3. **Calendar + auto-add** — shared component so all three types
    inherit it. Base = the full personal-style calendar; a leadership
    `calendar_display` setting ('full' | 'light') trims what members
-   see (most leaders will pick 'light'). 🔶 IN PROGRESS — migration
-   0040 + server actions done; calendar UI + leadership controls +
-   auto-add fan-out still to build.
+   see. Base now defaults to 'full' (migration 0046). ✅ DONE — calendar
+   UI (reuses FriendCalendar), leadership controls, and the auto-add
+   fan-out (migration 0047: leadership add → copy into opted-in members'
+   schedules) all shipped.
 4. **Community Settings** — a per-community Settings AREA (expandable),
    not a single screen. First sections: **Leadership** (ranks,
    per-permission checkboxes, member role picker), **Admittance** (join
