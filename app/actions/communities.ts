@@ -1054,6 +1054,61 @@ export async function cancelCommunityInvite(
   return { ok: true };
 }
 
+export type RequestOutcome = {
+  id: string;
+  communityId: string;
+  communityName: string;
+  communityKind: CommunityKind;
+  status: "approved" | "declined";
+  handledAt: string | null;
+};
+
+// getMyRequestOutcomes — the caller's approved/declined join requests that
+// they haven't dismissed yet (for the Notifications page + badge).
+export async function getMyRequestOutcomes(): Promise<RequestOutcome[]> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data } = await supabase.rpc("get_my_request_outcomes");
+  const rows = (data ?? []) as Array<{
+    id: string;
+    community_id: string;
+    community_name: string;
+    community_kind: string;
+    status: string;
+    handled_at: string | null;
+  }>;
+  return rows.map((r) => ({
+    id: r.id,
+    communityId: r.community_id,
+    communityName: r.community_name,
+    communityKind: r.community_kind as CommunityKind,
+    status: r.status === "approved" ? "approved" : "declined",
+    handledAt: r.handled_at,
+  }));
+}
+
+// dismissRequestOutcome — the requester clears one outcome from their feed.
+export async function dismissRequestOutcome(
+  requestId: string
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase.rpc("dismiss_request_outcome", {
+    p_request_id: requestId,
+  });
+  if (error) return { error: error.message };
+  revalidatePath("/notifications");
+  return { ok: true };
+}
+
 // ---------------------------------------------------------------------------
 // Phase 7 — community chat
 // ---------------------------------------------------------------------------

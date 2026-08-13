@@ -134,6 +134,11 @@ export const EXPECTATIONS: ReadonlyArray<MigrationExpectation> = [
     label: "Community invites (Phase 6)",
     checks: [{ table: "community_invites", column: "status" }],
   },
+  {
+    migration: "0050_request_outcomes.sql",
+    label: "Join-request outcome notifications",
+    checks: [{ table: "community_join_requests", column: "dismissed" }],
+  },
 ];
 
 export type MissingMigration = {

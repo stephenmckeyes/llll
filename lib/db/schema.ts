@@ -592,6 +592,7 @@ export const communityJoinRequests = pgTable(
       .notNull()
       .defaultNow(),
     handledAt: timestamp("handled_at", { withTimezone: true }),
+    dismissed: boolean("dismissed").notNull().default(false),
   },
   (t) => [
     index("community_join_requests_community_idx").on(t.communityId, t.status),

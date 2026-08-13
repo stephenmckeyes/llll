@@ -12,6 +12,7 @@ import Link from "next/link";
 import {
   getIncomingJoinRequests,
   getMyPendingInvites,
+  getMyRequestOutcomes,
 } from "@/app/actions/communities";
 import { getUnacknowledgedConflictsForDate } from "@/app/actions/conflicts";
 import { getSocialOverview, type SocialEntry } from "@/app/actions/friends";
@@ -30,6 +31,7 @@ import { PendingLink } from "@/app/_components/pending-link";
 import { buildFriendActivityNotifications } from "./friend-activity";
 import { CommunityInvites } from "./community-invites";
 import { CommunityJoinRequests } from "./community-join-requests";
+import { CommunityRequestOutcomes } from "./community-request-outcomes";
 import { ConflictsList } from "./conflicts-list";
 import { FriendActivityNotifications } from "./friend-activity-notifications";
 import { RequestActions } from "./request-actions";
@@ -86,6 +88,7 @@ export default async function NotificationsPage() {
     conflicts,
     invites,
     joinRequests,
+    requestOutcomes,
   ] = await Promise.all([
     getSocialOverview(),
     getSharedWithMe(),
@@ -95,6 +98,7 @@ export default async function NotificationsPage() {
     getUnacknowledgedConflictsForDate(todayStr),
     getMyPendingInvites(),
     getIncomingJoinRequests(),
+    getMyRequestOutcomes(),
   ]);
   const incoming = entries.filter(
     (e) => e.status === "pending" && e.direction === "incoming"
@@ -242,6 +246,9 @@ export default async function NotificationsPage() {
 
       {/* 1a. Community join requests (to communities you lead) */}
       <CommunityJoinRequests requests={joinRequests} />
+
+      {/* 1a. Community request updates (outcomes of requests you sent) */}
+      <CommunityRequestOutcomes outcomes={requestOutcomes} />
 
       {/* 1a. Messages */}
       <section className="flex flex-col gap-3">
