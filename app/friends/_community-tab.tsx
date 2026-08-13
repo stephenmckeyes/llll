@@ -27,7 +27,6 @@ import {
   createCommunity,
   decideJoinRequest,
   findCommunityByHandle,
-  inviteToCommunity,
   kickMember,
   leaveCommunity,
   removeCommunityActivity,
@@ -65,6 +64,7 @@ import { useBodyScrollLock } from "@/lib/ui/body-scroll-lock";
 import { TagChipList } from "@/app/_components/tag-chip";
 
 import { CommunityChat } from "./_community-chat";
+import { InviteCombobox } from "./_invite-combobox";
 import { CopyShareModal } from "./copy-share-modal";
 import { FriendCalendar } from "./[friendId]/friend-calendar";
 
@@ -919,25 +919,6 @@ function CommunitySettingsSection({ detail }: { detail: CommunityDetail }) {
   const selectCls =
     "rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-900";
 
-  const [inviteUsername, setInviteUsername] = useState("");
-  const [inviteNotice, setInviteNotice] = useState<string | null>(null);
-
-  function onInvite() {
-    const u = inviteUsername.trim().replace(/^@/, "");
-    if (!u) return;
-    setError(null);
-    setInviteNotice(null);
-    startTransition(async () => {
-      const res = await inviteToCommunity(detail.id, u);
-      if ("error" in res) setError(res.error);
-      else {
-        setInviteUsername("");
-        setInviteNotice(`Invited @${u}.`);
-        router.refresh();
-      }
-    });
-  }
-
   return (
     <div className="flex flex-col gap-6">
       {/* Pending join requests */}
@@ -1045,39 +1026,7 @@ function CommunitySettingsSection({ detail }: { detail: CommunityDetail }) {
         </section>
 
         {/* Invite */}
-        <section className="flex flex-col gap-2">
-          <h4 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-            Invite
-          </h4>
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={inviteUsername}
-              onChange={(e) => setInviteUsername(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  onInvite();
-                }
-              }}
-              placeholder="username"
-              className="min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-            />
-            <button
-              type="button"
-              onClick={onInvite}
-              disabled={isPending || inviteUsername.trim().length === 0}
-              className="shrink-0 rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
-            >
-              Invite
-            </button>
-          </div>
-          {inviteNotice && (
-            <p className="text-xs text-emerald-700 dark:text-emerald-400">
-              {inviteNotice}
-            </p>
-          )}
-        </section>
+        <InviteCombobox communityId={detail.id} />
 
         {/* Admittance */}
         <section className="flex flex-col gap-2">
