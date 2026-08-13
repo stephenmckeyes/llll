@@ -70,6 +70,9 @@ export type CommunityDetail = CommunitySummary & {
   homeContent: string | null;
   /** Whether the member roster + count are shown on Home. */
   showMembers: boolean;
+  /** Public-community outsider preview flags (migration 0054). */
+  outsiderShowMembers: boolean;
+  outsiderShowActivities: boolean;
   /** Custom ranks defined for this community (migration 0051). */
   ranks: CommunityRank[];
   /** The caller's effective permissions (leadership → all true). */
@@ -168,7 +171,7 @@ export async function getCommunity(
   const { data: community } = await supabase
     .from("communities")
     .select(
-      "id, kind, name, handle, description, visibility, join_policy, created_at, calendar_display, chat_enabled, chat_who_can_speak, home_content, show_members"
+      "id, kind, name, handle, description, visibility, join_policy, created_at, calendar_display, chat_enabled, chat_who_can_speak, home_content, show_members, outsider_visibility"
     )
     .eq("id", communityId)
     .maybeSingle();
@@ -187,6 +190,7 @@ export async function getCommunity(
     chat_who_can_speak: string | null;
     home_content: string | null;
     show_members: boolean | null;
+    outsider_visibility: Record<string, unknown> | null;
   };
 
   // Members — RLS returns rows only when the caller is a member. Non-
@@ -263,6 +267,8 @@ export async function getCommunity(
     chatWhoCanSpeak: c.chat_who_can_speak === "leadership" ? "leadership" : "everyone",
     homeContent: c.home_content ?? null,
     showMembers: c.show_members ?? true,
+    outsiderShowMembers: c.outsider_visibility?.showMembers === true,
+    outsiderShowActivities: c.outsider_visibility?.showActivities === true,
     ranks,
     myPermissions,
     myRole: myRow?.role ?? null,
@@ -508,6 +514,82 @@ export async function findCommunityByHandle(
   });
   const rows = (data ?? []) as Array<Parameters<typeof mapDiscovered>[0]>;
   return rows.length > 0 ? mapDiscovered(rows[0]) : null;
+}
+
+export type CommunityPreview = {
+  id: string;
+  name: string;
+  description: string | null;
+  handle: string | null;
+  kind: CommunityKind;
+  joinPolicy: CommunityJoinPolicy;
+  visibility: CommunityVisibility;
+  memberCount: number;
+  isMember: boolean;
+  showMembers: boolean;
+  showActivities: boolean;
+  members: Array<{
+    displayName: string | null;
+    username: string | null;
+    role: string;
+  }>;
+  activities: Array<{ name: string }>;
+};
+
+// getCommunityPreview — the discovery preview for a (public) community,
+// respecting its outsider_visibility flags. Null for private communities the
+// caller isn't in. Members always get the full picture.
+export async function getCommunityPreview(
+  communityId: string
+): Promise<CommunityPreview | null> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data } = await supabase.rpc("get_community_preview", {
+    p_community_id: communityId,
+  });
+  if (!data) return null;
+  const p = data as {
+    id: string;
+    name: string;
+    description: string | null;
+    handle: string | null;
+    kind: string;
+    join_policy: string;
+    visibility: string;
+    member_count: number;
+    is_member: boolean;
+    show_members: boolean;
+    show_activities: boolean;
+    members: Array<{
+      display_name: string | null;
+      username: string | null;
+      role: string;
+    }>;
+    activities: Array<{ name: string }>;
+  };
+  return {
+    id: p.id,
+    name: p.name,
+    description: p.description,
+    handle: p.handle,
+    kind: p.kind as CommunityKind,
+    joinPolicy: p.join_policy as CommunityJoinPolicy,
+    visibility: p.visibility as CommunityVisibility,
+    memberCount: p.member_count,
+    isMember: p.is_member,
+    showMembers: p.show_members,
+    showActivities: p.show_activities,
+    members: (p.members ?? []).map((m) => ({
+      displayName: m.display_name,
+      username: m.username,
+      role: m.role,
+    })),
+    activities: p.activities ?? [],
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -934,6 +1016,20 @@ export async function setCommunityShowMembers(
   return callSettingsRpc("set_community_show_members", {
     p_community_id: communityId,
     p_show: show,
+  });
+}
+
+// setCommunityOutsiderVisibility — leadership choose what non-members see of
+// a public community's preview (member roster / activity list).
+export async function setCommunityOutsiderVisibility(
+  communityId: string,
+  showMembers: boolean,
+  showActivities: boolean
+): Promise<{ error: string } | { ok: true }> {
+  return callSettingsRpc("set_community_outsider_visibility", {
+    p_community_id: communityId,
+    p_show_members: showMembers,
+    p_show_activities: showActivities,
   });
 }
 

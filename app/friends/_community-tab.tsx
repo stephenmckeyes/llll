@@ -29,6 +29,7 @@ import {
   decideJoinRequest,
   deleteCommunityRank,
   findCommunityByHandle,
+  getCommunityPreview,
   kickMember,
   leaveCommunity,
   removeCommunityActivity,
@@ -39,6 +40,7 @@ import {
   setCommunityChatSettings,
   setCommunityHome,
   setCommunityJoinPolicy,
+  setCommunityOutsiderVisibility,
   setCommunityShowMembers,
   setCommunityVisibility,
   setMemberRole,
@@ -47,6 +49,7 @@ import {
   type CommunityCalendarDisplay,
   type CommunityChatWhoCanSpeak,
   type CommunityDetail,
+  type CommunityPreview,
   type CommunitySummary,
   type DiscoveredCommunity,
 } from "@/app/actions/communities";
@@ -267,8 +270,27 @@ function DiscoverModal({
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  const [preview, setPreview] = useState<CommunityPreview | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   useBodyScrollLock();
+
+  function togglePreview(c: DiscoveredCommunity) {
+    if (previewId === c.id) {
+      setPreviewId(null);
+      setPreview(null);
+      return;
+    }
+    setPreviewId(c.id);
+    setPreview(null);
+    setPreviewLoading(true);
+    startTransition(async () => {
+      const p = await getCommunityPreview(c.id);
+      setPreview(p);
+      setPreviewLoading(false);
+    });
+  }
 
   // Groups are private → handle-only lookup. Clubs/guilds → public search.
   const handleOnly = kind === "group";
@@ -388,37 +410,96 @@ function DiscoverModal({
             {results.map((c) => (
               <li
                 key={c.id}
-                className="flex items-start justify-between gap-3 rounded-md border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950"
+                className="flex flex-col gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950"
               >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{c.name}</p>
-                  <p className="truncate text-xs text-zinc-500">
-                    {c.handle ? `@${c.handle} · ` : ""}
-                    {policyLabel(c.joinPolicy)}
-                  </p>
-                  {c.description && (
-                    <p className="mt-0.5 line-clamp-2 text-xs text-zinc-600 dark:text-zinc-400">
-                      {c.description}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{c.name}</p>
+                    <p className="truncate text-xs text-zinc-500">
+                      {c.handle ? `@${c.handle} · ` : ""}
+                      {policyLabel(c.joinPolicy)}
                     </p>
-                  )}
+                    {c.description && (
+                      <p className="mt-0.5 line-clamp-2 text-xs text-zinc-600 dark:text-zinc-400">
+                        {c.description}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    <button
+                      type="button"
+                      onClick={() => onJoin(c)}
+                      disabled={isPending || c.joinPolicy === "invite"}
+                      title={
+                        c.joinPolicy === "invite"
+                          ? "Invite-only — ask a member for an invite"
+                          : undefined
+                      }
+                      className="rounded-md bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
+                    >
+                      {c.joinPolicy === "open"
+                        ? "Join"
+                        : c.joinPolicy === "application"
+                          ? "Request"
+                          : "Invite-only"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => togglePreview(c)}
+                      className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                    >
+                      {previewId === c.id ? "Hide" : "Preview"}
+                    </button>
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => onJoin(c)}
-                  disabled={isPending || c.joinPolicy === "invite"}
-                  title={
-                    c.joinPolicy === "invite"
-                      ? "Invite-only — ask a member for an invite"
-                      : undefined
-                  }
-                  className="shrink-0 rounded-md bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
-                >
-                  {c.joinPolicy === "open"
-                    ? "Join"
-                    : c.joinPolicy === "application"
-                      ? "Request"
-                      : "Invite-only"}
-                </button>
+
+                {previewId === c.id && (
+                  <div className="rounded-md border border-zinc-200 p-2 text-xs dark:border-zinc-800">
+                    {previewLoading ? (
+                      <p className="text-zinc-500">Loading…</p>
+                    ) : preview && preview.id === c.id ? (
+                      <div className="flex flex-col gap-1.5">
+                        <p className="text-zinc-500">
+                          {preview.memberCount} member
+                          {preview.memberCount === 1 ? "" : "s"}
+                        </p>
+                        {preview.showMembers && preview.members.length > 0 && (
+                          <div>
+                            <p className="font-medium">Members</p>
+                            <p className="text-zinc-600 dark:text-zinc-400">
+                              {preview.members
+                                .map(
+                                  (m) =>
+                                    m.displayName ??
+                                    (m.username ? `@${m.username}` : "A member")
+                                )
+                                .join(", ")}
+                            </p>
+                          </div>
+                        )}
+                        {preview.showActivities &&
+                          preview.activities.length > 0 && (
+                            <div>
+                              <p className="font-medium">Activities</p>
+                              <p className="text-zinc-600 dark:text-zinc-400">
+                                {preview.activities
+                                  .map((a) => a.name)
+                                  .join(", ")}
+                              </p>
+                            </div>
+                          )}
+                        {!preview.showMembers && !preview.showActivities && (
+                          <p className="text-zinc-500">
+                            This {KIND_LABEL[kind].one} only shows its name and
+                            size to non-members.
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-zinc-500">Preview unavailable.</p>
+                    )}
+                  </div>
+                )}
               </li>
             ))}
           </ul>
@@ -1135,6 +1216,55 @@ function CommunitySettingsSection({ detail }: { detail: CommunityDetail }) {
               className="h-4 w-4 accent-zinc-900 dark:accent-zinc-50"
             />
           </label>
+
+          {detail.visibility === "public" && (
+            <div className="mt-1 flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+              <p className="text-xs font-medium text-zinc-500">
+                What non-members see in search
+              </p>
+              <label className="flex items-center justify-between gap-2 text-sm">
+                <span>Preview members</span>
+                <input
+                  type="checkbox"
+                  checked={detail.outsiderShowMembers}
+                  disabled={isPending}
+                  onChange={(e) =>
+                    run(
+                      setCommunityOutsiderVisibility(
+                        detail.id,
+                        e.target.checked,
+                        detail.outsiderShowActivities
+                      )
+                    )
+                  }
+                  className="h-4 w-4 accent-zinc-900 dark:accent-zinc-50"
+                />
+              </label>
+              <label className="flex items-center justify-between gap-2 text-sm">
+                <span>Preview activities</span>
+                <input
+                  type="checkbox"
+                  checked={detail.outsiderShowActivities}
+                  disabled={isPending}
+                  onChange={(e) =>
+                    run(
+                      setCommunityOutsiderVisibility(
+                        detail.id,
+                        detail.outsiderShowMembers,
+                        e.target.checked
+                      )
+                    )
+                  }
+                  className="h-4 w-4 accent-zinc-900 dark:accent-zinc-50"
+                />
+              </label>
+              <p className="text-xs text-zinc-500">
+                Name, description, and member count are always visible. These
+                let outsiders peek at the roster and shared activities before
+                joining.
+              </p>
+            </div>
+          )}
         </section>
 
         {/* Chat */}

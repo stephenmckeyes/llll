@@ -192,11 +192,14 @@ community_auto_add_prefs (
    permission, and the Settings tab shows for anyone with any management
    permission.
 5. **Clubs discovery** — public search, application flow,
-   outsider_visibility widget. ✅ MOSTLY DONE — public search
+   outsider_visibility widget. ✅ DONE — public search
    (searchPublicCommunities) + handle lookup (findCommunityByHandle,
-   migration 0042) + request-to-join note flow via DiscoverModal. STILL
-   TODO: the `outsider_visibility` widget (what non-members see of a
-   public club — members / activities / feed).
+   migration 0042) + request-to-join note flow via DiscoverModal. The
+   `outsider_visibility` widget shipped too (migration 0054): leadership
+   toggles "Preview members" / "Preview activities" in Settings →
+   Admittance (public communities only), and the DiscoverModal has a
+   per-result Preview panel showing member count always + roster/activities
+   when permitted, via the get_community_preview SECURITY DEFINER read.
 6. **Invites + notifications** — invite people directly (not just
    request-to-join); notify members of join requests / approvals / new
    auto-added activities. ✅ DONE — direct invites by username or friend-
