@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 
 import { BottomNav } from "./_components/bottom-nav";
 import { MigrationCheckBanner } from "./_components/migration-check-banner";
+import { ThemeApplier } from "./_components/theme-applier";
 
 // Lock the viewport: no pinch / double-tap zoom, no accidental rescaling on
 // input focus. Mission is laid out for one canonical scale; zooming into the
@@ -112,6 +113,9 @@ export default async function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body className="flex h-svh flex-col overflow-hidden">
+        {/* Re-asserts the saved theme after any client render (e.g. a
+            post-deploy full re-render that reset <html>'s classes). */}
+        <ThemeApplier />
         {/* Startup schema check — red strip if any migration listed in
             lib/db/schema-check.ts hasn't been applied yet. Silent when
             everything's caught up. */}
