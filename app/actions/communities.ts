@@ -750,6 +750,7 @@ type OwnedActivityRow = {
   start_date: string;
   end_date: string | null;
   auto_resolve: boolean | null;
+  completion_type: string | null;
   created_at: string;
   archived_at: string | null;
 };
@@ -772,6 +773,7 @@ function mapOwnedActivity(r: OwnedActivityRow): SharedActivity {
     startDate: r.start_date,
     endDate: r.end_date,
     autoResolve: r.auto_resolve ?? false,
+    completionType: r.completion_type === "aggregate" ? "aggregate" : "collective",
     archivedAt: r.archived_at,
     createdAt: r.created_at,
   };
@@ -793,7 +795,7 @@ async function getCommunityOwnedBundle(
   const { data: actRows } = await supabase
     .from("community_owned_activities")
     .select(
-      "id, community_id, name, notes, rhythm, scheduled_times, scheduled_end_times, priority, default_skill_tags, start_date, end_date, auto_resolve, created_at, archived_at"
+      "id, community_id, name, notes, rhythm, scheduled_times, scheduled_end_times, priority, default_skill_tags, start_date, end_date, auto_resolve, completion_type, created_at, archived_at"
     )
     .eq("community_id", communityId)
     .order("name", { ascending: true });
@@ -1005,6 +1007,7 @@ export async function createCommunityCalendarActivity(input: {
   startDate: string;
   endDate?: string | null;
   autoResolve?: boolean;
+  completionType?: "collective" | "aggregate";
 }): Promise<{ error: string } | { ok: true; id: string }> {
   const name = input.name.trim();
   if (name.length === 0 || name.length > 120) {
@@ -1031,6 +1034,7 @@ export async function createCommunityCalendarActivity(input: {
     p_start_date: input.startDate,
     p_end_date: input.endDate ?? null,
     p_auto_resolve: input.autoResolve ?? false,
+    p_completion_type: input.completionType ?? "collective",
   });
   if (error) return { error: error.message };
 
@@ -1073,6 +1077,7 @@ export async function updateCommunityCalendarActivity(input: {
   startDate: string;
   endDate?: string | null;
   autoResolve?: boolean;
+  completionType?: "collective" | "aggregate";
 }): Promise<{ error: string } | { ok: true }> {
   const name = input.name.trim();
   if (name.length === 0 || name.length > 120) {
@@ -1099,6 +1104,7 @@ export async function updateCommunityCalendarActivity(input: {
     p_start_date: input.startDate,
     p_end_date: input.endDate ?? null,
     p_auto_resolve: input.autoResolve ?? false,
+    p_completion_type: input.completionType ?? "collective",
   });
   if (error) return { error: error.message };
 
@@ -1156,6 +1162,7 @@ function parseCommunityActivityForm(formData: FormData):
       startDate: string;
       endDate: string | null;
       autoResolve: boolean;
+      completionType: "collective" | "aggregate";
     }
   | { error: string } {
   const name = String(formData.get("name") ?? "").trim();
@@ -1173,6 +1180,10 @@ function parseCommunityActivityForm(formData: FormData):
     )
   );
   const autoResolve = String(formData.get("autoResolve")) === "true";
+  const completionType =
+    String(formData.get("completionType")) === "aggregate"
+      ? "aggregate"
+      : "collective";
 
   // Times of day: zip parallel scheduledTime / scheduledEndTime arrays,
   // dropping blank starts and keeping ends aligned by index.
@@ -1253,6 +1264,7 @@ function parseCommunityActivityForm(formData: FormData):
     startDate,
     endDate,
     autoResolve,
+    completionType,
   };
 }
 

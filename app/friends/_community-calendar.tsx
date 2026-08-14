@@ -665,6 +665,8 @@ function ActivityFormModal({
           showPinned={false}
           showReminders={false}
           showRollover={false}
+          showCompletionType
+          initialCompletionType={existing?.completionType ?? "collective"}
         />
 
         {state && "error" in state && (

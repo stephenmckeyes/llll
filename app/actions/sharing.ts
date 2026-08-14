@@ -237,6 +237,12 @@ export type SharedActivity = {
    *  activities populate this (personal shares don't carry it); undefined
    *  reads as false. Drives the shared DayList's visibleOnDay drop rule. */
   autoResolve?: boolean;
+  /** Migration 0061 — community-owned completion model: 'collective' (any
+   *  permitted member marks the shared occurrence) vs 'aggregate' (each
+   *  member marks their own; occurrence shows an N/M fraction). Only
+   *  community-owned activities populate this; undefined reads as
+   *  'collective'. */
+  completionType?: "collective" | "aggregate";
 };
 
 // getSharedWithMe — every rhythm shared WITH the caller, via the

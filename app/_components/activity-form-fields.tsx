@@ -117,6 +117,8 @@ export function ActivityFormFields({
   showPinned = true,
   showReminders = true,
   showRollover = true,
+  showCompletionType = false,
+  initialCompletionType = "collective",
 }: {
   initialValues: ActivityFormInitial;
   /** When true, render the start-date input empty regardless of the
@@ -135,6 +137,11 @@ export function ActivityFormFields({
   showPinned?: boolean;
   showReminders?: boolean;
   showRollover?: boolean;
+  /** Community-owned only: show the collective-vs-aggregate completion
+   *  toggle (migration 0061). Default false (personal calendar has no such
+   *  concept). Submits `completionType` in FormData when shown. */
+  showCompletionType?: boolean;
+  initialCompletionType?: "collective" | "aggregate";
   /** Add Activity form density (migration 0023). "compact" swaps in a
    *  stripped-down JSX that hides all section labels, drops Priority,
    *  turns the rhythm picker into inline text chips, collapses Tags to
@@ -186,6 +193,9 @@ export function ActivityFormFields({
   const [autoResolve, setAutoResolve] = useState<boolean>(
     initialValues.auto_resolve ?? false
   );
+  const [completionType, setCompletionType] = useState<
+    "collective" | "aggregate"
+  >(initialCompletionType);
   const [pinned, setPinned] = useState<boolean>(
     initialValues.pinned ?? false
   );
@@ -1019,6 +1029,47 @@ export function ActivityFormFields({
           Auto-drop when past
         </button>
       </div>
+
+      {/* --- Completion type (community-owned only, migration 0061) ------ */}
+      {/* Collective: any permitted member marks the one shared occurrence
+          for the whole community. Aggregate: each member marks their own
+          and the occurrence shows an N/M fraction of members done. */}
+      {showCompletionType && (
+        <>
+          <input type="hidden" name="completionType" value={completionType} />
+          <div className="mt-1 flex flex-col gap-1">
+            <span className="text-xs font-medium text-zinc-500">
+              Completion
+            </span>
+            <div className="flex gap-1">
+              <button
+                type="button"
+                onClick={() => setCompletionType("collective")}
+                aria-pressed={completionType === "collective"}
+                className={`flex-1 touch-manipulation rounded-md border px-2 py-1 text-center text-xs font-medium transition-colors ${
+                  completionType === "collective"
+                    ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                    : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+                }`}
+              >
+                Shared (one mark)
+              </button>
+              <button
+                type="button"
+                onClick={() => setCompletionType("aggregate")}
+                aria-pressed={completionType === "aggregate"}
+                className={`flex-1 touch-manipulation rounded-md border px-2 py-1 text-center text-xs font-medium transition-colors ${
+                  completionType === "aggregate"
+                    ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                    : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+                }`}
+              >
+                Per-member (3/4)
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </>
   );
 }
