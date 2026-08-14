@@ -148,40 +148,51 @@ export function FriendCalendar({
           onUnlabeledJump={jumpToDay}
         />
       )}
-      {sub === "week" && (
-        <WeekGrid
-          instances={instances}
-          byId={byId}
-          tagMap={tagMap}
-          todayStr={todayStr}
-          refDate={refDate}
-          setRefDate={setRefDate}
-          onOpenActivity={onOpenActivity}
-        />
-      )}
-      {sub === "month" && (
-        <MonthGrid
-          instances={instances}
-          byId={byId}
-          tagMap={tagMap}
-          todayStr={todayStr}
-          refDate={refDate}
-          setRefDate={setRefDate}
-          onJumpToDay={jumpToDay}
-        />
-      )}
-      {sub === "year" && (
-        <YearGrid
-          instances={instances}
-          todayStr={todayStr}
-          refDate={refDate}
-          setRefDate={setRefDate}
-          loadYearCounts={loadYearCounts}
-          onMonthClick={(monthDateStr) => {
-            setRefDate(monthDateStr);
-            setSub("month");
-          }}
-        />
+      {/* Week/Month/Year get a fill-height scroll wrapper in app-shell mode
+          so the sub-tabs below stay pinned while the grid scrolls. (Day
+          uses the DayList's own fillHeight scroll.) */}
+      {sub !== "day" && (
+        <div
+          className={
+            fillHeight ? "min-h-0 flex-1 overflow-y-auto overflow-x-hidden" : ""
+          }
+        >
+          {sub === "week" && (
+            <WeekGrid
+              instances={instances}
+              byId={byId}
+              tagMap={tagMap}
+              todayStr={todayStr}
+              refDate={refDate}
+              setRefDate={setRefDate}
+              onOpenActivity={onOpenActivity}
+            />
+          )}
+          {sub === "month" && (
+            <MonthGrid
+              instances={instances}
+              byId={byId}
+              tagMap={tagMap}
+              todayStr={todayStr}
+              refDate={refDate}
+              setRefDate={setRefDate}
+              onJumpToDay={jumpToDay}
+            />
+          )}
+          {sub === "year" && (
+            <YearGrid
+              instances={instances}
+              todayStr={todayStr}
+              refDate={refDate}
+              setRefDate={setRefDate}
+              loadYearCounts={loadYearCounts}
+              onMonthClick={(monthDateStr) => {
+                setRefDate(monthDateStr);
+                setSub("month");
+              }}
+            />
+          )}
+        </div>
       )}
 
       {/* Sub-tabs pinned at the BOTTOM (shrink-0), reversed left-to-right,

@@ -54,6 +54,7 @@ export function CommunityOwnedCalendar({
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<SharedActivity | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
   const [picked, setPicked] = useState<{
     instanceId: string;
     name: string;
@@ -89,24 +90,35 @@ export function CommunityOwnedCalendar({
   }
 
   return (
-    <section className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-2">
+    <section className="flex min-h-0 flex-1 flex-col gap-3">
+      <div className="flex shrink-0 items-center justify-between gap-2">
         <h3 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
           {detail.name} calendar
         </h3>
         {canManage && (
-          <button
-            type="button"
-            onClick={() => setCreating(true)}
-            className="shrink-0 rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
-          >
-            + Add activity
-          </button>
+          <div className="flex shrink-0 gap-2">
+            {bundle.ownedActivities.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setManageOpen(true)}
+                className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+              >
+                Manage
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setCreating(true)}
+              className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
+            >
+              + Add activity
+            </button>
+          </div>
         )}
       </div>
 
       {bundle.ownedActivities.length === 0 ? (
-        <p className="rounded-md border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700">
+        <p className="shrink-0 rounded-md border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700">
           {canManage
             ? "No activities yet — add one to build this community's calendar."
             : "No activities yet."}
@@ -120,6 +132,7 @@ export function CommunityOwnedCalendar({
               todayStr={bundle.todayStr}
               tagMap={bundle.tagMap}
               onOpenActivity={onOpen}
+              fillHeight
               loadYearCounts={(yearStart) =>
                 getCommunityYearCounts(detail.id, yearStart)
               }
@@ -136,24 +149,26 @@ export function CommunityOwnedCalendar({
               }}
             />
           ) : (
-            <FriendGrid
-              friendId={detail.id}
-              shares={bundle.ownedActivities}
-              instances={bundle.ownedInstances}
-              todayStr={bundle.todayStr}
-              tagMap={bundle.tagMap}
-              onOpenActivity={onOpen}
-              streakMode="none"
-              streakGoal={null}
-              showStats={false}
-              statsAccuracy={false}
-            />
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+              <FriendGrid
+                friendId={detail.id}
+                shares={bundle.ownedActivities}
+                instances={bundle.ownedInstances}
+                todayStr={bundle.todayStr}
+                tagMap={bundle.tagMap}
+                onOpenActivity={onOpen}
+                streakMode="none"
+                streakGoal={null}
+                showStats={false}
+                statsAccuracy={false}
+              />
+            </div>
           )}
 
           {/* Calendar / Grid switcher pinned at the BOTTOM (reversed
               left-to-right), matching the personal dashboard's section
               tabs sitting below the sub-tabs. */}
-          <nav className="flex flex-row-reverse gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800">
+          <nav className="flex shrink-0 flex-row-reverse gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800">
             {(
               [
                 ["calendar", "Calendar"],
@@ -177,79 +192,20 @@ export function CommunityOwnedCalendar({
         </>
       )}
 
-      {canManage && bundle.ownedActivities.length > 0 && (
-        <div className="flex flex-col gap-1.5">
-          <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-            Manage activities
-          </p>
-          <ul className="flex flex-col gap-1.5">
-            {bundle.ownedActivities.map((a) => (
-              <li
-                key={a.activityId}
-                className="flex items-center justify-between gap-2 rounded-md border border-zinc-200 px-3 py-1.5 dark:border-zinc-800"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{a.name}</p>
-                  <p className="truncate text-xs text-zinc-500">
-                    {summarizeRhythm(a.rhythm, a.scheduledTimes)}
-                  </p>
-                </div>
-                <div className="flex shrink-0 gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setEditing(a)}
-                    className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-                  >
-                    Edit
-                  </button>
-                  <ArchiveButton
-                    activityId={a.activityId}
-                    name={a.name}
-                    onDone={() => router.refresh()}
-                  />
-                </div>
-              </li>
-            ))}
-          </ul>
-
-          {bundle.archivedActivities.length > 0 && (
-            <div className="mt-1 flex flex-col gap-1.5">
-              <button
-                type="button"
-                onClick={() => setShowArchived((v) => !v)}
-                className="self-start text-xs font-medium text-zinc-500 hover:underline"
-              >
-                {showArchived ? "Hide" : "Show"} archived (
-                {bundle.archivedActivities.length})
-              </button>
-              {showArchived && (
-                <ul className="flex flex-col gap-1.5">
-                  {bundle.archivedActivities.map((a) => (
-                    <li
-                      key={a.activityId}
-                      className="flex items-center justify-between gap-2 rounded-md border border-dashed border-zinc-300 px-3 py-1.5 dark:border-zinc-700"
-                    >
-                      <span className="min-w-0 truncate text-sm text-zinc-500">
-                        {a.name}
-                      </span>
-                      <div className="flex shrink-0 gap-1">
-                        <RestoreButton
-                          activityId={a.activityId}
-                          onDone={() => router.refresh()}
-                        />
-                        <DeleteButton
-                          activityId={a.activityId}
-                          name={a.name}
-                          onDone={() => router.refresh()}
-                        />
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
-        </div>
+      {manageOpen && (
+        <ManageActivitiesModal
+          activities={bundle.ownedActivities}
+          archived={bundle.archivedActivities}
+          tagMap={bundle.tagMap}
+          showArchived={showArchived}
+          setShowArchived={setShowArchived}
+          onEdit={(a) => {
+            setManageOpen(false);
+            setEditing(a);
+          }}
+          onClose={() => setManageOpen(false)}
+          onChanged={() => router.refresh()}
+        />
       )}
 
       {picked && (
@@ -284,6 +240,128 @@ export function CommunityOwnedCalendar({
         />
       )}
     </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ManageActivitiesModal — leadership manage list (edit / archive) + archived
+// (restore / delete). Lifted into a modal so the calendar body can fill the
+// app-shell and scroll on its own (no extra content pushing the layout).
+// ---------------------------------------------------------------------------
+
+function ManageActivitiesModal({
+  activities,
+  archived,
+  tagMap,
+  showArchived,
+  setShowArchived,
+  onEdit,
+  onClose,
+  onChanged,
+}: {
+  activities: SharedActivity[];
+  archived: SharedActivity[];
+  tagMap: TagMap;
+  showArchived: boolean;
+  setShowArchived: (fn: (v: boolean) => boolean) => void;
+  onEdit: (a: SharedActivity) => void;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  useBodyScrollLock();
+  void tagMap;
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 sm:items-center"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="flex max-h-[85svh] w-full max-w-md flex-col gap-3 overflow-y-auto rounded-t-2xl bg-white p-5 shadow-xl dark:bg-zinc-950 sm:rounded-2xl"
+      >
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold tracking-tight">
+            Manage activities
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-sm text-zinc-500 hover:underline"
+          >
+            Done
+          </button>
+        </div>
+
+        <ul className="flex flex-col gap-1.5">
+          {activities.map((a) => (
+            <li
+              key={a.activityId}
+              className="flex items-center justify-between gap-2 rounded-md border border-zinc-200 px-3 py-1.5 dark:border-zinc-800"
+            >
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">{a.name}</p>
+                <p className="truncate text-xs text-zinc-500">
+                  {summarizeRhythm(a.rhythm, a.scheduledTimes)}
+                </p>
+              </div>
+              <div className="flex shrink-0 gap-1">
+                <button
+                  type="button"
+                  onClick={() => onEdit(a)}
+                  className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                >
+                  Edit
+                </button>
+                <ArchiveButton
+                  activityId={a.activityId}
+                  name={a.name}
+                  onDone={onChanged}
+                />
+              </div>
+            </li>
+          ))}
+        </ul>
+
+        {archived.length > 0 && (
+          <div className="flex flex-col gap-1.5">
+            <button
+              type="button"
+              onClick={() => setShowArchived((v) => !v)}
+              className="self-start text-xs font-medium text-zinc-500 hover:underline"
+            >
+              {showArchived ? "Hide" : "Show"} archived ({archived.length})
+            </button>
+            {showArchived && (
+              <ul className="flex flex-col gap-1.5">
+                {archived.map((a) => (
+                  <li
+                    key={a.activityId}
+                    className="flex items-center justify-between gap-2 rounded-md border border-dashed border-zinc-300 px-3 py-1.5 dark:border-zinc-700"
+                  >
+                    <span className="min-w-0 truncate text-sm text-zinc-500">
+                      {a.name}
+                    </span>
+                    <div className="flex shrink-0 gap-1">
+                      <RestoreButton
+                        activityId={a.activityId}
+                        onDone={onChanged}
+                      />
+                      <DeleteButton
+                        activityId={a.activityId}
+                        name={a.name}
+                        onDone={onChanged}
+                      />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

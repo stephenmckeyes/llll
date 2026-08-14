@@ -185,8 +185,8 @@ export function CommunityTab({
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-2">
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
+      <div className="flex shrink-0 items-center gap-2">
         <select
           value={effectiveId ?? ""}
           onChange={(e) => changeSelection(e.target.value)}
@@ -527,8 +527,8 @@ function CommunityBody({
   ] as Array<{ v: CommunityView; label: string }>;
 
   return (
-    <div className="flex flex-col gap-4">
-      <nav className="flex gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800">
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
+      <nav className="flex shrink-0 gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800">
         {tabs.map(({ v, label }) => (
           <button
             key={v}
