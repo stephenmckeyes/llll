@@ -247,6 +247,9 @@ export const activities = pgTable(
     // Independent of auto_archive; a completed single that's pinned
     // still archives on complete but stays surfaced under Pinned.
     pinned: boolean("pinned").notNull().default(false),
+    // Auto-drop when past (migration 0059). true = a past-due unmarked
+    // occurrence silently drops (no verdict/nag); false = stays unlabeled.
+    autoResolve: boolean("auto_resolve").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

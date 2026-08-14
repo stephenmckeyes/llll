@@ -67,7 +67,18 @@ calendar.
      (auto-create a personal copy that references the community occurrence,
      or let a member "link" an existing personal activity).
 
-2. **Stays-until-marked vs. auto-drop-when-past.** A per-activity setting:
+2. **Stays-until-marked vs. auto-drop-when-past.** ✅ DONE for the PERSONAL
+   calendar (migration 0059: `activities.auto_resolve`). Toggle in both
+   Add-Activity forms (standalone + day-list modal/edit), persisted in
+   create/draft/edit. Behavior: `visibleOnDay()` drops a past-due pending
+   auto_resolve occurrence from the day list, and `fetchIncompleteInfo()` +
+   the /notifications reminders query exclude them (no unlabeled nag).
+   STILL TODO: honor it in the Grid (past auto_resolve cells should read
+   blank, not overdue) and add the same setting to community-owned
+   activities (needs community_owned_activities.auto_resolve + the same
+   visibleOnDay path, which already reads DayInstance.activity.auto_resolve
+   — so mapping it through getCommunityOwnedBundle is most of the work).
+   Original spec below:
    - *Stays until marked* (today's behavior) — an unmarked past occurrence
      becomes overdue/unlabeled and waits for a verdict.
    - *Auto-drop when its date/time passes* — the occurrence just

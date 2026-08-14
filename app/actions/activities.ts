@@ -97,6 +97,9 @@ export async function createActivity(
   // create-activity forms explicitly send "true" for new singles.
   const autoArchive = String(formData.get("autoArchive")) === "true";
   const pinned = String(formData.get("pinned")) === "true";
+  // Auto-drop when past (migration 0059). Default false → keeps the
+  // stays-until-marked behavior for callers that don't send the field.
+  const autoResolve = String(formData.get("autoResolve")) === "true";
 
   // ---- 2. Reconstruct + validate the rhythm -------------------------------
 
@@ -261,6 +264,7 @@ export async function createActivity(
         rollover_change_rhythm: rolloverChangeRhythm,
         auto_archive: autoArchive,
         pinned,
+        auto_resolve: autoResolve,
       })
       .select("id")
       .single();
@@ -394,6 +398,7 @@ export async function createDraftActivity(
       String(formData.get("rolloverChangeRhythm")) === "true",
     auto_archive: String(formData.get("autoArchive")) === "true",
     pinned: String(formData.get("pinned")) === "true",
+    auto_resolve: String(formData.get("autoResolve")) === "true",
     // The whole point: parked in the archive, generating no instances.
     archived_at: new Date().toISOString(),
   });
@@ -726,6 +731,7 @@ export async function updateActivityRhythm(
         String(formData.get("rolloverChangeRhythm")) === "true",
       auto_archive: String(formData.get("autoArchive")) === "true",
       pinned: String(formData.get("pinned")) === "true",
+      auto_resolve: String(formData.get("autoResolve")) === "true",
     })
     .eq("id", activityId);
   if (uerr) return { error: uerr.message };

@@ -121,6 +121,10 @@ export type DayInstance = {
     rollover_change_rhythm: boolean;
     /** Auto-archive on completion (migration 0026). */
     auto_archive: boolean;
+    /** Auto-drop when past (migration 0059). true = a past-due unmarked
+     *  occurrence drops silently (no verdict). Optional so callers that
+     *  don't fetch the column still typecheck (treated as false). */
+    auto_resolve?: boolean;
   };
 };
 
@@ -1174,6 +1178,17 @@ function visibleOnDay(
   dayStr: string,
   todayStr: string
 ): boolean {
+  // Auto-drop when past (migration 0059): a still-pending occurrence of an
+  // auto-resolve activity silently disappears once its scheduled day is
+  // behind us — no overdue nag, nothing to mark. It still shows on its own
+  // day (today / future) until then, and completed/missed ones are unaffected.
+  if (
+    inst.activity.auto_resolve &&
+    inst.status === "pending" &&
+    inst.scheduled_for < todayStr
+  ) {
+    return false;
+  }
   const r = inst.activity.rhythm;
   if (r.type === "single") {
     // Overdue singles render on BOTH today AND their original

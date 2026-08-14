@@ -149,7 +149,9 @@ export default async function NotificationsPage() {
   const { data: activeRows } = await supabase
     .from("activities")
     .select("id, name, rhythm")
-    .is("archived_at", null);
+    .is("archived_at", null)
+    // Auto-drop activities (migration 0059) don't nag as overdue reminders.
+    .or("auto_resolve.is.null,auto_resolve.eq.false");
   const active = (activeRows ?? []) as Array<{
     id: string;
     name: string;

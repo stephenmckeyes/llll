@@ -110,6 +110,8 @@ export function ActivityForm({
   // activities they may want to re-initiate. Default filter in Total
   // View surfaces pinned activities across Active / Past / Archived.
   const [pinned, setPinned] = useState(false);
+  // Auto-drop when past (migration 0059). Default false = stays until marked.
+  const [autoResolve, setAutoResolve] = useState(false);
 
   function handleSaveForLater() {
     const form = formRef.current;
@@ -952,6 +954,11 @@ export function ActivityForm({
         name="pinned"
         value={pinned ? "true" : "false"}
       />
+      <input
+        type="hidden"
+        name="autoResolve"
+        value={autoResolve ? "true" : "false"}
+      />
       {isCompact ? (
         <div className="flex gap-1">
           <button
@@ -1046,6 +1053,36 @@ export function ActivityForm({
         setRolloverChangeRhythm={setRolloverChangeRhythm}
         compact={isCompact}
       />
+
+      {/* Auto-drop when past (migration 0059) — "Stays until marked"
+          (default) vs "Auto-drop when past" (past-due unmarked occurrences
+          silently drop; good for meetings you don't want to mark). */}
+      <div className="flex gap-1">
+        <button
+          type="button"
+          onClick={() => setAutoResolve(false)}
+          aria-pressed={!autoResolve}
+          className={`flex-1 touch-manipulation rounded-md border px-2 py-1 text-center text-xs font-medium transition-colors ${
+            !autoResolve
+              ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+              : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+          }`}
+        >
+          Stays until marked
+        </button>
+        <button
+          type="button"
+          onClick={() => setAutoResolve(true)}
+          aria-pressed={autoResolve}
+          className={`flex-1 touch-manipulation rounded-md border px-2 py-1 text-center text-xs font-medium transition-colors ${
+            autoResolve
+              ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+              : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+          }`}
+        >
+          Auto-drop when past
+        </button>
+      </div>
       </div>
 
       {/* --- Calendar preview ------------------------------------------ */}

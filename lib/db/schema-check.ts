@@ -152,6 +152,11 @@ export const EXPECTATIONS: ReadonlyArray<MigrationExpectation> = [
       { table: "community_owned_instances", column: "status" },
     ],
   },
+  {
+    migration: "0059_auto_resolve.sql",
+    label: "Auto-drop when past (activity setting)",
+    checks: [{ table: "activities", column: "auto_resolve" }],
+  },
 ];
 
 export type MissingMigration = {

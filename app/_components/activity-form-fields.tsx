@@ -102,6 +102,9 @@ export type ActivityFormInitial = {
   /** Migration 0035 — user-pinned "may want to re-initiate" flag.
    *  Independent of auto_archive. Defaults false. */
   pinned?: boolean;
+  /** Migration 0059 — "auto-drop when past". true = a past-due unmarked
+   *  occurrence drops silently (no verdict/nag). Defaults false. */
+  auto_resolve?: boolean;
 };
 
 export function ActivityFormFields({
@@ -164,6 +167,9 @@ export function ActivityFormFields({
     initialValues.rollover_change_rhythm
   );
   const [autoArchive] = useState<boolean>(initialValues.auto_archive);
+  const [autoResolve, setAutoResolve] = useState<boolean>(
+    initialValues.auto_resolve ?? false
+  );
   const [pinned, setPinned] = useState<boolean>(
     initialValues.pinned ?? false
   );
@@ -238,6 +244,11 @@ export function ActivityFormFields({
         type="hidden"
         name="pinned"
         value={pinned ? "true" : "false"}
+      />
+      <input
+        type="hidden"
+        name="autoResolve"
+        value={autoResolve ? "true" : "false"}
       />
 
       {/* --- Activity name ----------------------------------------- */}
@@ -955,6 +966,37 @@ export function ActivityFormFields({
         setRolloverChangeRhythm={setRolloverChangeRhythm}
         compact={isCompact}
       />
+
+      {/* --- Auto-drop when past (migration 0059) ------------------- */}
+      {/* "Stays until marked" (default) keeps unmarked past occurrences as
+          overdue/unlabeled; "Auto-drop when past" silently drops them once
+          the day passes — for meetings/appointments you don't want to mark. */}
+      <div className="flex gap-1">
+        <button
+          type="button"
+          onClick={() => setAutoResolve(false)}
+          aria-pressed={!autoResolve}
+          className={`flex-1 touch-manipulation rounded-md border px-2 py-1 text-center text-xs font-medium transition-colors ${
+            !autoResolve
+              ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+              : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+          }`}
+        >
+          Stays until marked
+        </button>
+        <button
+          type="button"
+          onClick={() => setAutoResolve(true)}
+          aria-pressed={autoResolve}
+          className={`flex-1 touch-manipulation rounded-md border px-2 py-1 text-center text-xs font-medium transition-colors ${
+            autoResolve
+              ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+              : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+          }`}
+        >
+          Auto-drop when past
+        </button>
+      </div>
     </>
   );
 }

@@ -546,8 +546,11 @@ async function fetchIncompleteInfo(
   // queries cost a tiny extra round-trip but are reliable.
   const { data: activeRows } = await supabase
     .from("activities")
-    .select("id, rhythm")
-    .is("archived_at", null);
+    .select("id, rhythm, auto_resolve")
+    .is("archived_at", null)
+    // Auto-drop activities never count as unlabeled — their past-due
+    // occurrences silently drop (migration 0059).
+    .or("auto_resolve.is.null,auto_resolve.eq.false");
 
   const active = (activeRows ?? []) as Array<{ id: string; rhythm: Rhythm }>;
   if (active.length === 0) return { count: 0, oldestDate: null };
@@ -901,7 +904,8 @@ async function DayView({
         track_on_grid,
         rollover_missed_days,
         rollover_change_rhythm,
-        auto_archive
+        auto_archive,
+        auto_resolve
       ),
       completion_instances (
         completion_id,
@@ -1120,7 +1124,8 @@ async function TimelineWeekView({
         track_on_grid,
         rollover_missed_days,
         rollover_change_rhythm,
-        auto_archive
+        auto_archive,
+        auto_resolve
       ),
       completion_instances (
         completion_id,
