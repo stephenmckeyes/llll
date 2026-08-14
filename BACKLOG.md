@@ -266,13 +266,21 @@ occurrence) and **ranks-gated management** (adding/editing gated by
   "Show archived (N)" toggle with Restore + permanent Delete (confirm)
   per archived activity — mirrors the personal "delete only from
   Archived" rule.
-- STILL TODO: full parity with the personal Add-Activity form (the form is
-  a focused subset — no multi-daily modifier, priority, pinned, reminders,
-  rollover, form-type); inline completion in the Day list (currently
-  tap-opens-modal, not inline Complete/Missed buttons like the dashboard);
-  Year-view name banners; and per-viewer streak/stats in the community
-  Grid (currently streakMode "none"). Also decide whether to fully delete
-  the now-dead member-share/copy/auto-add backend.
+- ✅ Phase 3c (richer form): the community create/edit ActivityFormModal
+  now matches the personal Add-Activity form's mainstream fields —
+  rhythm labels (Once / Daily / Days per Week / Every N Days / Target
+  Count), per-slot **end times** (scheduled_end_times), multi-time Daily →
+  frequency conversion, and a real **tag picker** (palette chips from the
+  community's tag map + free-text add) replacing the comma field. Priority
+  is intentionally omitted (removed product-wide). Pinned / Streaks-toggle
+  / Rollover / Reminders were intentionally SKIPPED — they don't map to a
+  community (no Total view for pinned, no rollover behavior on collective
+  instances, reminders unbuilt). "Pick Dates" (selection) also skipped.
+- STILL TODO: inline completion in the Day list (currently tap-opens-modal,
+  not inline Complete/Missed buttons like the dashboard) — NEXT; Year-view
+  name banners; per-viewer streak/stats in the community Grid (currently
+  streakMode "none"). Also decide whether to fully delete the now-dead
+  member-share/copy/auto-add backend.
 
 **Community chat (phase 7).** Every community gets a group chat, distinct
 from the 1:1 friend DMs (`messages` table + `ChatThread`). Reuse that

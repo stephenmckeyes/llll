@@ -26,6 +26,7 @@ import {
 } from "@/app/actions/communities";
 import type { SharedActivity, SharedInstance } from "@/app/actions/sharing";
 import { summarizeRhythm } from "@/lib/domain/rhythm-summary";
+import { tagChipClasses, type TagMap } from "@/lib/domain/tags";
 import { useBodyScrollLock } from "@/lib/ui/body-scroll-lock";
 import {
   normalizeFrequencyPeriod,
@@ -251,6 +252,7 @@ export function CommunityOwnedCalendar({
         <ActivityFormModal
           communityId={detail.id}
           todayStr={bundle.todayStr}
+          tagMap={bundle.tagMap}
           existing={editing}
           onClose={() => {
             setCreating(false);
@@ -541,12 +543,14 @@ function deriveInitial(existing?: SharedActivity | null): {
 function ActivityFormModal({
   communityId,
   todayStr,
+  tagMap,
   existing,
   onClose,
   onSaved,
 }: {
   communityId: string;
   todayStr: string;
+  tagMap: TagMap;
   existing?: SharedActivity | null;
   onClose: () => void;
   onSaved: () => void;
@@ -567,14 +571,35 @@ function ActivityFormModal({
     init.freqPerUnit
   );
   const [times, setTimes] = useState<string[]>(existing?.scheduledTimes ?? []);
-  const [tags, setTags] = useState((existing?.defaultSkillTags ?? []).join(", "));
+  // Parallel to `times` — "" means no end for that slot (migration 0032).
+  const [endTimes, setEndTimes] = useState<string[]>(() => {
+    const t = existing?.scheduledTimes ?? [];
+    const e = existing?.scheduledEndTimes ?? [];
+    return t.map((_, i) => e[i] ?? "");
+  });
+  const [tagList, setTagList] = useState<string[]>(
+    existing?.defaultSkillTags ?? []
+  );
+  const [tagInput, setTagInput] = useState("");
   const [startDate, setStartDate] = useState(existing?.startDate ?? todayStr);
   const [endDate, setEndDate] = useState(existing?.endDate ?? "");
+
+  const paletteTags = Object.keys(tagMap).sort();
 
   function toggleDay(d: DayOfWeek) {
     setDays((cur) =>
       cur.includes(d) ? cur.filter((x) => x !== d) : [...cur, d]
     );
+  }
+  function toggleTag(name: string) {
+    setTagList((cur) =>
+      cur.includes(name) ? cur.filter((t) => t !== name) : [...cur, name]
+    );
+  }
+  function addTypedTag() {
+    const t = tagInput.trim();
+    if (t && !tagList.includes(t)) setTagList((cur) => [...cur, t]);
+    setTagInput("");
   }
 
   function buildRhythm(): Rhythm | { error: string } {
@@ -606,16 +631,30 @@ function ActivityFormModal({
       setError("Give the activity a name.");
       return;
     }
-    const rhythm = buildRhythm();
-    if ("error" in rhythm) {
-      setError(rhythm.error);
+    const built = buildRhythm();
+    if ("error" in built) {
+      setError(built.error);
       return;
     }
-    const cleanTimes = times.map((t) => t.trim()).filter(Boolean);
-    const tagList = tags
-      .split(",")
-      .map((t) => t.trim())
-      .filter(Boolean);
+    // Keep times + their end times aligned; drop blank time slots.
+    const pairs = times
+      .map((t, i) => ({ t: t.trim(), e: (endTimes[i] ?? "").trim() }))
+      .filter((p) => p.t.length > 0);
+    const cleanTimes = pairs.map((p) => p.t);
+    const cleanEndTimes = pairs.map((p) => p.e);
+
+    // Multi-time Daily behaves like the personal form: convert to an
+    // N-times-per-day frequency so the X/Y progress model applies.
+    let rhythm: Rhythm = built;
+    if (rhythm.type === "daily" && cleanTimes.length > 1) {
+      rhythm = {
+        type: "frequency",
+        count: cleanTimes.length,
+        perCount: 1,
+        perUnit: "days",
+      };
+    }
+
     startTransition(async () => {
       const res = existing
         ? await updateCommunityCalendarActivity({
@@ -624,6 +663,7 @@ function ActivityFormModal({
             notes: notes.trim() || undefined,
             rhythm,
             scheduledTimes: cleanTimes,
+            scheduledEndTimes: cleanEndTimes,
             tags: tagList,
             startDate,
             endDate: endDate || null,
@@ -634,6 +674,7 @@ function ActivityFormModal({
             notes: notes.trim() || undefined,
             rhythm,
             scheduledTimes: cleanTimes,
+            scheduledEndTimes: cleanEndTimes,
             tags: tagList,
             startDate,
             endDate: endDate || null,
@@ -692,11 +733,11 @@ function ActivityFormModal({
             onChange={(e) => setRhythmType(e.target.value as RhythmType)}
             className={inputCls}
           >
-            <option value="single">One-off</option>
-            <option value="daily">Every day</option>
-            <option value="weekdays">Specific weekdays</option>
-            <option value="interval">Every N days</option>
-            <option value="frequency">N times per period</option>
+            <option value="single">Once</option>
+            <option value="daily">Daily</option>
+            <option value="weekdays">Days per Week</option>
+            <option value="interval">Every N Days</option>
+            <option value="frequency">Target Count</option>
           </select>
         </label>
 
@@ -767,12 +808,15 @@ function ActivityFormModal({
           </div>
         )}
 
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1.5">
           <span className="text-sm font-medium">
-            Times <span className="font-normal text-zinc-500">(optional)</span>
+            Times of day{" "}
+            <span className="font-normal text-zinc-500">
+              {times.length > 0 ? `(${times.length} per day)` : "(optional)"}
+            </span>
           </span>
           {times.map((t, i) => (
-            <div key={i} className="flex items-center gap-2">
+            <div key={i} className="flex flex-wrap items-center gap-1.5">
               <input
                 type="time"
                 value={t}
@@ -783,11 +827,40 @@ function ActivityFormModal({
                 }
                 className={inputCls}
               />
+              <span aria-hidden className="text-xs text-zinc-400">
+                –
+              </span>
+              <input
+                type="time"
+                value={endTimes[i] ?? ""}
+                title="End (optional)"
+                onChange={(e) =>
+                  setEndTimes((cur) =>
+                    cur.map((x, j) => (j === i ? e.target.value : x))
+                  )
+                }
+                className={inputCls}
+              />
+              {(endTimes[i] ?? "") !== "" && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setEndTimes((cur) => cur.map((x, j) => (j === i ? "" : x)))
+                  }
+                  aria-label="Clear end time"
+                  title="No end time"
+                  className="rounded-md border border-zinc-300 px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                >
+                  No end
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() =>
-                  setTimes((cur) => cur.filter((_, j) => j !== i))
-                }
+                onClick={() => {
+                  setTimes((cur) => cur.filter((_, j) => j !== i));
+                  setEndTimes((cur) => cur.filter((_, j) => j !== i));
+                }}
+                aria-label="Remove time"
                 className="rounded-md border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
               >
                 Remove
@@ -796,28 +869,81 @@ function ActivityFormModal({
           ))}
           <button
             type="button"
-            onClick={() => setTimes((cur) => [...cur, "09:00"])}
+            onClick={() => {
+              setTimes((cur) => [...cur, "09:00"]);
+              setEndTimes((cur) => [...cur, ""]);
+            }}
             className="self-start rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
           >
             + Add time
           </button>
         </div>
 
-        <label className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1.5">
           <span className="text-sm font-medium">
-            Tags{" "}
-            <span className="font-normal text-zinc-500">
-              (comma-separated, optional)
-            </span>
+            Tags <span className="font-normal text-zinc-500">(optional)</span>
           </span>
-          <input
-            type="text"
-            value={tags}
-            onChange={(e) => setTags(e.target.value)}
-            placeholder="fitness, outdoors"
-            className={inputCls}
-          />
-        </label>
+          {tagList.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {tagList.map((name) => {
+                const info = tagMap[name];
+                const cls = info
+                  ? tagChipClasses(info.color)
+                  : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300";
+                return (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => toggleTag(name)}
+                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}
+                    title="Remove tag"
+                  >
+                    {name} ✕
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {paletteTags.filter((t) => !tagList.includes(t)).length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {paletteTags
+                .filter((t) => !tagList.includes(t))
+                .map((name) => (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => toggleTag(name)}
+                    className="rounded-full border border-zinc-300 px-2 py-0.5 text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                  >
+                    + {name}
+                  </button>
+                ))}
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={tagInput}
+              onChange={(e) => setTagInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addTypedTag();
+                }
+              }}
+              placeholder="Add a tag…"
+              className={`${inputCls} flex-1`}
+            />
+            <button
+              type="button"
+              onClick={addTypedTag}
+              disabled={tagInput.trim().length === 0}
+              className="shrink-0 rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            >
+              Add
+            </button>
+          </div>
+        </div>
 
         <div className="flex gap-2">
           <label className="flex flex-1 flex-col gap-1">
