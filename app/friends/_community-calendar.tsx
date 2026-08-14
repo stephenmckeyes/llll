@@ -38,9 +38,10 @@ import { useBodyScrollLock } from "@/lib/ui/body-scroll-lock";
 
 import { FriendCalendar } from "./[friendId]/friend-calendar";
 import { FriendGrid } from "./[friendId]/friend-grid";
+import { TotalReadOnly } from "./[friendId]/friend-view";
 import type { Occurrence } from "./[friendId]/shared-data";
 
-type CalView = "calendar" | "grid";
+type CalView = "total" | "calendar" | "grid";
 
 export function CommunityOwnedCalendar({
   detail,
@@ -125,7 +126,18 @@ export function CommunityOwnedCalendar({
           header for members who can manage. */}
       {
         <>
-          {view === "calendar" ? (
+          {view === "total" && (
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+              <TotalReadOnly
+                shares={[
+                  ...bundle.ownedActivities,
+                  ...bundle.archivedActivities,
+                ]}
+                tagMap={bundle.tagMap}
+              />
+            </div>
+          )}
+          {view === "calendar" && (
             <FriendCalendar
               shares={bundle.ownedActivities}
               instances={bundle.ownedInstances}
@@ -162,7 +174,8 @@ export function CommunityOwnedCalendar({
                 },
               }}
             />
-          ) : (
+          )}
+          {view === "grid" && (
             <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
               <FriendGrid
                 friendId={detail.id}
@@ -179,14 +192,16 @@ export function CommunityOwnedCalendar({
             </div>
           )}
 
-          {/* Calendar / Grid switcher pinned at the BOTTOM (reversed
-              left-to-right), matching the personal dashboard's section
-              tabs sitting below the sub-tabs. */}
+          {/* Total View / Calendar / Streaks switcher pinned at the BOTTOM.
+              flex-row-reverse renders the array right-to-left, so this order
+              shows "Total View · Calendar · Streaks" left-to-right, matching
+              the personal dashboard's section tabs. */}
           <nav className="flex shrink-0 flex-row-reverse gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800">
             {(
               [
+                ["grid", "Streaks"],
                 ["calendar", "Calendar"],
-                ["grid", "Grid"],
+                ["total", "Total View"],
               ] as const
             ).map(([val, label]) => (
               <button

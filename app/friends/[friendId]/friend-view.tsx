@@ -194,7 +194,7 @@ type GroupBy = "status" | "tag" | "rhythm";
 type StatusFilter = "all" | "active" | "archived";
 type ShareGroup = { key: string; label: string; items: SharedActivity[] };
 
-function TotalReadOnly({
+export function TotalReadOnly({
   shares,
   tagMap,
   watchMap,
@@ -203,9 +203,17 @@ function TotalReadOnly({
 }: {
   shares: SharedActivity[];
   tagMap: TagMap;
-  watchMap: WatchMap;
-  onCopy: (s: SharedActivity) => void;
-  onOpenActivity: (activityId: string, occurrence: Occurrence | null) => void;
+  /** Friend view: reminder cadences the viewer enabled. Omit (community) to
+   *  hide the per-card Reminders button. */
+  watchMap?: WatchMap;
+  /** Friend view: "Copy to my schedule". Omit (community) to hide Copy. */
+  onCopy?: (s: SharedActivity) => void;
+  /** Open the rhythm-level detail. Omit (community, which has no rhythm
+   *  detail modal) to make cards non-clickable. */
+  onOpenActivity?: (
+    activityId: string,
+    occurrence: Occurrence | null
+  ) => void;
 }) {
   const [groupBy, setGroupBy] = useState<GroupBy>("tag");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
@@ -262,7 +270,7 @@ function TotalReadOnly({
                 key={s.shareId}
                 share={s}
                 tagMap={tagMap}
-                watch={watchMap[s.activityId] ?? NO_WATCH}
+                watch={watchMap ? watchMap[s.activityId] ?? NO_WATCH : undefined}
                 onCopy={onCopy}
                 onOpenActivity={onOpenActivity}
               />
@@ -357,20 +365,25 @@ function ShareCard({
 }: {
   share: SharedActivity;
   tagMap: TagMap;
-  watch: { notifyEach: boolean; notifyDaily: boolean; notifyWeekly: boolean };
-  onCopy: (s: SharedActivity) => void;
-  onOpenActivity: (activityId: string, occurrence: Occurrence | null) => void;
+  watch?: { notifyEach: boolean; notifyDaily: boolean; notifyWeekly: boolean };
+  onCopy?: (s: SharedActivity) => void;
+  onOpenActivity?: (activityId: string, occurrence: Occurrence | null) => void;
 }) {
   const archived = share.archivedAt !== null;
+  // Info area: a button when there's a detail to open (friend view), a plain
+  // div otherwise (community — no rhythm-level detail modal).
+  const InfoTag = onOpenActivity ? "button" : "div";
   return (
     <li className="flex flex-col gap-3 rounded-md border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-950 sm:flex-row sm:items-start sm:justify-between">
       {/* Tap the info area to open the read-only detail (with notes). Reply
           to a SPECIFIC occurrence lives in the Calendar/Grid; the Total card
           opens the rhythm-level detail (no occurrence → no Reply). */}
-      <button
-        type="button"
-        onClick={() => onOpenActivity(share.activityId, null)}
-        className="min-w-0 cursor-pointer text-left"
+      <InfoTag
+        type={onOpenActivity ? "button" : undefined}
+        onClick={
+          onOpenActivity ? () => onOpenActivity(share.activityId, null) : undefined
+        }
+        className={`min-w-0 text-left ${onOpenActivity ? "cursor-pointer" : ""}`}
       >
         <div className="flex flex-wrap items-center gap-2">
           <span
@@ -398,28 +411,33 @@ function ShareCard({
             />
           </div>
         )}
-      </button>
-      <div className="flex shrink-0 flex-wrap gap-2">
-        {/* Reply lives on a specific occurrence (Calendar/Grid), not the
-            whole rhythm — so the Total card has no Reply button. */}
-        {/* Reminders only make sense when the owner shares progress (the
-            watch RLS enforces it too); archived/template-only shares have
-            no progress to nudge about. */}
-        {!archived && share.shareProgress && (
-          <RemindersButton
-            activityId={share.activityId}
-            activityName={share.name}
-            initial={watch}
-          />
-        )}
-        <button
-          type="button"
-          onClick={() => onCopy(share)}
-          className="touch-manipulation rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
-        >
-          Copy to my schedule
-        </button>
-      </div>
+      </InfoTag>
+      {(onCopy || (watch && !archived && share.shareProgress)) && (
+        <div className="flex shrink-0 flex-wrap gap-2">
+          {/* Reply lives on a specific occurrence (Calendar/Grid), not the
+              whole rhythm — so the Total card has no Reply button. */}
+          {/* Reminders only make sense when the owner shares progress (the
+              watch RLS enforces it too); archived/template-only shares have
+              no progress to nudge about. Community Total omits watch → hidden. */}
+          {watch && !archived && share.shareProgress && (
+            <RemindersButton
+              activityId={share.activityId}
+              activityName={share.name}
+              initial={watch}
+            />
+          )}
+          {/* Community Total omits onCopy → no Copy button. */}
+          {onCopy && (
+            <button
+              type="button"
+              onClick={() => onCopy(share)}
+              className="touch-manipulation rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
+            >
+              Copy to my schedule
+            </button>
+          )}
+        </div>
+      )}
     </li>
   );
 }

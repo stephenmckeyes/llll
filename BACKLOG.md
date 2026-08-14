@@ -372,6 +372,25 @@ occurrence) and **ranks-gated management** (adding/editing gated by
   name banners; per-viewer streak/stats in the community Grid (currently
   streakMode "none"). Also decide whether to fully delete the now-dead
   member-share/copy/auto-add backend.
+- ✅ The community Calendar tab now has the full personal-style view
+  switcher: **Total View / Calendar / Streaks** (Streaks = the grid; renamed
+  from "Grid" to match the personal terminology). Total reuses the friend
+  `TotalReadOnly` in a trimmed read-only mode (no Copy / Reminders, cards
+  non-clickable — the community has no rhythm-level detail modal), fed the
+  community's own + archived activities so the Status/Tag/Rhythm grouping and
+  All/Active/Archived filter work.
+
+**Leadership-configurable community page display (asked for, upcoming).**
+The user wants leadership to control what a community surfaces / how its
+page is laid out — which sections show and in what order (Home, Calendar,
+Total, Streaks, Chat, members, activity feed, …), and likely per-section
+visibility for outsiders vs members. Think of it as a per-community layout
+config (e.g. `communities.page_layout jsonb` or a `community_page_sections`
+table) that gates + orders the tabs/sections the member and non-member views
+render. Builds on the existing `outsider_visibility` (0054) and the removed-
+but-related `calendar_display` idea. When it ships, the sub-tab strip +
+section renderers should read this config instead of the current hardcoded
+order. Contained phase — pick up after the aggregate-completion follow-ups.
 
 **Community chat (phase 7).** Every community gets a group chat, distinct
 from the 1:1 friend DMs (`messages` table + `ChatThread`). Reuse that
