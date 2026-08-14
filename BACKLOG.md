@@ -73,12 +73,14 @@ calendar.
    create/draft/edit. Behavior: `visibleOnDay()` drops a past-due pending
    auto_resolve occurrence from the day list, and `fetchIncompleteInfo()` +
    the /notifications reminders query exclude them (no unlabeled nag).
-   STILL TODO: honor it in the Grid (past auto_resolve cells should read
-   blank, not overdue) and add the same setting to community-owned
-   activities (needs community_owned_activities.auto_resolve + the same
-   visibleOnDay path, which already reads DayInstance.activity.auto_resolve
-   — so mapping it through getCommunityOwnedBundle is most of the work).
-   Original spec below:
+   Grid now honors it too — a past-due auto_resolve cell renders blank
+   ("not-scheduled") instead of overdue, and doesn't count toward
+   unlabeled. STILL TODO: add the same setting to community-owned
+   activities (needs community_owned_activities.auto_resolve + re-created
+   create/update RPCs with the param + a form toggle + mapping
+   auto_resolve through SharedActivity → DayInstance so the shared
+   visibleOnDay drops them; that path already reads
+   DayInstance.activity.auto_resolve). Original spec below:
    - *Stays until marked* (today's behavior) — an unmarked past occurrence
      becomes overdue/unlabeled and waits for a verdict.
    - *Auto-drop when its date/time passes* — the occurrence just

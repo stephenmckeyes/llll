@@ -1644,7 +1644,7 @@ async function GridView({
     supabase
       .from("activities")
       .select(
-        "id, name, notes, rhythm, priority, scheduled_times, scheduled_end_times, default_skill_tags, start_date, end_date, archived_at, reminders, streak_mode, streak_goal, track_on_grid, rollover_missed_days, rollover_change_rhythm"
+        "id, name, notes, rhythm, priority, scheduled_times, scheduled_end_times, default_skill_tags, start_date, end_date, archived_at, reminders, streak_mode, streak_goal, track_on_grid, rollover_missed_days, rollover_change_rhythm, auto_resolve"
       )
       .eq("user_id", userId)
       .is("archived_at", null)
@@ -1676,6 +1676,7 @@ async function GridView({
     track_on_grid: boolean;
     rollover_missed_days: boolean;
     rollover_change_rhythm: boolean;
+    auto_resolve: boolean;
   };
   // Grid only DISPLAYS activities the user opted into (track_on_grid).
   // Everything is still tracked elsewhere; this is a display filter.
@@ -1946,7 +1947,12 @@ async function GridView({
         state = "missed";
         missed++;
       } else if (dateStr < todayStr) {
-        // pending + past — what we now show to the user as "Unlabeled".
+        // pending + past. Auto-drop activities (migration 0059) never go
+        // overdue — the occurrence silently drops, so render it blank
+        // instead of an "Unlabeled" cell.
+        if (act.auto_resolve) {
+          return makeNonInstanceCell("not-scheduled", dateStr);
+        }
         state = "overdue";
         unlabeled++;
       } else {
