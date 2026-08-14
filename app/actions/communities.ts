@@ -23,7 +23,8 @@ import {
   type CommunityVisibility,
 } from "@/lib/domain/community";
 import type { SharedActivity, SharedInstance } from "@/app/actions/sharing";
-import type { Rhythm } from "@/lib/validators/rhythm";
+import { generateInstances } from "@/lib/domain/rhythms";
+import { rhythmSchema, type Rhythm } from "@/lib/validators/rhythm";
 import { buildTagMap, computeTagUsage, type TagMap } from "@/lib/domain/tags";
 
 /** How much of the community calendar members see (leadership-set). */
@@ -875,6 +876,10 @@ export type CommunityActivityBundle = {
   /** Occurrences of the shared activities in a rolling window, for the Full
    *  calendar render. */
   instances: SharedInstance[];
+  /** The community's OWN activities + occurrences (migration 0056), in the
+   *  SharedActivity/SharedInstance shape so the calendar renders them. */
+  ownedActivities: SharedActivity[];
+  ownedInstances: SharedInstance[];
   autoAdd: boolean;
   autoAddNotify: boolean;
   myActivities: Array<{ id: string; name: string }>;
@@ -915,11 +920,16 @@ export async function getCommunityActivityBundle(
 
   const tz = (profRes.data as { timezone?: string } | null)?.timezone ?? "UTC";
   const todayStr = todayInTimeZone(tz);
-  const instances = await getCommunityInstances(
-    communityId,
-    shiftYmd(todayStr, -COMMUNITY_CAL_WINDOW),
-    shiftYmd(todayStr, COMMUNITY_CAL_WINDOW)
-  );
+  const windowFrom = shiftYmd(todayStr, -COMMUNITY_CAL_WINDOW);
+  const windowTo = shiftYmd(todayStr, COMMUNITY_CAL_WINDOW);
+
+  // Top up the community's own occurrences before reading the window, then
+  // read the shared-in occurrences + the owned ones in parallel.
+  await backfillCommunityCalendar(communityId, todayStr);
+  const [instances, owned] = await Promise.all([
+    getCommunityInstances(communityId, windowFrom, windowTo),
+    getCommunityOwnedBundle(communityId, windowFrom, windowTo),
+  ]);
 
   const usageByName = computeTagUsage(
     (actTagRes.data ?? []) as Array<{ default_skill_tags: string[] | null }>
@@ -932,12 +942,256 @@ export async function getCommunityActivityBundle(
   return {
     activities,
     instances,
+    ownedActivities: owned.activities,
+    ownedInstances: owned.instances,
     autoAdd: autoAddPref.autoAdd,
     autoAddNotify: autoAddPref.notify,
     myActivities: (myActsRes.data ?? []) as Array<{ id: string; name: string }>,
     tagMap,
     todayStr,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Community-owned calendar (migration 0056) — the community's OWN activities
+// + occurrences with collective completion. Reads are mapped into the
+// SharedActivity/SharedInstance shapes so the existing calendar renders them.
+// ---------------------------------------------------------------------------
+
+// How far ahead to materialize a community activity's occurrences.
+const COMMUNITY_OWNED_HORIZON_DAYS = 400;
+
+type OwnedActivityRow = {
+  id: string;
+  community_id: string;
+  name: string;
+  notes: string | null;
+  rhythm: Rhythm;
+  scheduled_times: string[] | null;
+  scheduled_end_times: string[] | null;
+  priority: number | null;
+  default_skill_tags: string[] | null;
+  start_date: string;
+  end_date: string | null;
+  created_at: string;
+  archived_at: string | null;
+};
+
+function mapOwnedActivity(r: OwnedActivityRow): SharedActivity {
+  return {
+    shareId: r.id,
+    activityId: r.id,
+    ownerId: r.community_id,
+    ownerUsername: null,
+    ownerDisplayName: null,
+    shareProgress: true,
+    name: r.name,
+    notes: r.notes,
+    rhythm: r.rhythm,
+    priority: r.priority ?? 2,
+    scheduledTimes: r.scheduled_times ?? [],
+    scheduledEndTimes: r.scheduled_end_times ?? [],
+    defaultSkillTags: r.default_skill_tags ?? [],
+    startDate: r.start_date,
+    endDate: r.end_date,
+    archivedAt: r.archived_at,
+    createdAt: r.created_at,
+  };
+}
+
+// getCommunityOwnedBundle — the community's own activities + their occurrences
+// in [from, to], mapped to the shared shapes. Members only (RLS).
+async function getCommunityOwnedBundle(
+  communityId: string,
+  from: string,
+  to: string
+): Promise<{ activities: SharedActivity[]; instances: SharedInstance[] }> {
+  const supabase = await createClient();
+
+  const { data: actRows } = await supabase
+    .from("community_owned_activities")
+    .select(
+      "id, community_id, name, notes, rhythm, scheduled_times, scheduled_end_times, priority, default_skill_tags, start_date, end_date, created_at, archived_at"
+    )
+    .eq("community_id", communityId)
+    .is("archived_at", null)
+    .order("name", { ascending: true });
+  const acts = (actRows ?? []) as OwnedActivityRow[];
+  const activities = acts.map(mapOwnedActivity);
+  if (activities.length === 0) return { activities: [], instances: [] };
+
+  const activeIds = new Set(acts.map((a) => a.id));
+  const { data: instRows } = await supabase
+    .from("community_owned_instances")
+    .select("id, activity_id, scheduled_for, status, comment")
+    .eq("community_id", communityId)
+    .gte("scheduled_for", from)
+    .lte("scheduled_for", to);
+  const instances: SharedInstance[] = ((instRows ?? []) as Array<{
+    id: string;
+    activity_id: string;
+    scheduled_for: string;
+    status: string;
+    comment: string | null;
+  }>)
+    .filter((i) => activeIds.has(i.activity_id))
+    .map((i) => ({
+      ownerId: communityId,
+      activityId: i.activity_id,
+      instanceId: i.id,
+      scheduledFor: i.scheduled_for,
+      status:
+        i.status === "completed" || i.status === "missed"
+          ? (i.status as "completed" | "missed")
+          : "pending",
+      completionCount: i.status === "completed" ? 1 : 0,
+      completionDates: [],
+      comment: i.comment,
+    }));
+  return { activities, instances };
+}
+
+// backfillCommunityCalendar — extend each owned activity's occurrences up to
+// the horizon. Idempotent (insert RPC does ON CONFLICT DO NOTHING).
+async function backfillCommunityCalendar(
+  communityId: string,
+  todayStr: string
+): Promise<void> {
+  const supabase = await createClient();
+  const { data: actRows } = await supabase
+    .from("community_owned_activities")
+    .select("id, rhythm, start_date, end_date")
+    .eq("community_id", communityId)
+    .is("archived_at", null);
+  const acts = (actRows ?? []) as Array<{
+    id: string;
+    rhythm: Rhythm;
+    start_date: string;
+    end_date: string | null;
+  }>;
+  if (acts.length === 0) return;
+
+  const horizon = shiftYmd(todayStr, COMMUNITY_OWNED_HORIZON_DAYS);
+  for (const a of acts) {
+    const from = a.start_date > todayStr ? a.start_date : todayStr;
+    const to = a.end_date && a.end_date < horizon ? a.end_date : horizon;
+    if (from > to) continue;
+    let dates: string[] = [];
+    try {
+      dates = generateInstances(a.rhythm, { from, to }).map((i) => i.scheduledFor);
+    } catch {
+      continue;
+    }
+    if (dates.length === 0) continue;
+    await supabase.rpc("insert_community_instances", {
+      p_activity_id: a.id,
+      p_dates: dates,
+    });
+  }
+}
+
+// createCommunityCalendarActivity — define a community-owned activity and
+// materialize its occurrences. Gated by can_add_activities server-side.
+export async function createCommunityCalendarActivity(input: {
+  communityId: string;
+  name: string;
+  notes?: string;
+  rhythm: Rhythm;
+  scheduledTimes?: string[];
+  scheduledEndTimes?: string[];
+  priority?: number;
+  tags?: string[];
+  startDate: string;
+  endDate?: string | null;
+}): Promise<{ error: string } | { ok: true; id: string }> {
+  const name = input.name.trim();
+  if (name.length === 0 || name.length > 120) {
+    return { error: "Name must be 1–120 characters." };
+  }
+  const parsed = rhythmSchema.safeParse(input.rhythm);
+  if (!parsed.success) return { error: "Please pick a valid rhythm." };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: id, error } = await supabase.rpc("create_community_activity", {
+    p_community_id: input.communityId,
+    p_name: name,
+    p_notes: input.notes ?? null,
+    p_rhythm: parsed.data,
+    p_scheduled_times: input.scheduledTimes ?? [],
+    p_scheduled_end_times: input.scheduledEndTimes ?? [],
+    p_priority: input.priority ?? 2,
+    p_tags: input.tags ?? [],
+    p_start_date: input.startDate,
+    p_end_date: input.endDate ?? null,
+  });
+  if (error) return { error: error.message };
+
+  // Materialize occurrences from start_date to the horizon (capped by end).
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const horizon = shiftYmd(todayStr, COMMUNITY_OWNED_HORIZON_DAYS);
+  const to =
+    input.endDate && input.endDate < horizon ? input.endDate : horizon;
+  if (input.startDate <= to) {
+    try {
+      const dates = generateInstances(parsed.data, {
+        from: input.startDate,
+        to,
+      }).map((i) => i.scheduledFor);
+      if (dates.length > 0) {
+        await supabase.rpc("insert_community_instances", {
+          p_activity_id: id as string,
+          p_dates: dates,
+        });
+      }
+    } catch {
+      // Activity created; instances can be topped up on next view.
+    }
+  }
+  revalidateCommunityPaths();
+  return { ok: true, id: id as string };
+}
+
+// setCommunityInstanceStatus — collective completion; any member.
+export async function setCommunityInstanceStatus(
+  instanceId: string,
+  status: "pending" | "completed" | "missed"
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase.rpc("set_community_instance_status", {
+    p_instance_id: instanceId,
+    p_status: status,
+  });
+  if (error) return { error: error.message };
+  revalidateCommunityPaths();
+  return { ok: true };
+}
+
+// archiveCommunityCalendarActivity — soft-delete a community-owned activity.
+export async function archiveCommunityCalendarActivity(
+  activityId: string
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase.rpc("archive_community_activity", {
+    p_activity_id: activityId,
+  });
+  if (error) return { error: error.message };
+  revalidateCommunityPaths();
+  return { ok: true };
 }
 
 // Local date helpers (mirror the dashboard's timezone-correct "today").

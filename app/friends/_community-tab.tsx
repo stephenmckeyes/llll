@@ -37,7 +37,6 @@ import {
   searchPublicCommunities,
   setAutoAdd,
   setAutoAddNotify,
-  setCommunityCalendarDisplay,
   setCommunityChatSettings,
   setCommunityHome,
   setCommunityJoinPolicy,
@@ -47,7 +46,6 @@ import {
   setMemberRole,
   updateCommunityRank,
   type CommunityActivityBundle,
-  type CommunityCalendarDisplay,
   type CommunityChatWhoCanSpeak,
   type CommunityDetail,
   type CommunityPreview,
@@ -78,9 +76,9 @@ import { useBodyScrollLock } from "@/lib/ui/body-scroll-lock";
 import { TagChipList } from "@/app/_components/tag-chip";
 
 import { CommunityChat } from "./_community-chat";
+import { CommunityOwnedCalendar } from "./_community-calendar";
 import { InviteCombobox } from "./_invite-combobox";
 import { CopyShareModal } from "./copy-share-modal";
-import { FriendCalendar } from "./[friendId]/friend-calendar";
 
 // Per-type copy — kept here so every page passes the same props and
 // deltas are one edit.
@@ -784,7 +782,6 @@ function CommunityActivitiesSection({
   const [addPick, setAddPick] = useState("");
 
   const canManageActivities = detail.myPermissions.can_add_activities;
-  const canEditDisplay = detail.myPermissions.can_edit_settings;
   const addedIds = new Set(bundle.activities.map((a) => a.activityId));
   const addable = bundle.myActivities.filter((a) => !addedIds.has(a.id));
 
@@ -830,21 +827,14 @@ function CommunityActivitiesSection({
       }
     });
   }
-  function onSetDisplay(mode: CommunityCalendarDisplay) {
-    if (mode === detail.calendarDisplay) return;
-    setError(null);
-    startTransition(async () => {
-      const res = await setCommunityCalendarDisplay(detail.id, mode);
-      if ("error" in res) setError(res.error);
-      else router.refresh();
-    });
-  }
-
   return (
-    <section className="flex flex-col gap-3">
+    <div className="flex flex-col gap-6">
+      <CommunityOwnedCalendar detail={detail} bundle={bundle} />
+
+      <section className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-          Shared activities ({bundle.activities.length})
+          Shared by members ({bundle.activities.length})
         </h3>
         <div className="flex flex-col items-end gap-1">
           <label className="flex cursor-pointer items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
@@ -869,33 +859,6 @@ function CommunityActivitiesSection({
           )}
         </div>
       </div>
-
-      {canEditDisplay && (
-        <div className="flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
-          <div className="flex items-center gap-2">
-            <span className="shrink-0 text-xs text-zinc-500">
-              Members&rsquo; calendar
-            </span>
-            <div className="flex gap-1">
-              {(["light", "full"] as const).map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => onSetDisplay(m)}
-                  aria-pressed={detail.calendarDisplay === m}
-                  className={`rounded-md border px-2 py-1 text-xs font-medium transition-colors ${
-                    detail.calendarDisplay === m
-                      ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
-                      : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-                  }`}
-                >
-                  {m === "light" ? "Light" : "Full"}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
 
       {canManageActivities && (
         <div className="flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
@@ -929,23 +892,6 @@ function CommunityActivitiesSection({
         </div>
       )}
 
-      {/* Full mode: the whole Day/Week/Month/Year calendar (reusing the
-          read-only FriendCalendar). The list below stays as the copy +
-          manage surface. Light mode shows just the list. */}
-      {detail.calendarDisplay === "full" && bundle.activities.length > 0 && (
-        <FriendCalendar
-          shares={bundle.activities}
-          instances={bundle.instances}
-          todayStr={bundle.todayStr}
-          tagMap={bundle.tagMap}
-          onOpenActivity={(activityId) => {
-            const act = bundle.activities.find(
-              (a) => a.activityId === activityId
-            );
-            if (act) setCopying(act);
-          }}
-        />
-      )}
 
       {bundle.activities.length === 0 ? (
         <p className="rounded-md border border-dashed border-zinc-300 p-4 text-center text-sm text-zinc-500 dark:border-zinc-700">
@@ -1014,7 +960,8 @@ function CommunityActivitiesSection({
           onClose={() => setCopying(null)}
         />
       )}
-    </section>
+      </section>
+    </div>
   );
 }
 

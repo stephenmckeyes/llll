@@ -620,6 +620,56 @@ export const communityAutoAddPrefs = pgTable("community_auto_add_prefs", {
   notify: boolean("notify").notNull().default(false),
 });
 
+// Community-owned calendar: activities + occurrences the community owns
+// directly, with collective completion (migration 0056).
+export const communityOwnedActivities = pgTable(
+  "community_owned_activities",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    communityId: uuid("community_id").notNull(),
+    name: text("name").notNull(),
+    notes: text("notes"),
+    rhythm: jsonb("rhythm").notNull(),
+    scheduledTimes: text("scheduled_times")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    scheduledEndTimes: text("scheduled_end_times")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    priority: integer("priority").notNull().default(2),
+    defaultSkillTags: text("default_skill_tags")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    startDate: date("start_date").notNull(),
+    endDate: date("end_date"),
+    createdBy: uuid("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+  },
+  (t) => [index("community_owned_activities_community_idx").on(t.communityId)]
+);
+
+export const communityOwnedInstances = pgTable(
+  "community_owned_instances",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    communityId: uuid("community_id").notNull(),
+    activityId: uuid("activity_id").notNull(),
+    scheduledFor: date("scheduled_for").notNull(),
+    status: text("status").notNull().default("pending"),
+    tags: text("tags").array().notNull().default(sql`'{}'::text[]`),
+    comment: text("comment"),
+    completedBy: uuid("completed_by"),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (t) => [index("community_owned_instances_lookup_idx").on(t.communityId, t.scheduledFor)]
+);
+
 // Dismissible per-user feed of auto-added activities (migration 0055).
 export const communityAutoAddEvents = pgTable("community_auto_add_events", {
   id: uuid("id").primaryKey().defaultRandom(),

@@ -144,6 +144,14 @@ export const EXPECTATIONS: ReadonlyArray<MigrationExpectation> = [
     label: "Auto-added activity notifications",
     checks: [{ table: "community_auto_add_events", column: "id" }],
   },
+  {
+    migration: "0056_community_owned_calendar.sql",
+    label: "Community-owned calendars",
+    checks: [
+      { table: "community_owned_activities", column: "id" },
+      { table: "community_owned_instances", column: "status" },
+    ],
+  },
 ];
 
 export type MissingMigration = {

@@ -223,6 +223,34 @@ community_auto_add_prefs (
 Meaningful build — pick up one phase per session, don't try to land
 it all at once.
 
+**Community-owned calendars (in progress).** Per user: each community
+should be a first-class calendar owner — its OWN activities + occurrences
+and its own Day/Week/Month/Year view, "just like each individual person
+has." Decisions locked in: **collective/shared completion** (any member
+marks an occurrence done for the whole community — one shared status per
+occurrence) and **ranks-gated management** (adding/editing gated by
+`can_add_activities`; completing open to any member).
+- ✅ Phase 1 (migration 0056): dedicated `community_owned_activities` +
+  `community_owned_instances` tables (SEPARATE from personal
+  activities/activity_instances so the core calendar is untouched),
+  SECURITY DEFINER RPCs (create / insert-instances / set-status /
+  archive), TS materialization via `generateInstances` + a per-view
+  backfill, and a new `CommunityOwnedCalendar` on the community Calendar
+  tab: FriendCalendar (Day/Week/Month/Year) over the community's own
+  activities, an "+ Add activity" create modal, and a collective
+  Complete/Missed/Reset modal on tap. The old "shared by members"
+  copy/auto-add list now sits BELOW as a secondary section (its duplicate
+  calendar render was removed; the light/full `calendar_display` setting
+  is now unused — candidate for removal).
+- STILL TODO: full parity with the personal Add-Activity form (the create
+  modal is a focused subset — no multi-daily modifier, priority, pinned,
+  reminders, rollover, form-type); inline completion in the Day list
+  (currently a tap-opens-modal, not inline Complete/Missed buttons like
+  the dashboard); edit an existing community activity; an Archived view +
+  permanent delete; and Grid/Total sections for communities. Consider
+  whether to fully retire the member-share/copy/auto-add model now that
+  communities own activities directly.
+
 **Community chat (phase 7).** Every community gets a group chat, distinct
 from the 1:1 friend DMs (`messages` table + `ChatThread`). Reuse that
 machinery where practical.
