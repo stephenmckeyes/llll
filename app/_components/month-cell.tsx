@@ -42,6 +42,7 @@ export function MonthCell({
   isToday,
   instances,
   tagMap,
+  onDaySelect,
 }: {
   date: Date;
   dateStr: string;
@@ -49,6 +50,10 @@ export function MonthCell({
   isToday: boolean;
   instances: MonthBanner[];
   tagMap: TagMap;
+  // Navigation adapter. Default (personal dashboard): a Link to the
+  // day view via URL. When provided (community / friend in-app nav),
+  // render a button that calls back instead of navigating by URL.
+  onDaySelect?: (dateStr: string) => void;
 }) {
   const hasAny = instances.length > 0;
   const visible = instances.slice(0, MONTH_BANNERS_PER_CELL);
@@ -65,11 +70,20 @@ export function MonthCell({
 
   return (
     <div className={cls}>
-      <Link
-        href={`/?view=day&date=${dateStr}`}
-        aria-label={`Open ${dateStr}`}
-        className="absolute inset-0 z-0 rounded hover:bg-zinc-100 dark:hover:bg-zinc-900"
-      />
+      {onDaySelect ? (
+        <button
+          type="button"
+          onClick={() => onDaySelect(dateStr)}
+          aria-label={`Open ${dateStr}`}
+          className="absolute inset-0 z-0 rounded hover:bg-zinc-100 dark:hover:bg-zinc-900"
+        />
+      ) : (
+        <Link
+          href={`/?view=day&date=${dateStr}`}
+          aria-label={`Open ${dateStr}`}
+          className="absolute inset-0 z-0 rounded hover:bg-zinc-100 dark:hover:bg-zinc-900"
+        />
+      )}
       <span
         className={`relative z-10 pointer-events-none self-start ${
           isToday ? "font-semibold" : ""

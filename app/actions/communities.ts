@@ -22,7 +22,11 @@ import {
   type CommunityRank,
   type CommunityVisibility,
 } from "@/lib/domain/community";
-import type { YearCountsByDate } from "@/app/actions/calendar-fetch";
+import type {
+  YearCountsByDate,
+  MonthBannersByDate,
+} from "@/app/actions/calendar-fetch";
+import type { MonthBanner } from "@/app/_components/month-cell";
 import type { SharedActivity, SharedInstance } from "@/app/actions/sharing";
 import { generateInstances } from "@/lib/domain/rhythms";
 import { rhythmSchema, type Rhythm } from "@/lib/validators/rhythm";
@@ -1077,6 +1081,78 @@ export async function getCommunityYearCounts(
     if (r.status === "completed") cur.completed += 1;
     else cur.pending += 1;
     result[r.scheduled_for] = cur;
+  }
+  return result;
+}
+
+// getCommunityMonthBanners — per-day activity-name banners for one month's
+// 6-week grid of the community's OWN occurrences (for the endless-scroll
+// Month view, mirroring the personal fetchMonthActivities loader). Members
+// only (RLS). Archived activities excluded.
+export async function getCommunityMonthBanners(
+  communityId: string,
+  monthKey: string
+): Promise<MonthBannersByDate> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  // Cover the whole 42-cell grid: pad the month by a week on each side so
+  // the leading/trailing days from adjacent months are populated too.
+  const monthStart = monthKey.slice(0, 10); // "YYYY-MM-01"
+  const [y, m] = monthStart.split("-").map(Number);
+  const monthEnd = `${y}-${String(m).padStart(2, "0")}-${String(
+    new Date(y, m, 0).getDate()
+  ).padStart(2, "0")}`;
+  const from = shiftYmd(monthStart, -7);
+  const to = shiftYmd(monthEnd, 7);
+
+  const { data: actRows } = await supabase
+    .from("community_owned_activities")
+    .select("id, name, default_skill_tags")
+    .eq("community_id", communityId)
+    .is("archived_at", null);
+  const acts = (actRows ?? []) as Array<{
+    id: string;
+    name: string;
+    default_skill_tags: string[] | null;
+  }>;
+  if (acts.length === 0) return {};
+  const actMap = new Map(acts.map((a) => [a.id, a]));
+
+  const { data: instRows } = await supabase
+    .from("community_owned_instances")
+    .select("id, activity_id, scheduled_for, status")
+    .eq("community_id", communityId)
+    .gte("scheduled_for", from)
+    .lte("scheduled_for", to);
+
+  const result: MonthBannersByDate = {};
+  for (const r of (instRows ?? []) as Array<{
+    id: string;
+    activity_id: string;
+    scheduled_for: string;
+    status: string;
+  }>) {
+    const act = actMap.get(r.activity_id);
+    if (!act) continue;
+    const banner: MonthBanner = {
+      id: r.id,
+      name: act.name,
+      status:
+        r.status === "completed" || r.status === "missed"
+          ? r.status
+          : "pending",
+      tags: act.default_skill_tags ?? [],
+    };
+    (result[r.scheduled_for] ??= []).push(banner);
+  }
+  // Stable order within a day: by activity name (matches the personal
+  // loader's name-sorted activity fetch).
+  for (const k of Object.keys(result)) {
+    result[k].sort((a, b) => a.name.localeCompare(b.name));
   }
   return result;
 }

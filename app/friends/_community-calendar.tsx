@@ -18,6 +18,7 @@ import {
   archiveCommunityCalendarActivity,
   createCommunityCalendarActivity,
   deleteCommunityCalendarActivity,
+  getCommunityMonthBanners,
   getCommunityYearCounts,
   restoreCommunityCalendarActivity,
   setCommunityInstanceStatus,
@@ -132,8 +133,12 @@ export function CommunityOwnedCalendar({
               tagMap={bundle.tagMap}
               onOpenActivity={onOpen}
               fillHeight
+              endless
               loadYearCounts={(yearStart) =>
                 getCommunityYearCounts(detail.id, yearStart)
+              }
+              monthLoader={(monthKey) =>
+                getCommunityMonthBanners(detail.id, monthKey)
               }
               collective={{
                 onComplete: async (id) => {

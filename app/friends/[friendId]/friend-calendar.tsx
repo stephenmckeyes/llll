@@ -19,9 +19,14 @@ import {
 } from "date-fns";
 import { useEffect, useMemo, useState } from "react";
 
-import type { YearCountsByDate } from "@/app/actions/calendar-fetch";
+import type {
+  YearCountsByDate,
+  MonthBannersByDate,
+} from "@/app/actions/calendar-fetch";
 import type { SharedActivity, SharedInstance } from "@/app/actions/sharing";
 import { DayList as DashboardDayList } from "@/app/_components/day-list";
+import { MonthList } from "@/app/_components/month-list";
+import { YearList } from "@/app/_components/year-list";
 import { IncompleteButton } from "@/app/_components/incomplete-button";
 import type { CollectiveHandlers } from "@/app/_components/instance-row";
 import {
@@ -54,6 +59,8 @@ export function FriendCalendar({
   tagMap,
   onOpenActivity,
   loadYearCounts,
+  monthLoader,
+  endless = false,
   collective,
   fillHeight = false,
 }: {
@@ -64,8 +71,17 @@ export function FriendCalendar({
   /** Open the read-only detail for a specific occurrence (date + status). */
   onOpenActivity: (activityId: string, occurrence: Occurrence | null) => void;
   /** Optional full-year per-day counts loader for the rich Year view. When
-   *  absent, Year is computed from the loaded `instances` window. */
+   *  absent, Year is computed from the loaded `instances` window. Doubles as
+   *  the endless-scroll Year loader when `endless` is on. */
   loadYearCounts?: (yearStart: string) => Promise<YearCountsByDate>;
+  /** Per-month banner loader for the endless-scroll Month view. Required for
+   *  `endless` Month; ignored otherwise. */
+  monthLoader?: (monthKey: string) => Promise<MonthBannersByDate>;
+  /** Use the SAME endless-scroll Month/Year engine as the personal
+   *  dashboard (MonthList / YearList) instead of the single-window
+   *  grids. The community calendar sets this (it has full-history
+   *  loaders); the friend view leaves it off (data-limited to a window). */
+  endless?: boolean;
   /** Collective-completion handlers (community calendar). When set, the Day
    *  sub-view renders inline Complete/Missed wired to these. */
   collective?: CollectiveHandlers;
@@ -148,27 +164,55 @@ export function FriendCalendar({
           onUnlabeledJump={jumpToDay}
         />
       )}
-      {/* Week/Month/Year get a fill-height scroll wrapper in app-shell mode
-          so the sub-tabs below stay pinned while the grid scrolls. (Day
-          uses the DayList's own fillHeight scroll.) */}
-      {sub !== "day" && (
+      {/* Week keeps the single-window grid (both friend + community). In
+          app-shell mode it gets a fill-height scroll wrapper so the sub-tabs
+          below stay pinned. (Day uses the DayList's own fillHeight scroll.) */}
+      {sub === "week" && (
         <div
           className={
             fillHeight ? "min-h-0 flex-1 overflow-y-auto overflow-x-hidden" : ""
           }
         >
-          {sub === "week" && (
-            <WeekGrid
-              instances={instances}
-              byId={byId}
-              tagMap={tagMap}
-              todayStr={todayStr}
-              refDate={refDate}
-              setRefDate={setRefDate}
-              onOpenActivity={onOpenActivity}
-            />
-          )}
-          {sub === "month" && (
+          <WeekGrid
+            instances={instances}
+            byId={byId}
+            tagMap={tagMap}
+            todayStr={todayStr}
+            refDate={refDate}
+            setRefDate={setRefDate}
+            onOpenActivity={onOpenActivity}
+          />
+        </div>
+      )}
+
+      {/* Month — the SAME endless-scroll engine as the personal dashboard
+          (MonthList) when a full-history loader is available (community);
+          the single-window MonthGrid otherwise (friend). MonthList brings
+          its own header + internal scroll, so it isn't wrapped. */}
+      {sub === "month" &&
+        (endless && monthLoader ? (
+          <MonthList
+            key={`m-${refDate}`}
+            initialMonth={format(startOfMonth(parseYmd(refDate)), "yyyy-MM-01")}
+            initialData={{}}
+            todayStr={todayStr}
+            tagMap={tagMap}
+            hiddenTags={[]}
+            loadMonth={monthLoader}
+            onDaySelect={jumpToDay}
+            syncUrl={false}
+            onDrillUp={(yr) => {
+              setRefDate(`${yr}-01-01`);
+              setSub("year");
+            }}
+            onOutOfWindow={(mk) => setRefDate(mk)}
+          />
+        ) : (
+          <div
+            className={
+              fillHeight ? "min-h-0 flex-1 overflow-y-auto overflow-x-hidden" : ""
+            }
+          >
             <MonthGrid
               instances={instances}
               byId={byId}
@@ -178,8 +222,33 @@ export function FriendCalendar({
               setRefDate={setRefDate}
               onJumpToDay={jumpToDay}
             />
-          )}
-          {sub === "year" && (
+          </div>
+        ))}
+
+      {/* Year — endless-scroll YearList (community, with a full-year loader)
+          or the single-window YearGrid (friend). */}
+      {sub === "year" &&
+        (endless && loadYearCounts ? (
+          <YearList
+            key={`y-${refDate.slice(0, 4)}`}
+            initialYear={`${refDate.slice(0, 4)}-01-01`}
+            initialData={{}}
+            todayStr={todayStr}
+            hiddenTags={[]}
+            loadYear={loadYearCounts}
+            onMonthSelect={(monthDateStr) => {
+              setRefDate(monthDateStr);
+              setSub("month");
+            }}
+            syncUrl={false}
+            onOutOfWindow={(yk) => setRefDate(yk)}
+          />
+        ) : (
+          <div
+            className={
+              fillHeight ? "min-h-0 flex-1 overflow-y-auto overflow-x-hidden" : ""
+            }
+          >
             <YearGrid
               instances={instances}
               todayStr={todayStr}
@@ -191,9 +260,8 @@ export function FriendCalendar({
                 setSub("month");
               }}
             />
-          )}
-        </div>
-      )}
+          </div>
+        ))}
 
       {/* Sub-tabs pinned at the BOTTOM (shrink-0), reversed left-to-right,
           matching the personal dashboard's bottom-anchored view switcher.

@@ -79,17 +79,37 @@ export function MonthList({
   tagMap,
   hiddenTags,
   chipsSlot,
+  loadMonth,
+  onDaySelect,
+  syncUrl = true,
+  onDrillUp,
+  onOutOfWindow,
 }: {
   /** First-of-month string ("YYYY-MM-01") the view should land on. */
   initialMonth: string;
   /** Server-baked data for the initial window (initialMonth ± MONTH_INITIAL_RADIUS). */
   initialData: Record<string, MonthBannersByDate>;
   todayStr: string;
-  incompleteInfo: IncompleteInfo;
+  incompleteInfo?: IncompleteInfo;
   tagMap: TagMap;
   /** Applied to lazy fetches too. */
   hiddenTags: string[];
   chipsSlot?: React.ReactNode;
+  // --- Surface adapters. All optional; defaults reproduce the
+  // personal dashboard exactly (URL-driven nav + Link drill-up +
+  // fetchMonthActivities loader). The community/friend calendars pass
+  // in-app callbacks so the SAME endless-scroll engine runs over their
+  // own data without touching the URL. ---
+  /** Lazy month loader. Default: fetchMonthActivities(key, hiddenTags). */
+  loadMonth?: (monthKey: string) => Promise<MonthBannersByDate>;
+  /** Day-cell click. Default (undefined): MonthCell renders a URL Link. */
+  onDaySelect?: (dateStr: string) => void;
+  /** Keep ?date= in sync via replaceState. Default true (personal). */
+  syncUrl?: boolean;
+  /** Drill-up to year. Default: Link to /?view=year&date=. */
+  onDrillUp?: (year: string) => void;
+  /** Jump beyond the ±36-month window. Default: router.push(/?view=month). */
+  onOutOfWindow?: (monthKey: string) => void;
 }) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -125,7 +145,9 @@ export function MonthList({
       inFlightRef.current.add(monthKey);
       startFetchTransition(async () => {
         try {
-          const result = await fetchMonthActivities(monthKey, hiddenTags);
+          const result = loadMonth
+            ? await loadMonth(monthKey)
+            : await fetchMonthActivities(monthKey, hiddenTags);
           setMonthData((prev) =>
             prev[monthKey] !== undefined ? prev : { ...prev, [monthKey]: result }
           );
@@ -134,7 +156,7 @@ export function MonthList({
         }
       });
     },
-    [monthData, hiddenTags]
+    [monthData, hiddenTags, loadMonth]
   );
 
   // Sync currentMonth into URL. Cold-open protection stays upstream
@@ -142,12 +164,13 @@ export function MonthList({
   // to /), so bookmarking a distant month doesn't outlive a fresh
   // session. Uses replaceState — no navigation, no history entry.
   useEffect(() => {
+    if (!syncUrl) return;
     if (typeof window === "undefined") return;
     const url = new URL(window.location.href);
     if (url.searchParams.get("date") === currentMonth) return;
     url.searchParams.set("date", currentMonth);
     window.history.replaceState(window.history.state, "", url.toString());
-  }, [currentMonth]);
+  }, [currentMonth, syncUrl]);
 
   // Track which month is visible at the top of the scroll container.
   useEffect(() => {
@@ -365,6 +388,8 @@ export function MonthList({
     const inWindow = months.some((m) => m.key === target);
     if (inWindow) {
       scrollContainerTo(containerRef.current, target);
+    } else if (onOutOfWindow) {
+      onOutOfWindow(target);
     } else {
       router.push(`/?view=month&date=${target}`);
     }
@@ -375,6 +400,8 @@ export function MonthList({
     const inWindow = months.some((m) => m.key === target);
     if (inWindow) {
       scrollContainerTo(containerRef.current, target);
+    } else if (onOutOfWindow) {
+      onOutOfWindow(target);
     } else {
       router.push(`/?view=month&date=${target}`);
     }
@@ -389,13 +416,24 @@ export function MonthList({
           label centered. Mirrors DayList's layout so the two feel
           identical. */}
       <div className="relative flex shrink-0 flex-col gap-1">
-        <Link
-          href={`/?view=year&date=${currentMonth}`}
-          className="absolute left-0 top-0 shrink-0 rounded-md border border-zinc-300 px-2 py-0.5 text-sm font-semibold leading-tight text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-200"
-          aria-label={`Go to year view of ${currentMonth.slice(0, 4)}`}
-        >
-          ‹ {currentMonth.slice(0, 4)}
-        </Link>
+        {onDrillUp ? (
+          <button
+            type="button"
+            onClick={() => onDrillUp(currentMonth.slice(0, 4))}
+            className="absolute left-0 top-0 shrink-0 rounded-md border border-zinc-300 px-2 py-0.5 text-sm font-semibold leading-tight text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-200"
+            aria-label={`Go to year view of ${currentMonth.slice(0, 4)}`}
+          >
+            ‹ {currentMonth.slice(0, 4)}
+          </button>
+        ) : (
+          <Link
+            href={`/?view=year&date=${currentMonth}`}
+            className="absolute left-0 top-0 shrink-0 rounded-md border border-zinc-300 px-2 py-0.5 text-sm font-semibold leading-tight text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-200"
+            aria-label={`Go to year view of ${currentMonth.slice(0, 4)}`}
+          >
+            ‹ {currentMonth.slice(0, 4)}
+          </Link>
+        )}
         <p className="text-center text-sm font-medium text-zinc-700 dark:text-zinc-300">
           {format(parseLocalDate(currentMonth), "MMMM yyyy")}
         </p>
@@ -418,6 +456,8 @@ export function MonthList({
                 const inWindow = months.some((m) => m.key === target);
                 if (inWindow) {
                   scrollContainerTo(containerRef.current, target);
+                } else if (onOutOfWindow) {
+                  onOutOfWindow(target);
                 } else {
                   router.push(`/?view=month&date=${target}`);
                 }
@@ -440,7 +480,7 @@ export function MonthList({
           >
             Today
           </button>
-          <IncompleteButton info={incompleteInfo} />
+          {incompleteInfo && <IncompleteButton info={incompleteInfo} />}
           {chipsSlot && <div className="ml-auto shrink-0">{chipsSlot}</div>}
         </div>
       </div>
@@ -463,6 +503,7 @@ export function MonthList({
               banners={monthData[m.key]}
               tagMap={tagMap}
               todayStr={todayStr}
+              onDaySelect={onDaySelect}
             />
           ))}
         </div>
@@ -475,15 +516,22 @@ export function MonthList({
           avoids React 19's "scripts inside components aren't executed on
           the client" warning on client-side navigation. On client nav the
           useLayoutEffect below handles positioning instead. */}
-      <div hidden suppressHydrationWarning>
-        {typeof window === "undefined" && (
-          <script
-            dangerouslySetInnerHTML={{
-              __html: `(function(){try{var s=document.querySelector('[data-month-key="${initialMonth}"]');if(!s)return;var c=s.closest('[data-month-scroll]');if(!c)return;c.scrollTop=s.offsetTop;}catch(e){}})();`,
-            }}
-          />
-        )}
-      </div>
+      {/* syncUrl gates this: only the URL-driven personal dashboard cold-opens
+          into a month by direct URL and needs pre-paint positioning. In-app
+          surfaces (community/friend, syncUrl=false) always mount client-side
+          via a tab switch, where the useLayoutEffect handles positioning — so
+          the server-only script would just be dead weight (and noise). */}
+      {syncUrl && (
+        <div hidden suppressHydrationWarning>
+          {typeof window === "undefined" && (
+            <script
+              dangerouslySetInnerHTML={{
+                __html: `(function(){try{var s=document.querySelector('[data-month-key="${initialMonth}"]');if(!s)return;var c=s.closest('[data-month-scroll]');if(!c)return;c.scrollTop=s.offsetTop;}catch(e){}})();`,
+              }}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -495,11 +543,13 @@ function MonthSection({
   banners,
   tagMap,
   todayStr,
+  onDaySelect,
 }: {
   entry: MonthEntry;
   banners: MonthBannersByDate | undefined;
   tagMap: TagMap;
   todayStr: string;
+  onDaySelect?: (dateStr: string) => void;
 }) {
   const monthEnd = endOfMonth(entry.monthStart);
   const gridStart = startOfWeek(entry.monthStart, { weekStartsOn: 1 });
@@ -542,7 +592,12 @@ function MonthSection({
           </div>
         ))}
         {cells.map((c) => (
-          <MonthCell key={c.dateStr} {...c} tagMap={tagMap} />
+          <MonthCell
+            key={c.dateStr}
+            {...c}
+            tagMap={tagMap}
+            onDaySelect={onDaySelect}
+          />
         ))}
       </div>
     </section>

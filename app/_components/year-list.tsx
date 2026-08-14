@@ -54,15 +54,28 @@ export function YearList({
   incompleteInfo,
   hiddenTags,
   chipsSlot,
+  loadYear,
+  onMonthSelect,
+  syncUrl = true,
+  onOutOfWindow,
 }: {
   /** First-of-year string ("YYYY-01-01") the view should land on. */
   initialYear: string;
   /** Server-baked data for the initial window. */
   initialData: Record<string, YearCountsByDate>;
   todayStr: string;
-  incompleteInfo: IncompleteInfo;
+  incompleteInfo?: IncompleteInfo;
   hiddenTags: string[];
   chipsSlot?: React.ReactNode;
+  // --- Surface adapters (default = personal dashboard). See MonthList. ---
+  /** Lazy year loader. Default: fetchYearActivities(key, hiddenTags). */
+  loadYear?: (yearKey: string) => Promise<YearCountsByDate>;
+  /** Month-cell click. Default (undefined): YearMiniMonths uses URL hrefs. */
+  onMonthSelect?: (monthDateStr: string) => void;
+  /** Keep ?date= in sync via replaceState. Default true (personal). */
+  syncUrl?: boolean;
+  /** Jump beyond the ±12-year window. Default: router.push(/?view=year). */
+  onOutOfWindow?: (yearKey: string) => void;
 }) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -89,7 +102,9 @@ export function YearList({
       inFlightRef.current.add(yearKey);
       startFetchTransition(async () => {
         try {
-          const result = await fetchYearActivities(yearKey, hiddenTags);
+          const result = loadYear
+            ? await loadYear(yearKey)
+            : await fetchYearActivities(yearKey, hiddenTags);
           setYearData((prev) =>
             prev[yearKey] !== undefined ? prev : { ...prev, [yearKey]: result }
           );
@@ -98,17 +113,18 @@ export function YearList({
         }
       });
     },
-    [yearData, hiddenTags]
+    [yearData, hiddenTags, loadYear]
   );
 
   // URL sync — mirrors MonthList / DayList.
   useEffect(() => {
+    if (!syncUrl) return;
     if (typeof window === "undefined") return;
     const url = new URL(window.location.href);
     if (url.searchParams.get("date") === currentYear) return;
     url.searchParams.set("date", currentYear);
     window.history.replaceState(window.history.state, "", url.toString());
-  }, [currentYear]);
+  }, [currentYear, syncUrl]);
 
   // Topmost-year tracker.
   useEffect(() => {
@@ -298,6 +314,8 @@ export function YearList({
     const inWindow = years.some((y) => y.key === target);
     if (inWindow) {
       scrollContainerTo(containerRef.current, target);
+    } else if (onOutOfWindow) {
+      onOutOfWindow(target);
     } else {
       router.push(`/?view=year&date=${target}`);
     }
@@ -307,6 +325,8 @@ export function YearList({
     const inWindow = years.some((y) => y.key === target);
     if (inWindow) {
       scrollContainerTo(containerRef.current, target);
+    } else if (onOutOfWindow) {
+      onOutOfWindow(target);
     } else {
       router.push(`/?view=year&date=${target}`);
     }
@@ -343,6 +363,8 @@ export function YearList({
                 const inWindow = years.some((y) => y.key === target);
                 if (inWindow) {
                   scrollContainerTo(containerRef.current, target);
+                } else if (onOutOfWindow) {
+                  onOutOfWindow(target);
                 } else {
                   router.push(`/?view=year&date=${target}`);
                 }
@@ -365,7 +387,7 @@ export function YearList({
           >
             Today
           </button>
-          <IncompleteButton info={incompleteInfo} />
+          {incompleteInfo && <IncompleteButton info={incompleteInfo} />}
           {chipsSlot && <div className="ml-auto shrink-0">{chipsSlot}</div>}
         </div>
       </div>
@@ -383,21 +405,25 @@ export function YearList({
               entry={y}
               counts={yearData[y.key]}
               todayStr={todayStr}
+              onMonthSelect={onMonthSelect}
             />
           ))}
         </div>
       </div>
       {/* Server-only pre-hydration scroll anchor — see MonthList for why
-          it's wrapped this way (avoids React 19's client <script> warning). */}
-      <div hidden suppressHydrationWarning>
-        {typeof window === "undefined" && (
-          <script
-            dangerouslySetInnerHTML={{
-              __html: `(function(){try{var s=document.querySelector('[data-year-key="${initialYear}"]');if(!s)return;var c=s.closest('[data-year-scroll]');if(!c)return;c.scrollTop=s.offsetTop;}catch(e){}})();`,
-            }}
-          />
-        )}
-      </div>
+          it's wrapped this way (avoids React 19's client <script> warning)
+          and why it's gated on syncUrl (in-app surfaces don't cold-open). */}
+      {syncUrl && (
+        <div hidden suppressHydrationWarning>
+          {typeof window === "undefined" && (
+            <script
+              dangerouslySetInnerHTML={{
+                __html: `(function(){try{var s=document.querySelector('[data-year-key="${initialYear}"]');if(!s)return;var c=s.closest('[data-year-scroll]');if(!c)return;c.scrollTop=s.offsetTop;}catch(e){}})();`,
+              }}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -408,10 +434,12 @@ function YearSection({
   entry,
   counts,
   todayStr,
+  onMonthSelect,
 }: {
   entry: YearEntry;
   counts: YearCountsByDate | undefined;
   todayStr: string;
+  onMonthSelect?: (monthDateStr: string) => void;
 }) {
   const isLoaded = counts !== undefined;
 
@@ -433,7 +461,9 @@ function YearSection({
         year={entry.year}
         countsByDate={counts ?? {}}
         todayStr={todayStr}
-        monthHref={(monthDateStr) => `/?view=month&date=${monthDateStr}`}
+        {...(onMonthSelect
+          ? { onMonthClick: onMonthSelect }
+          : { monthHref: (monthDateStr) => `/?view=month&date=${monthDateStr}` })}
       />
     </section>
   );
