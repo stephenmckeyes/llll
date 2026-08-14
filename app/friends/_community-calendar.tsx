@@ -783,17 +783,18 @@ function ActivityFormModal({
     "rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900";
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      onClick={onClose}
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 sm:items-center"
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[92svh] w-full max-w-md flex-col gap-3 overflow-y-auto rounded-t-2xl bg-white p-5 shadow-xl dark:bg-zinc-950 sm:rounded-2xl"
-      >
-        <h2 className="text-xl font-semibold tracking-tight">
+    <div className="fixed inset-0 z-50 flex flex-col bg-white dark:bg-zinc-950">
+      <div className="mx-auto flex w-full max-w-md min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-6">
+        <div className="flex shrink-0 items-center justify-between">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex items-center text-sm text-zinc-500 underline-offset-2 hover:underline"
+          >
+            ← Back
+          </button>
+        </div>
+        <h2 className="text-2xl font-semibold tracking-tight">
           {existing ? "Edit activity" : "Add activity"}
         </h2>
 
