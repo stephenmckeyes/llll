@@ -867,28 +867,21 @@ export async function dismissAutoAddEvent(
   return { ok: true };
 }
 
-// getCommunityActivityBundle — everything the Activities section of a
-// community needs in one round of fetches: the shared activities, the
-// caller's auto-add pref, the caller's OWN activities (for the leadership
-// "+ Add" picker), and the tag palette (for tag chips).
+// getCommunityActivityBundle — everything the community's own Calendar tab
+// needs in one round of fetches: the community-owned activities + their
+// occurrences (in the SharedActivity/SharedInstance shape the calendar
+// renders), plus the tag palette and the caller's "today".
 export type CommunityActivityBundle = {
-  activities: SharedActivity[];
-  /** Occurrences of the shared activities in a rolling window, for the Full
-   *  calendar render. */
-  instances: SharedInstance[];
   /** The community's OWN activities + occurrences (migration 0056), in the
    *  SharedActivity/SharedInstance shape so the calendar renders them. */
   ownedActivities: SharedActivity[];
   ownedInstances: SharedInstance[];
-  autoAdd: boolean;
-  autoAddNotify: boolean;
-  myActivities: Array<{ id: string; name: string }>;
   tagMap: TagMap;
   /** Caller's "today" in their own timezone (anchors the calendar). */
   todayStr: string;
 };
 
-// How many days each way the Full community calendar loads occurrences for.
+// How many days each way the community calendar loads occurrences for.
 const COMMUNITY_CAL_WINDOW = 35;
 
 export async function getCommunityActivityBundle(
@@ -900,36 +893,23 @@ export async function getCommunityActivityBundle(
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const [activities, autoAddPref, myActsRes, tagRes, actTagRes, profRes] =
-    await Promise.all([
-      getCommunityActivities(communityId),
-      getAutoAddPref(communityId),
-      supabase
-        .from("activities")
-        .select("id, name")
-        .eq("user_id", user.id)
-        .is("archived_at", null)
-        .order("name", { ascending: true }),
-      supabase.from("tags").select("id, name, color").is("archived_at", null),
-      supabase
-        .from("activities")
-        .select("default_skill_tags")
-        .is("archived_at", null),
-      supabase.from("profiles").select("timezone").eq("id", user.id).maybeSingle(),
-    ]);
+  const [tagRes, actTagRes, profRes] = await Promise.all([
+    supabase.from("tags").select("id, name, color").is("archived_at", null),
+    supabase
+      .from("activities")
+      .select("default_skill_tags")
+      .is("archived_at", null),
+    supabase.from("profiles").select("timezone").eq("id", user.id).maybeSingle(),
+  ]);
 
   const tz = (profRes.data as { timezone?: string } | null)?.timezone ?? "UTC";
   const todayStr = todayInTimeZone(tz);
   const windowFrom = shiftYmd(todayStr, -COMMUNITY_CAL_WINDOW);
   const windowTo = shiftYmd(todayStr, COMMUNITY_CAL_WINDOW);
 
-  // Top up the community's own occurrences before reading the window, then
-  // read the shared-in occurrences + the owned ones in parallel.
+  // Top up the community's own occurrences before reading the window.
   await backfillCommunityCalendar(communityId, todayStr);
-  const [instances, owned] = await Promise.all([
-    getCommunityInstances(communityId, windowFrom, windowTo),
-    getCommunityOwnedBundle(communityId, windowFrom, windowTo),
-  ]);
+  const owned = await getCommunityOwnedBundle(communityId, windowFrom, windowTo);
 
   const usageByName = computeTagUsage(
     (actTagRes.data ?? []) as Array<{ default_skill_tags: string[] | null }>
@@ -940,13 +920,8 @@ export async function getCommunityActivityBundle(
   );
 
   return {
-    activities,
-    instances,
     ownedActivities: owned.activities,
     ownedInstances: owned.instances,
-    autoAdd: autoAddPref.autoAdd,
-    autoAddNotify: autoAddPref.notify,
-    myActivities: (myActsRes.data ?? []) as Array<{ id: string; name: string }>,
     tagMap,
     todayStr,
   };

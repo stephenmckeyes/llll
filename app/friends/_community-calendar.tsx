@@ -25,7 +25,10 @@ import { useBodyScrollLock } from "@/lib/ui/body-scroll-lock";
 import type { DayOfWeek, Rhythm } from "@/lib/validators/rhythm";
 
 import { FriendCalendar } from "./[friendId]/friend-calendar";
+import { FriendGrid } from "./[friendId]/friend-grid";
 import type { Occurrence } from "./[friendId]/shared-data";
+
+type CalView = "calendar" | "grid";
 
 export function CommunityOwnedCalendar({
   detail,
@@ -36,6 +39,7 @@ export function CommunityOwnedCalendar({
 }) {
   const router = useRouter();
   const canManage = detail.myPermissions.can_add_activities;
+  const [view, setView] = useState<CalView>("calendar");
   const [creating, setCreating] = useState(false);
   const [picked, setPicked] = useState<{
     instanceId: string;
@@ -95,13 +99,52 @@ export function CommunityOwnedCalendar({
             : "No activities yet."}
         </p>
       ) : (
-        <FriendCalendar
-          shares={bundle.ownedActivities}
-          instances={bundle.ownedInstances}
-          todayStr={bundle.todayStr}
-          tagMap={bundle.tagMap}
-          onOpenActivity={onOpen}
-        />
+        <>
+          <nav className="flex gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800">
+            {(
+              [
+                ["calendar", "Calendar"],
+                ["grid", "Grid"],
+              ] as const
+            ).map(([val, label]) => (
+              <button
+                key={val}
+                type="button"
+                onClick={() => setView(val)}
+                className={`flex flex-1 items-center justify-center rounded px-3 py-0.5 text-center text-xs font-medium transition-colors ${
+                  view === val
+                    ? "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
+                    : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
+
+          {view === "calendar" ? (
+            <FriendCalendar
+              shares={bundle.ownedActivities}
+              instances={bundle.ownedInstances}
+              todayStr={bundle.todayStr}
+              tagMap={bundle.tagMap}
+              onOpenActivity={onOpen}
+            />
+          ) : (
+            <FriendGrid
+              friendId={detail.id}
+              shares={bundle.ownedActivities}
+              instances={bundle.ownedInstances}
+              todayStr={bundle.todayStr}
+              tagMap={bundle.tagMap}
+              onOpenActivity={onOpen}
+              streakMode="none"
+              streakGoal={null}
+              showStats={false}
+              statsAccuracy={false}
+            />
+          )}
+        </>
       )}
 
       {picked && (

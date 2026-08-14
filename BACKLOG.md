@@ -242,14 +242,25 @@ occurrence) and **ranks-gated management** (adding/editing gated by
   copy/auto-add list now sits BELOW as a secondary section (its duplicate
   calendar render was removed; the light/full `calendar_display` setting
   is now unused — candidate for removal).
+- ✅ Phase 2 (later same effort): the member-share/copy/auto-add UI was
+  REMOVED from the Calendar tab per user ("remove the function to add
+  your own activities") — CommunityActivitiesSection deleted, bundle
+  trimmed to owned-only. The community Calendar tab now also has a
+  **Calendar / Grid** switcher: Calendar = FriendCalendar
+  (Day/Week/Month/Year), Grid = FriendGrid (Week/Month/Total/Custom +
+  tag filter), both reusing the dashboard components read-only over the
+  community's OWN activities. Grid cells + calendar occurrences both open
+  the collective Complete/Missed/Reset modal. The share/copy/auto-add
+  server actions + tables still exist but are no longer surfaced (auto-add
+  notifications are now vestigial — nothing triggers them).
 - STILL TODO: full parity with the personal Add-Activity form (the create
   modal is a focused subset — no multi-daily modifier, priority, pinned,
   reminders, rollover, form-type); inline completion in the Day list
-  (currently a tap-opens-modal, not inline Complete/Missed buttons like
-  the dashboard); edit an existing community activity; an Archived view +
-  permanent delete; and Grid/Total sections for communities. Consider
-  whether to fully retire the member-share/copy/auto-add model now that
-  communities own activities directly.
+  (currently tap-opens-modal, not inline Complete/Missed buttons like the
+  dashboard); edit an existing community activity; an Archived view +
+  permanent delete; Year-view name banners; and per-viewer streak/stats in
+  the community Grid (currently streakMode "none"). Also decide whether to
+  fully delete the now-dead member-share/copy/auto-add backend.
 
 **Community chat (phase 7).** Every community gets a group chat, distinct
 from the 1:1 friend DMs (`messages` table + `ChatThread`). Reuse that

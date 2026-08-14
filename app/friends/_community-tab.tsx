@@ -23,7 +23,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 
 import {
-  addCommunityActivity,
   createCommunity,
   createCommunityRank,
   decideJoinRequest,
@@ -32,11 +31,8 @@ import {
   getCommunityPreview,
   kickMember,
   leaveCommunity,
-  removeCommunityActivity,
   requestJoinCommunity,
   searchPublicCommunities,
-  setAutoAdd,
-  setAutoAddNotify,
   setCommunityChatSettings,
   setCommunityHome,
   setCommunityJoinPolicy,
@@ -52,7 +48,6 @@ import {
   type CommunitySummary,
   type DiscoveredCommunity,
 } from "@/app/actions/communities";
-import type { SharedActivity } from "@/app/actions/sharing";
 import {
   ALLOWED_JOIN_POLICIES,
   ALLOWED_VISIBILITIES,
@@ -70,15 +65,11 @@ import {
   type CommunityRank,
   type CommunityVisibility,
 } from "@/lib/domain/community";
-import { summarizeRhythm } from "@/lib/domain/rhythm-summary";
 import { useBodyScrollLock } from "@/lib/ui/body-scroll-lock";
-
-import { TagChipList } from "@/app/_components/tag-chip";
 
 import { CommunityChat } from "./_community-chat";
 import { CommunityOwnedCalendar } from "./_community-calendar";
 import { InviteCombobox } from "./_invite-combobox";
-import { CopyShareModal } from "./copy-share-modal";
 
 // Per-type copy — kept here so every page passes the same props and
 // deltas are one edit.
@@ -557,7 +548,7 @@ function CommunityBody({
       {active === "home" && <CommunityHome detail={detail} />}
       {active === "calendar" &&
         (bundle ? (
-          <CommunityActivitiesSection detail={detail} bundle={bundle} />
+          <CommunityOwnedCalendar detail={detail} bundle={bundle} />
         ) : (
           <p className="rounded-md border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700">
             Loading&hellip;
@@ -759,211 +750,6 @@ function CommunityHome({ detail }: { detail: CommunityDetail }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Shared activities (Phase 3). Members see the community's shared activities
-// and can copy each into their own schedule ("Add to my calendar") or opt
-// into auto-adding new ones. Leadership additionally manages which activities
-// are shared and how much of the calendar members see.
-// ---------------------------------------------------------------------------
-
-function CommunityActivitiesSection({
-  detail,
-  bundle,
-}: {
-  detail: CommunityDetail;
-  bundle: CommunityActivityBundle;
-}) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-  const [copying, setCopying] = useState<SharedActivity | null>(null);
-  const [autoAdd, setAutoAddState] = useState(bundle.autoAdd);
-  const [notify, setNotifyState] = useState(bundle.autoAddNotify);
-  const [addPick, setAddPick] = useState("");
-
-  const canManageActivities = detail.myPermissions.can_add_activities;
-  const addedIds = new Set(bundle.activities.map((a) => a.activityId));
-  const addable = bundle.myActivities.filter((a) => !addedIds.has(a.id));
-
-  function onAdd() {
-    if (!addPick) return;
-    setError(null);
-    startTransition(async () => {
-      const res = await addCommunityActivity(detail.id, addPick);
-      if ("error" in res) setError(res.error);
-      else {
-        setAddPick("");
-        router.refresh();
-      }
-    });
-  }
-  function onRemove(activityId: string) {
-    setError(null);
-    startTransition(async () => {
-      const res = await removeCommunityActivity(detail.id, activityId);
-      if ("error" in res) setError(res.error);
-      else router.refresh();
-    });
-  }
-  function onToggleAutoAdd() {
-    const next = !autoAdd;
-    setAutoAddState(next); // optimistic
-    startTransition(async () => {
-      const res = await setAutoAdd(detail.id, next);
-      if ("error" in res) {
-        setAutoAddState(!next);
-        setError(res.error);
-      }
-    });
-  }
-  function onToggleNotify() {
-    const next = !notify;
-    setNotifyState(next); // optimistic
-    startTransition(async () => {
-      const res = await setAutoAddNotify(detail.id, next);
-      if ("error" in res) {
-        setNotifyState(!next);
-        setError(res.error);
-      }
-    });
-  }
-  return (
-    <div className="flex flex-col gap-6">
-      <CommunityOwnedCalendar detail={detail} bundle={bundle} />
-
-      <section className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-          Shared by members ({bundle.activities.length})
-        </h3>
-        <div className="flex flex-col items-end gap-1">
-          <label className="flex cursor-pointer items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
-            <input
-              type="checkbox"
-              checked={autoAdd}
-              onChange={onToggleAutoAdd}
-              className="h-4 w-4 accent-zinc-900 dark:accent-zinc-50"
-            />
-            Auto-add new ones to my calendar
-          </label>
-          {autoAdd && (
-            <label className="flex cursor-pointer items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
-              <input
-                type="checkbox"
-                checked={notify}
-                onChange={onToggleNotify}
-                className="h-4 w-4 accent-zinc-900 dark:accent-zinc-50"
-              />
-              Notify me when they&rsquo;re added
-            </label>
-          )}
-        </div>
-      </div>
-
-      {canManageActivities && (
-        <div className="flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
-          <div className="flex items-center gap-2">
-            <select
-              value={addPick}
-              onChange={(e) => setAddPick(e.target.value)}
-              aria-label="Add one of your activities"
-              className="min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-            >
-              <option value="">
-                {addable.length > 0
-                  ? "Add one of your activities…"
-                  : "No more of your activities to add"}
-              </option>
-              {addable.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={onAdd}
-              disabled={!addPick || isPending}
-              className="shrink-0 rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
-            >
-              Add
-            </button>
-          </div>
-        </div>
-      )}
-
-
-      {bundle.activities.length === 0 ? (
-        <p className="rounded-md border border-dashed border-zinc-300 p-4 text-center text-sm text-zinc-500 dark:border-zinc-700">
-          No activities shared yet.
-        </p>
-      ) : (
-        <ul className="flex flex-col gap-2">
-          {bundle.activities.map((a) => (
-            <li
-              key={a.activityId}
-              className="flex items-start justify-between gap-3 rounded-md border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950"
-            >
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium">{a.name}</p>
-                <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
-                  {summarizeRhythm(a.rhythm, a.scheduledTimes)}
-                </p>
-                {a.defaultSkillTags.length > 0 && (
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    <TagChipList
-                      names={a.defaultSkillTags}
-                      tags={bundle.tagMap}
-                      size="xs"
-                    />
-                  </div>
-                )}
-              </div>
-              <div className="flex shrink-0 items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => setCopying(a)}
-                  className="touch-manipulation rounded-md bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
-                >
-                  Add to my calendar
-                </button>
-                {canManageActivities && (
-                  <button
-                    type="button"
-                    onClick={() => onRemove(a.activityId)}
-                    disabled={isPending}
-                    aria-label={`Remove ${a.name} from ${detail.name}`}
-                    className="rounded-md border border-zinc-300 px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {error && (
-        <p
-          role="alert"
-          className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300"
-        >
-          {error}
-        </p>
-      )}
-
-      {copying && (
-        <CopyShareModal
-          shared={copying}
-          tagMap={bundle.tagMap}
-          onClose={() => setCopying(null)}
-        />
-      )}
-      </section>
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Settings (Phase 4) — leadership-only. A collapsible area with member
