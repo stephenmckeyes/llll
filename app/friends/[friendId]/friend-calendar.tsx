@@ -23,6 +23,7 @@ import type { YearCountsByDate } from "@/app/actions/calendar-fetch";
 import type { SharedActivity, SharedInstance } from "@/app/actions/sharing";
 import { DayList as DashboardDayList } from "@/app/_components/day-list";
 import { IncompleteButton } from "@/app/_components/incomplete-button";
+import type { CollectiveHandlers } from "@/app/_components/instance-row";
 import {
   MONTH_BANNERS_PER_CELL,
   MonthBannerPill,
@@ -53,6 +54,7 @@ export function FriendCalendar({
   tagMap,
   onOpenActivity,
   loadYearCounts,
+  collective,
 }: {
   shares: SharedActivity[];
   instances: SharedInstance[];
@@ -63,6 +65,9 @@ export function FriendCalendar({
   /** Optional full-year per-day counts loader for the rich Year view. When
    *  absent, Year is computed from the loaded `instances` window. */
   loadYearCounts?: (yearStart: string) => Promise<YearCountsByDate>;
+  /** Collective-completion handlers (community calendar). When set, the Day
+   *  sub-view renders inline Complete/Missed wired to these. */
+  collective?: CollectiveHandlers;
 }) {
   const [sub, setSub] = useState<Sub>("day");
   const [refDate, setRefDate] = useState<string>(todayStr);
@@ -152,6 +157,7 @@ export function FriendCalendar({
           incompleteInfo={incompleteInfo}
           tagMap={tagMap}
           readOnly
+          collective={collective}
           onReadOnlyOpen={(inst) =>
             onOpenActivity(inst.activity.id, {
               scheduledFor: inst.scheduled_for,

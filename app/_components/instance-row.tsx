@@ -46,6 +46,15 @@ const PRIORITY_DOT_CLASS: Record<number, string> = {
   3: "bg-zinc-400",
 };
 
+/** Collective-completion handlers for the community-owned calendar
+ *  (setCommunityInstanceStatus). Threaded DayList → DaySection →
+ *  InstanceRow. Presence switches a row into inline binary Complete/Missed. */
+export type CollectiveHandlers = {
+  onComplete: (instanceId: string) => void | Promise<void>;
+  onMiss: (instanceId: string) => void | Promise<void>;
+  onReset: (instanceId: string) => void | Promise<void>;
+};
+
 export function InstanceRow({
   instance,
   todayStr,
@@ -55,6 +64,7 @@ export function InstanceRow({
   resolution,
   tagMap,
   readOnly = false,
+  collective,
 }: {
   instance: DayInstance;
   todayStr: string;
@@ -87,6 +97,12 @@ export function InstanceRow({
    *  static status badge, and the row body isn't clickable. Default
    *  false keeps the dashboard's behavior. */
   readOnly?: boolean;
+  /** Collective mode (community-owned calendar): inline Complete/Missed
+   *  that call these handlers (setCommunityInstanceStatus) instead of the
+   *  personal completion path. Binary — no +1 accumulation, no comment /
+   *  unlabel-server. Takes precedence over readOnly. Default absent keeps
+   *  the personal + friend behavior unchanged. */
+  collective?: CollectiveHandlers;
 }) {
   // We keep startTransition (marks the server-action call as a
   // non-blocking transition) but no longer read isPending — the buttons
@@ -248,10 +264,52 @@ export function InstanceRow({
     });
   }
 
+  // Collective mode (community): binary Complete/Missed wired to the
+  // community RPCs via the injected handlers. Mark-in-place reuses the same
+  // resolved map (onResolve/onUnresolve) as the personal path.
+  function handleCollectiveComplete() {
+    if (!collective) return;
+    if (instance.scheduled_for > todayStr) {
+      const ok = window.confirm(
+        `This is scheduled for ${instance.scheduled_for}, in the future. Mark complete anyway?`
+      );
+      if (!ok) return;
+    }
+    onResolve(instance.id, "completed");
+    if (isCurrentlyUnlabeled) dispatchInstanceResolved({ wasUnlabeled: true });
+    startTransition(async () => {
+      await collective.onComplete(instance.id);
+    });
+  }
+  function handleCollectiveMiss() {
+    if (!collective) return;
+    if (instance.scheduled_for > todayStr) {
+      const ok = window.confirm(
+        `This is scheduled for ${instance.scheduled_for}, in the future. Mark missed anyway?`
+      );
+      if (!ok) return;
+    }
+    onResolve(instance.id, "missed");
+    if (isCurrentlyUnlabeled) dispatchInstanceResolved({ wasUnlabeled: true });
+    startTransition(async () => {
+      await collective.onMiss(instance.id);
+    });
+  }
+  function handleCollectiveReset() {
+    if (!collective) return;
+    onUnresolve(instance.id);
+    if (isCurrentlyUnlabeled)
+      dispatchInstanceResolved({ wasUnlabeled: true, delta: 1 });
+    startTransition(async () => {
+      await collective.onReset(instance.id);
+    });
+  }
+
   // Friend (read-only) view: a static status badge replaces all action
-  // buttons.
-  const roStatus = readOnly
-    ? readOnlyStatus(
+  // buttons. Not used in collective mode (community gets inline buttons).
+  const roStatus =
+    readOnly && !collective
+      ? readOnlyStatus(
         instance,
         todayStr,
         isAccumulating,
@@ -348,7 +406,48 @@ export function InstanceRow({
         </div>
       </button>
 
-      {roStatus ? (
+      {collective ? (
+        // Collective mode (community) — binary inline Complete/Missed for
+        // the whole community; a resolved row shows a pill + Reset.
+        resolution ? (
+          <div className="flex shrink-0 items-center gap-2">
+            <span
+              className={`min-h-11 inline-flex items-center rounded-md px-3 py-2 text-xs font-semibold ${
+                resolution === "completed"
+                  ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                  : "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
+              }`}
+            >
+              {resolution === "completed" ? "✓ Done" : "✗ Missed"}
+            </span>
+            <button
+              type="button"
+              onClick={handleCollectiveReset}
+              title="Reset this occurrence to pending for the community."
+              className="min-h-11 shrink-0 touch-manipulation rounded-md border border-zinc-300 px-3 py-2 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-100 active:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
+            >
+              Reset
+            </button>
+          </div>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={handleCollectiveComplete}
+              className="min-h-11 shrink-0 touch-manipulation rounded-md bg-zinc-900 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-zinc-700 active:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
+            >
+              Complete
+            </button>
+            <button
+              type="button"
+              onClick={handleCollectiveMiss}
+              className="min-h-11 shrink-0 touch-manipulation rounded-md border border-zinc-300 px-3 py-2 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-100 active:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+            >
+              Missed
+            </button>
+          </>
+        )
+      ) : roStatus ? (
         // Read-only friend view — static status, no actions.
         <span
           className={`min-h-11 inline-flex shrink-0 items-center rounded-md px-3 py-2 text-xs font-semibold ${roStatus.cls}`}

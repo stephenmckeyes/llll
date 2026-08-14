@@ -27,10 +27,23 @@ and data is fetched server-side per view (best for privacy + performance).
   back to computing from its loaded instance window (data-limited — a
   friend full-year loader is a later nicety). Old density-heatmap Year
   deleted. Verified live: personal + community Year render the shared grid.
-- ⏳ Day: the biggest one — converge the personal DayList (inline
-  complete/miss) and the friend/community read-only+modal path behind the
-  CalendarCapabilities interface (onComplete? etc.). This is where community
-  inline completion lands. Highest-risk (core DayList) — do last, verified.
+- ✅ Day: unified. Added an additive `collective` mode to InstanceRow (and
+  threaded DayList → DaySection → InstanceRow + TimelineDayBody, plus
+  FriendCalendar). Presence of `collective` handlers switches a row to
+  inline binary Complete/Missed wired to setCommunityInstanceStatus; the
+  personal path (default) and friend read-only path are untouched. The
+  community Day now has inline Complete/Missed (verified live: completing
+  Fri moved it to Completed/Missed (1); Sat stayed pending). Exported
+  `CollectiveHandlers` from instance-row as the shared type.
+  - Note: community completion goes through a server action, so Next.js
+    auto-revalidates the community page — the completed occurrence moves
+    into the Completed/Missed dropdown immediately (better than mark-in-
+    place-only).
+  - Pre-existing dev-only warning (day/month/year pre-hydration scroll
+    `<script>` causes a hydration mismatch: server renders it, the
+    `typeof window === undefined` guard renders null on client). NOT
+    fixed here — it's delicate (the scroll-anchor + theme-flash fixes were
+    hard-won); fix separately with a non-React script technique.
 
 ## HIGH PRIORITY (asked for, near-term)
 

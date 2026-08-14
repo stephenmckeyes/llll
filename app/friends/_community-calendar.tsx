@@ -145,6 +145,17 @@ export function CommunityOwnedCalendar({
               loadYearCounts={(yearStart) =>
                 getCommunityYearCounts(detail.id, yearStart)
               }
+              collective={{
+                onComplete: async (id) => {
+                  await setCommunityInstanceStatus(id, "completed");
+                },
+                onMiss: async (id) => {
+                  await setCommunityInstanceStatus(id, "missed");
+                },
+                onReset: async (id) => {
+                  await setCommunityInstanceStatus(id, "pending");
+                },
+              }}
             />
           ) : (
             <FriendGrid

@@ -45,7 +45,7 @@ import { ActivityModal } from "./activity-modal";
 import { CommentModal } from "./comment-modal";
 import { IncompleteButton, type IncompleteInfo } from "./incomplete-button";
 import { InlineAddRow } from "./inline-add-row";
-import { InstanceRow } from "./instance-row";
+import { InstanceRow, type CollectiveHandlers } from "./instance-row";
 import { NewActivityModal } from "./new-activity-modal";
 import {
   conflictKey,
@@ -163,6 +163,7 @@ export function DayList({
   acknowledgedPairKeys = [],
   untimedOpenDefault = false,
   fillHeight = false,
+  collective,
 }: {
   initialDate: string;
   completedByDate: Record<string, DayMarkedItem[]>;
@@ -215,6 +216,10 @@ export function DayList({
    *  everywhere Add-Activity happens, not just on /activities/new.
    *  Optional — read-only friend contexts leave it default. */
   density?: AddActivityDensity;
+  /** Collective-completion handlers (community-owned calendar). When set,
+   *  rows render inline Complete/Missed wired to these instead of the
+   *  personal path or the read-only static badge. */
+  collective?: CollectiveHandlers;
 }) {
   const router = useRouter();
   const [, startUnlabelTransition] = useTransition();
@@ -725,6 +730,7 @@ export function DayList({
               tagMap={tagMap}
               timelineMode={timelineMode}
               untimedOpenDefault={untimedOpenDefault}
+              collective={collective}
             />
           ))}
         </div>
@@ -794,6 +800,7 @@ function DaySection({
   tagMap,
   timelineMode = false,
   untimedOpenDefault = false,
+  collective,
 }: {
   date: Date;
   dateStr: string;
@@ -817,6 +824,7 @@ function DaySection({
   /** Initial open/closed state for the untimed <details> (only used
    *  in timelineMode). Migration 0037 → Settings picker. */
   untimedOpenDefault?: boolean;
+  collective?: CollectiveHandlers;
 }) {
   const isToday = dateStr === todayStr;
   const totalMarked = completed.length + missed.length;
@@ -882,6 +890,7 @@ function DaySection({
           tagMap={tagMap}
           todayStr={todayStr}
           untimedOpenDefault={untimedOpenDefault}
+          collective={collective}
         />
       ) : (
         visible.length > 0 && (
@@ -897,6 +906,7 @@ function DaySection({
                 onUnresolve={onUnresolve}
                 readOnly={readOnly}
                 tagMap={tagMap}
+                collective={collective}
               />
             ))}
           </div>
@@ -1242,6 +1252,7 @@ function TimelineDayBody({
   tagMap,
   todayStr,
   untimedOpenDefault,
+  collective,
 }: {
   visible: DayInstance[];
   resolved: ReadonlyMap<string, "completed" | "missed">;
@@ -1252,6 +1263,7 @@ function TimelineDayBody({
   tagMap: TagMap;
   todayStr: string;
   untimedOpenDefault: boolean;
+  collective?: CollectiveHandlers;
 }) {
   const timeFormat = useTimeFormat();
 
@@ -1398,6 +1410,7 @@ function TimelineDayBody({
                 onUnresolve={onUnresolve}
                 readOnly={readOnly}
                 tagMap={tagMap}
+                collective={collective}
               />
             ))}
           </div>
