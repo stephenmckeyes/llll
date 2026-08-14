@@ -140,17 +140,21 @@ export function CommunityOwnedCalendar({
               monthLoader={(monthKey) =>
                 getCommunityMonthBanners(detail.id, monthKey)
               }
-              collective={{
-                onComplete: async (id) => {
-                  await setCommunityInstanceStatus(id, "completed");
-                },
-                onMiss: async (id) => {
-                  await setCommunityInstanceStatus(id, "missed");
-                },
-                onReset: async (id) => {
-                  await setCommunityInstanceStatus(id, "pending");
-                },
-              }}
+              collective={
+                detail.myPermissions.can_mark_completions
+                  ? {
+                      onComplete: async (id) => {
+                        await setCommunityInstanceStatus(id, "completed");
+                      },
+                      onMiss: async (id) => {
+                        await setCommunityInstanceStatus(id, "missed");
+                      },
+                      onReset: async (id) => {
+                        await setCommunityInstanceStatus(id, "pending");
+                      },
+                    }
+                  : undefined
+              }
               aggregate={{
                 getInfo: (id) => bundle.aggregateByInstance[id],
                 onSetMine: async (id, status) => {
@@ -224,6 +228,7 @@ export function CommunityOwnedCalendar({
           name={picked.name}
           scheduledFor={picked.scheduledFor}
           status={picked.status}
+          canMark={detail.myPermissions.can_mark_completions}
           onClose={() => setPicked(null)}
           onChanged={() => {
             setPicked(null);
@@ -486,6 +491,7 @@ function CompletionModal({
   name,
   scheduledFor,
   status,
+  canMark,
   onClose,
   onChanged,
 }: {
@@ -493,6 +499,9 @@ function CompletionModal({
   name: string;
   scheduledFor: string;
   status: SharedInstance["status"];
+  /** Whether the viewer may mark this collective occurrence (can_mark_
+   *  completions / leadership). When false, the modal is view-only. */
+  canMark: boolean;
   onClose: () => void;
   onChanged: () => void;
 }) {
@@ -535,38 +544,45 @@ function CompletionModal({
           </p>
         </div>
 
-        <div className="flex flex-col gap-2">
-          {status !== "completed" && (
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() => set("completed")}
-              className={`${btn} bg-emerald-600 text-white hover:bg-emerald-500`}
-            >
-              Mark complete
-            </button>
-          )}
-          {status !== "missed" && (
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() => set("missed")}
-              className={`${btn} bg-red-600 text-white hover:bg-red-500`}
-            >
-              Mark missed
-            </button>
-          )}
-          {status !== "pending" && (
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() => set("pending")}
-              className={`${btn} border border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800`}
-            >
-              Reset to pending
-            </button>
-          )}
-        </div>
+        {canMark ? (
+          <div className="flex flex-col gap-2">
+            {status !== "completed" && (
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={() => set("completed")}
+                className={`${btn} bg-emerald-600 text-white hover:bg-emerald-500`}
+              >
+                Mark complete
+              </button>
+            )}
+            {status !== "missed" && (
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={() => set("missed")}
+                className={`${btn} bg-red-600 text-white hover:bg-red-500`}
+              >
+                Mark missed
+              </button>
+            )}
+            {status !== "pending" && (
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={() => set("pending")}
+                className={`${btn} border border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800`}
+              >
+                Reset to pending
+              </button>
+            )}
+          </div>
+        ) : (
+          <p className="rounded-md bg-zinc-100 px-3 py-2 text-xs text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
+            Only members with the “Mark completions” permission can mark this
+            for the group.
+          </p>
+        )}
 
         {error && (
           <p role="alert" className="text-sm text-red-600 dark:text-red-400">
