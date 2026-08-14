@@ -4,6 +4,68 @@ Captured ideas and follow-ups for future sessions. Not in priority order.
 Imported by `CLAUDE.md` so every new Claude Code session sees this on
 startup.
 
+## Calendar unification (in progress)
+
+Goal (per user): personal, friend, and community calendars share ONE base
+(rendering + data shape); each surface layers its own permissions/functions
+on top; the security boundary stays in the DB (RLS + SECURITY DEFINER RPCs)
+and data is fetched server-side per view (best for privacy + performance).
+- ✅ Foundation: `lib/domain/calendar-view.ts` — canonical
+  CalendarActivityView / CalendarOccurrenceView / CalendarCapabilities.
+- ✅ Week: shared `app/_components/week-banner.tsx` (WeekBannerPill) now
+  used by BOTH the personal dashboard Week (page.tsx) and the friend/
+  community Week (FriendCalendar). Note: personal Week now shows missed
+  occurrences in red (was dark) — intentional consistency.
+- ✅ Month: cell pill already shared (MonthCell / MonthBannerPill) across
+  personal MonthList + friend/community MonthGrid.
+- ⏳ Year: NOT unified — the personal Year (endless-scroll mini-month dot
+  grids, lazy-loaded full-year data) and the friend/community Year (single-
+  year density heatmap over the ±35-day loaded window) are different DESIGNS
+  and the shared calendars don't load full-year data. Needs a product call
+  (which visualization wins everywhere) + full-year data loading for shared
+  calendars before it can share a component. DECIDE THIS with the user.
+- ⏳ Day: the biggest one — converge the personal DayList (inline
+  complete/miss) and the friend/community read-only+modal path behind the
+  CalendarCapabilities interface (onComplete? etc.). This is where community
+  inline completion lands. Highest-risk (core DayList) — do last, verified.
+
+## HIGH PRIORITY (asked for, near-term)
+
+### Activity completion-type options
+
+Two new axes for how an activity's completion behaves. Applies to
+community-owned activities first; the second also belongs on the personal
+calendar.
+
+1. **Community aggregate completion.** Alongside today's collective
+   completion (any one member marks the single shared occurrence
+   done/missed for the whole community), add a completion type where each
+   member's status is tracked and the occurrence records the group's
+   progress as a fraction — e.g. 3/4 members did it → "3/4". Needs a
+   per-(occurrence, member) status table for these activities, plus a UI
+   that shows the fraction and lets a member mark THEIR own.
+   - **Stretch:** link a community aggregate activity to members'
+     PERSONAL activities so that when a member completes it on their own
+     regular calendar it also +1's the group's counter for that
+     occurrence (one action, counts in both places). Decide the linkage
+     (auto-create a personal copy that references the community occurrence,
+     or let a member "link" an existing personal activity).
+
+2. **Stays-until-marked vs. auto-drop-when-past.** A per-activity setting:
+   - *Stays until marked* (today's behavior) — an unmarked past occurrence
+     becomes overdue/unlabeled and waits for a verdict.
+   - *Auto-drop when its date/time passes* — the occurrence just
+     disappears once past, no Complete/Missed needed. Lets someone drop a
+     bunch of meetings on the calendar for scheduling only, without the
+     nag to mark each one.
+   Check whether the personal calendar already has an equivalent (the
+   rollover setting is related but NOT the same — rollover is about what
+   happens WHEN missed, not about skipping the verdict entirely). If it
+   doesn't exist on the individual calendar, add it there too — it's
+   generally useful. Likely a new `activities` column (e.g.
+   `auto_resolve` / `requires_verdict`) honored by the day-list + the
+   "incomplete/unlabeled" logic + backfill.
+
 ## Pending features (asked for, deferred on purpose)
 
 ### Communities (Groups / Clubs / Guilds)

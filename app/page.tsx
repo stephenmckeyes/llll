@@ -76,7 +76,7 @@ import type { MonthBannersByDate, YearCountsByDate } from "./actions/calendar-fe
 import { readTimelinePref } from "./actions/timeline-pref";
 import { SectionTabs } from "./_components/section-tabs";
 import { SwipeNav } from "./_components/swipe-nav";
-import { TagDotRow } from "./_components/tag-chip";
+import { WeekBannerPill } from "./_components/week-banner";
 import { TabPending } from "./_components/tab-pending";
 import { listAcknowledgedPairKeys } from "./actions/conflicts";
 import { TimelineWeek } from "./_components/timeline-week";
@@ -1362,37 +1362,23 @@ function WeekBanner({
   tagMap: TagMap;
 }) {
   if (!item.activities) return null;
-  const isCompleted = item.status === "completed";
-  // Priority dot removed per user spec (soft removal — the column
-  // stays, nothing UI-facing reads it right now).
   const firstTime = item.activities.scheduled_times?.[0];
-  const tagNames = item.tags ?? [];
+  const status =
+    item.status === "completed"
+      ? "completed"
+      : item.status === "missed"
+        ? "missed"
+        : "pending";
 
   return (
-    <li
-      className={`flex min-w-0 items-start gap-0.5 overflow-hidden rounded px-1 py-0.5 text-[9px] leading-tight ${
-        isCompleted
-          ? "bg-zinc-100 text-zinc-400 line-through dark:bg-zinc-900 dark:text-zinc-600"
-          : "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
-      }`}
-      title={`${item.activities.name}${firstTime ? ` @ ${firstTime}` : ""}${
-        tagNames.length > 0 ? ` · ${tagNames.join(", ")}` : ""
-      }`}
-    >
-      <span className="min-w-0 flex-1">
-        <span className="block line-clamp-2 break-words font-medium">
-          {item.activities.name}
-        </span>
-        {firstTime && <span className="block opacity-75">{firstTime}</span>}
-        {tagNames.length > 0 && (
-          <TagDotRow
-            names={tagNames}
-            tags={tagMap}
-            dotClassName="h-1 w-1"
-            max={4}
-          />
-        )}
-      </span>
+    <li className="min-w-0">
+      <WeekBannerPill
+        name={item.activities.name}
+        firstTime={firstTime}
+        tags={item.tags ?? []}
+        status={status}
+        tagMap={tagMap}
+      />
     </li>
   );
 }

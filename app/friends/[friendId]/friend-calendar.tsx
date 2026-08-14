@@ -29,7 +29,7 @@ import {
   type MonthBanner,
 } from "@/app/_components/month-cell";
 import { SwipeNav } from "@/app/_components/swipe-nav";
-import { TagDotRow } from "@/app/_components/tag-chip";
+import { WeekBannerPill } from "@/app/_components/week-banner";
 import {
   isPastDuePending,
   unlabeledLandingDay,
@@ -273,9 +273,12 @@ function WeekGrid({
               <ul className="flex min-w-0 flex-col gap-0.5">
                 {d.items.map((inst) => {
                   const act = byId.get(inst.activityId);
-                  const done = inst.status === "completed";
-                  const firstTime = act?.scheduledTimes?.[0];
-                  const tagNames = act?.defaultSkillTags ?? [];
+                  const status =
+                    inst.status === "completed"
+                      ? "completed"
+                      : inst.status === "missed"
+                        ? "missed"
+                        : "pending";
                   return (
                     <li key={inst.instanceId}>
                       <button
@@ -291,31 +294,15 @@ function WeekGrid({
                             comment: inst.comment,
                           })
                         }
-                        title={`${act?.name ?? "Activity"}${
-                          firstTime ? ` @ ${firstTime}` : ""
-                        }${tagNames.length > 0 ? ` · ${tagNames.join(", ")}` : ""}`}
-                        className={`block w-full min-w-0 rounded px-1 py-0.5 text-left text-[9px] leading-tight ${
-                          done
-                            ? "bg-zinc-100 text-zinc-400 line-through dark:bg-zinc-900 dark:text-zinc-600"
-                            : inst.status === "missed"
-                              ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
-                              : "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
-                        }`}
+                        className="block w-full min-w-0 text-left"
                       >
-                        <span className="block line-clamp-2 break-words font-medium">
-                          {act?.name ?? "Activity"}
-                        </span>
-                        {firstTime && (
-                          <span className="block opacity-75">{firstTime}</span>
-                        )}
-                        {tagNames.length > 0 && (
-                          <TagDotRow
-                            names={tagNames}
-                            tags={tagMap}
-                            dotClassName="h-1 w-1"
-                            max={4}
-                          />
-                        )}
+                        <WeekBannerPill
+                          name={act?.name ?? "Activity"}
+                          firstTime={act?.scheduledTimes?.[0]}
+                          tags={act?.defaultSkillTags ?? []}
+                          status={status}
+                          tagMap={tagMap}
+                        />
                       </button>
                     </li>
                   );
