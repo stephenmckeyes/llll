@@ -679,6 +679,19 @@ export type CommunityActivityBundle = {
   tagMap: TagMap;
   /** Caller's "today" in their own timezone (anchors the calendar). */
   todayStr: string;
+  /** Aggregate progress per occurrence id, for AGGREGATE activities only
+   *  (migration 0061): how many members marked done, total members, and the
+   *  caller's own status. Keyed by community_owned_instances.id. */
+  aggregateByInstance: Record<
+    string,
+    { marked: number; total: number; myStatus: "completed" | "missed" | null }
+  >;
+};
+
+export type AggregateStatus = {
+  marked: number;
+  total: number;
+  myStatus: "completed" | "missed" | null;
 };
 
 // How many days each way the community calendar loads occurrences for.
@@ -711,6 +724,28 @@ export async function getCommunityActivityBundle(
   await backfillCommunityCalendar(communityId, todayStr);
   const owned = await getCommunityOwnedBundle(communityId, windowFrom, windowTo);
 
+  // Aggregate progress for the same window (aggregate activities only).
+  const { data: aggRows } = await supabase.rpc(
+    "get_community_aggregate_status",
+    { p_community_id: communityId, p_from: windowFrom, p_to: windowTo }
+  );
+  const aggregateByInstance: Record<string, AggregateStatus> = {};
+  for (const r of (aggRows ?? []) as Array<{
+    instance_id: string;
+    marked: number;
+    total: number;
+    my_status: string | null;
+  }>) {
+    aggregateByInstance[r.instance_id] = {
+      marked: r.marked,
+      total: r.total,
+      myStatus:
+        r.my_status === "completed" || r.my_status === "missed"
+          ? r.my_status
+          : null,
+    };
+  }
+
   const usageByName = computeTagUsage(
     (actTagRes.data ?? []) as Array<{ default_skill_tags: string[] | null }>
   );
@@ -725,6 +760,7 @@ export async function getCommunityActivityBundle(
     archivedActivities: owned.archived,
     tagMap,
     todayStr,
+    aggregateByInstance,
   };
 }
 
@@ -1367,6 +1403,27 @@ export async function setCommunityInstanceStatus(
   if (!user) redirect("/login");
 
   const { error } = await supabase.rpc("set_community_instance_status", {
+    p_instance_id: instanceId,
+    p_status: status,
+  });
+  if (error) return { error: error.message };
+  revalidateCommunityPaths();
+  return { ok: true };
+}
+
+// setCommunityMemberStatus — aggregate completion; a member records THEIR OWN
+// status for one occurrence ('completed' | 'missed' | 'none' clears it).
+export async function setCommunityMemberStatus(
+  instanceId: string,
+  status: "completed" | "missed" | "none"
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase.rpc("set_community_member_status", {
     p_instance_id: instanceId,
     p_status: status,
   });

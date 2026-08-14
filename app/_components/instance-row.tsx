@@ -55,6 +55,23 @@ export type CollectiveHandlers = {
   onReset: (instanceId: string) => void | Promise<void>;
 };
 
+/** Aggregate-completion handlers for community-owned AGGREGATE activities
+ *  (migration 0061). A row whose activity.completion_type === 'aggregate'
+ *  shows the group's "N/M done" and lets the viewer mark THEIR OWN status.
+ *  `getInfo` returns that occurrence's progress; `onSetMine` records the
+ *  caller's status ('none' clears it). Threaded like CollectiveHandlers. */
+export type AggregateHandlers = {
+  getInfo: (
+    instanceId: string
+  ) =>
+    | { marked: number; total: number; myStatus: "completed" | "missed" | null }
+    | undefined;
+  onSetMine: (
+    instanceId: string,
+    status: "completed" | "missed" | "none"
+  ) => void | Promise<void>;
+};
+
 export function InstanceRow({
   instance,
   todayStr,
@@ -65,6 +82,7 @@ export function InstanceRow({
   tagMap,
   readOnly = false,
   collective,
+  aggregate,
 }: {
   instance: DayInstance;
   todayStr: string;
@@ -103,6 +121,11 @@ export function InstanceRow({
    *  unlabel-server. Takes precedence over readOnly. Default absent keeps
    *  the personal + friend behavior unchanged. */
   collective?: CollectiveHandlers;
+  /** Aggregate mode (community-owned aggregate activities). When present AND
+   *  this row's activity.completion_type === 'aggregate', the row shows the
+   *  group's N/M and lets the viewer mark their own — overriding the
+   *  collective/personal action buttons. */
+  aggregate?: AggregateHandlers;
 }) {
   // We keep startTransition (marks the server-action call as a
   // non-blocking transition) but no longer read isPending — the buttons
@@ -114,6 +137,19 @@ export function InstanceRow({
   const activity = instance.activity;
   const isFrequency = activity.rhythm.type === "frequency";
   const scheduledTimes = activity.scheduled_times ?? [];
+
+  // Aggregate mode (community-owned 'aggregate' activity): the row shows the
+  // group's N/M and lets the viewer mark their own. Takes precedence over the
+  // collective/personal action buttons below.
+  const isAggregate =
+    !!aggregate && activity.completion_type === "aggregate";
+  const aggInfo = isAggregate ? aggregate!.getInfo(instance.id) : undefined;
+  function handleSetMine(next: "completed" | "missed" | "none") {
+    if (!aggregate) return;
+    startTransition(async () => {
+      await aggregate.onSetMine(instance.id, next);
+    });
+  }
 
   // Effective per-occurrence values: an "Edit activity" override on THIS
   // instance wins; otherwise inherit the series (activity) value.
@@ -406,7 +442,49 @@ export function InstanceRow({
         </div>
       </button>
 
-      {collective ? (
+      {isAggregate ? (
+        // Aggregate mode (community) — the group's N/M plus the viewer's own
+        // ✓/✗ (tap the active one again to clear). Marking hits
+        // set_community_member_status; the fraction refreshes from the bundle.
+        <div className="flex shrink-0 items-center gap-1.5">
+          <span
+            title="Members who marked this done / total members"
+            className="min-h-11 inline-flex items-center rounded-md bg-zinc-100 px-2.5 py-2 text-xs font-semibold tabular-nums text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+          >
+            {aggInfo ? `${aggInfo.marked}/${aggInfo.total}` : "—"}
+          </span>
+          <button
+            type="button"
+            onClick={() =>
+              handleSetMine(aggInfo?.myStatus === "completed" ? "none" : "completed")
+            }
+            aria-pressed={aggInfo?.myStatus === "completed"}
+            title="I did this"
+            className={`min-h-11 shrink-0 touch-manipulation rounded-md px-3 py-2 text-xs font-semibold transition-colors ${
+              aggInfo?.myStatus === "completed"
+                ? "bg-emerald-600 text-white hover:bg-emerald-500"
+                : "border border-zinc-300 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+            }`}
+          >
+            ✓
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              handleSetMine(aggInfo?.myStatus === "missed" ? "none" : "missed")
+            }
+            aria-pressed={aggInfo?.myStatus === "missed"}
+            title="I didn't do this"
+            className={`min-h-11 shrink-0 touch-manipulation rounded-md px-3 py-2 text-xs font-semibold transition-colors ${
+              aggInfo?.myStatus === "missed"
+                ? "bg-red-600 text-white hover:bg-red-500"
+                : "border border-zinc-300 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+            }`}
+          >
+            ✗
+          </button>
+        </div>
+      ) : collective ? (
         // Collective mode (community) — binary inline Complete/Missed for
         // the whole community; a resolved row shows a pill + Reset.
         resolution ? (

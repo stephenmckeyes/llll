@@ -45,7 +45,11 @@ import { ActivityModal } from "./activity-modal";
 import { CommentModal } from "./comment-modal";
 import { IncompleteButton, type IncompleteInfo } from "./incomplete-button";
 import { InlineAddRow } from "./inline-add-row";
-import { InstanceRow, type CollectiveHandlers } from "./instance-row";
+import {
+  InstanceRow,
+  type CollectiveHandlers,
+  type AggregateHandlers,
+} from "./instance-row";
 import { NewActivityModal } from "./new-activity-modal";
 import {
   conflictKey,
@@ -125,6 +129,11 @@ export type DayInstance = {
      *  occurrence drops silently (no verdict). Optional so callers that
      *  don't fetch the column still typecheck (treated as false). */
     auto_resolve?: boolean;
+    /** Community-owned completion model (migration 0061): 'aggregate' rows
+     *  render per-member "N/M" marking instead of a single shared verdict.
+     *  Only community-owned activities set this; undefined = 'collective'
+     *  (the shared/personal default). */
+    completion_type?: "collective" | "aggregate";
   };
 };
 
@@ -168,6 +177,7 @@ export function DayList({
   untimedOpenDefault = false,
   fillHeight = false,
   collective,
+  aggregate,
 }: {
   initialDate: string;
   completedByDate: Record<string, DayMarkedItem[]>;
@@ -224,6 +234,7 @@ export function DayList({
    *  rows render inline Complete/Missed wired to these instead of the
    *  personal path or the read-only static badge. */
   collective?: CollectiveHandlers;
+  aggregate?: AggregateHandlers;
 }) {
   const router = useRouter();
   const [, startUnlabelTransition] = useTransition();
@@ -734,7 +745,7 @@ export function DayList({
               tagMap={tagMap}
               timelineMode={timelineMode}
               untimedOpenDefault={untimedOpenDefault}
-              collective={collective}
+              collective={collective} aggregate={aggregate}
             />
           ))}
         </div>
@@ -805,6 +816,7 @@ function DaySection({
   timelineMode = false,
   untimedOpenDefault = false,
   collective,
+  aggregate,
 }: {
   date: Date;
   dateStr: string;
@@ -829,6 +841,7 @@ function DaySection({
    *  in timelineMode). Migration 0037 → Settings picker. */
   untimedOpenDefault?: boolean;
   collective?: CollectiveHandlers;
+  aggregate?: AggregateHandlers;
 }) {
   const isToday = dateStr === todayStr;
   const totalMarked = completed.length + missed.length;
@@ -894,7 +907,7 @@ function DaySection({
           tagMap={tagMap}
           todayStr={todayStr}
           untimedOpenDefault={untimedOpenDefault}
-          collective={collective}
+          collective={collective} aggregate={aggregate}
         />
       ) : (
         visible.length > 0 && (
@@ -910,7 +923,7 @@ function DaySection({
                 onUnresolve={onUnresolve}
                 readOnly={readOnly}
                 tagMap={tagMap}
-                collective={collective}
+                collective={collective} aggregate={aggregate}
               />
             ))}
           </div>
@@ -1268,6 +1281,7 @@ function TimelineDayBody({
   todayStr,
   untimedOpenDefault,
   collective,
+  aggregate,
 }: {
   visible: DayInstance[];
   resolved: ReadonlyMap<string, "completed" | "missed">;
@@ -1279,6 +1293,7 @@ function TimelineDayBody({
   todayStr: string;
   untimedOpenDefault: boolean;
   collective?: CollectiveHandlers;
+  aggregate?: AggregateHandlers;
 }) {
   const timeFormat = useTimeFormat();
 
@@ -1425,7 +1440,7 @@ function TimelineDayBody({
                 onUnresolve={onUnresolve}
                 readOnly={readOnly}
                 tagMap={tagMap}
-                collective={collective}
+                collective={collective} aggregate={aggregate}
               />
             ))}
           </div>

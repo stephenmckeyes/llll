@@ -79,6 +79,9 @@ export function toDayInstance(
       // carry it so the shared visibleOnDay drops past-due unmarked
       // occurrences. Friend shares leave it undefined → false.
       auto_resolve: share.autoResolve ?? false,
+      // completion_type (migration 0061): 'aggregate' community activities
+      // render per-member N/M marking. Friend shares leave it undefined.
+      completion_type: share.completionType,
     },
   };
 }

@@ -28,7 +28,10 @@ import { DayList as DashboardDayList } from "@/app/_components/day-list";
 import { MonthList } from "@/app/_components/month-list";
 import { YearList } from "@/app/_components/year-list";
 import { IncompleteButton } from "@/app/_components/incomplete-button";
-import type { CollectiveHandlers } from "@/app/_components/instance-row";
+import type {
+  CollectiveHandlers,
+  AggregateHandlers,
+} from "@/app/_components/instance-row";
 import {
   MONTH_BANNERS_PER_CELL,
   MonthBannerPill,
@@ -62,6 +65,7 @@ export function FriendCalendar({
   monthLoader,
   endless = false,
   collective,
+  aggregate,
   fillHeight = false,
 }: {
   shares: SharedActivity[];
@@ -85,6 +89,9 @@ export function FriendCalendar({
   /** Collective-completion handlers (community calendar). When set, the Day
    *  sub-view renders inline Complete/Missed wired to these. */
   collective?: CollectiveHandlers;
+  /** Aggregate-completion handlers (community calendar). Rows whose activity
+   *  is 'aggregate' render per-member N/M marking instead. */
+  aggregate?: AggregateHandlers;
   /** App-shell mode: fill the bounded parent so the header/sub-tabs pin
    *  and only the calendar body scrolls (Day list gets fillHeight).
    *  Default false keeps the friend view's natural-height layout. */
@@ -150,6 +157,7 @@ export function FriendCalendar({
           readOnly
           fillHeight={fillHeight}
           collective={collective}
+          aggregate={aggregate}
           onReadOnlyOpen={(inst) =>
             onOpenActivity(inst.activity.id, {
               scheduledFor: inst.scheduled_for,

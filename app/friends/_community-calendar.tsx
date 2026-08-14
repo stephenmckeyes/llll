@@ -22,6 +22,7 @@ import {
   getCommunityYearCounts,
   restoreCommunityCalendarActivity,
   setCommunityInstanceStatus,
+  setCommunityMemberStatus,
   updateCommunityActivityFormAction,
   type CommunityActivityBundle,
   type CommunityDetail,
@@ -148,6 +149,12 @@ export function CommunityOwnedCalendar({
                 },
                 onReset: async (id) => {
                   await setCommunityInstanceStatus(id, "pending");
+                },
+              }}
+              aggregate={{
+                getInfo: (id) => bundle.aggregateByInstance[id],
+                onSetMine: async (id, status) => {
+                  await setCommunityMemberStatus(id, status);
                 },
               }}
             />
