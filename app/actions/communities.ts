@@ -751,6 +751,11 @@ type OwnedActivityRow = {
   end_date: string | null;
   auto_resolve: boolean | null;
   completion_type: string | null;
+  reminders: Array<{ days: number; hours: number; minutes: number }> | null;
+  track_on_grid: boolean | null;
+  pinned: boolean | null;
+  rollover_missed_days: boolean | null;
+  rollover_change_rhythm: boolean | null;
   created_at: string;
   archived_at: string | null;
 };
@@ -774,6 +779,11 @@ function mapOwnedActivity(r: OwnedActivityRow): SharedActivity {
     endDate: r.end_date,
     autoResolve: r.auto_resolve ?? false,
     completionType: r.completion_type === "aggregate" ? "aggregate" : "collective",
+    reminders: r.reminders ?? [],
+    trackOnGrid: r.track_on_grid ?? false,
+    pinned: r.pinned ?? false,
+    rolloverMissedDays: r.rollover_missed_days ?? false,
+    rolloverChangeRhythm: r.rollover_change_rhythm ?? false,
     archivedAt: r.archived_at,
     createdAt: r.created_at,
   };
@@ -795,7 +805,7 @@ async function getCommunityOwnedBundle(
   const { data: actRows } = await supabase
     .from("community_owned_activities")
     .select(
-      "id, community_id, name, notes, rhythm, scheduled_times, scheduled_end_times, priority, default_skill_tags, start_date, end_date, auto_resolve, completion_type, created_at, archived_at"
+      "id, community_id, name, notes, rhythm, scheduled_times, scheduled_end_times, priority, default_skill_tags, start_date, end_date, auto_resolve, completion_type, reminders, track_on_grid, pinned, rollover_missed_days, rollover_change_rhythm, created_at, archived_at"
     )
     .eq("community_id", communityId)
     .order("name", { ascending: true });
@@ -1008,6 +1018,11 @@ export async function createCommunityCalendarActivity(input: {
   endDate?: string | null;
   autoResolve?: boolean;
   completionType?: "collective" | "aggregate";
+  reminders?: Array<{ days: number; hours: number; minutes: number }>;
+  trackOnGrid?: boolean;
+  pinned?: boolean;
+  rolloverMissedDays?: boolean;
+  rolloverChangeRhythm?: boolean;
 }): Promise<{ error: string } | { ok: true; id: string }> {
   const name = input.name.trim();
   if (name.length === 0 || name.length > 120) {
@@ -1035,6 +1050,11 @@ export async function createCommunityCalendarActivity(input: {
     p_end_date: input.endDate ?? null,
     p_auto_resolve: input.autoResolve ?? false,
     p_completion_type: input.completionType ?? "collective",
+    p_reminders: input.reminders ?? [],
+    p_track_on_grid: input.trackOnGrid ?? false,
+    p_pinned: input.pinned ?? false,
+    p_rollover_missed_days: input.rolloverMissedDays ?? false,
+    p_rollover_change_rhythm: input.rolloverChangeRhythm ?? false,
   });
   if (error) return { error: error.message };
 
@@ -1078,6 +1098,11 @@ export async function updateCommunityCalendarActivity(input: {
   endDate?: string | null;
   autoResolve?: boolean;
   completionType?: "collective" | "aggregate";
+  reminders?: Array<{ days: number; hours: number; minutes: number }>;
+  trackOnGrid?: boolean;
+  pinned?: boolean;
+  rolloverMissedDays?: boolean;
+  rolloverChangeRhythm?: boolean;
 }): Promise<{ error: string } | { ok: true }> {
   const name = input.name.trim();
   if (name.length === 0 || name.length > 120) {
@@ -1105,6 +1130,11 @@ export async function updateCommunityCalendarActivity(input: {
     p_end_date: input.endDate ?? null,
     p_auto_resolve: input.autoResolve ?? false,
     p_completion_type: input.completionType ?? "collective",
+    p_reminders: input.reminders ?? [],
+    p_track_on_grid: input.trackOnGrid ?? false,
+    p_pinned: input.pinned ?? false,
+    p_rollover_missed_days: input.rolloverMissedDays ?? false,
+    p_rollover_change_rhythm: input.rolloverChangeRhythm ?? false,
   });
   if (error) return { error: error.message };
 
@@ -1163,6 +1193,11 @@ function parseCommunityActivityForm(formData: FormData):
       endDate: string | null;
       autoResolve: boolean;
       completionType: "collective" | "aggregate";
+      reminders: Array<{ days: number; hours: number; minutes: number }>;
+      trackOnGrid: boolean;
+      pinned: boolean;
+      rolloverMissedDays: boolean;
+      rolloverChangeRhythm: boolean;
     }
   | { error: string } {
   const name = String(formData.get("name") ?? "").trim();
@@ -1184,6 +1219,31 @@ function parseCommunityActivityForm(formData: FormData):
     String(formData.get("completionType")) === "aggregate"
       ? "aggregate"
       : "collective";
+  const trackOnGrid = String(formData.get("trackOnGrid")) === "true";
+  const pinned = String(formData.get("pinned")) === "true";
+  const rolloverMissedDays =
+    String(formData.get("rolloverMissedDays")) === "true";
+  const rolloverChangeRhythm =
+    String(formData.get("rolloverChangeRhythm")) === "true";
+
+  // Reminders: zip the parallel reminderDays/Hours/Minutes arrays (same
+  // field names the shared RemindersField emits), clamped + capped at 10.
+  const rDays = formData.getAll("reminderDays");
+  const rHours = formData.getAll("reminderHours");
+  const rMins = formData.getAll("reminderMinutes");
+  const rn = Math.min(rDays.length, rHours.length, rMins.length, 10);
+  const clampR = (v: FormDataEntryValue, max: number) => {
+    const n = parseInt(String(v), 10);
+    return Number.isFinite(n) ? Math.min(Math.max(n, 0), max) : 0;
+  };
+  const reminders: Array<{ days: number; hours: number; minutes: number }> = [];
+  for (let i = 0; i < rn; i++) {
+    reminders.push({
+      days: clampR(rDays[i], 30),
+      hours: clampR(rHours[i], 23),
+      minutes: clampR(rMins[i], 59),
+    });
+  }
 
   // Times of day: zip parallel scheduledTime / scheduledEndTime arrays,
   // dropping blank starts and keeping ends aligned by index.
@@ -1265,6 +1325,11 @@ function parseCommunityActivityForm(formData: FormData):
     endDate,
     autoResolve,
     completionType,
+    reminders,
+    trackOnGrid,
+    pinned,
+    rolloverMissedDays,
+    rolloverChangeRhythm,
   };
 }
 

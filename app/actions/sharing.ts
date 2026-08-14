@@ -243,6 +243,14 @@ export type SharedActivity = {
    *  community-owned activities populate this; undefined reads as
    *  'collective'. */
   completionType?: "collective" | "aggregate";
+  /** Migration 0062 — community-owned full-option parity with personal.
+   *  Only community-owned activities populate these (friend shares omit
+   *  them); they round-trip the community add/edit form. */
+  reminders?: Array<{ days: number; hours: number; minutes: number }>;
+  trackOnGrid?: boolean;
+  pinned?: boolean;
+  rolloverMissedDays?: boolean;
+  rolloverChangeRhythm?: boolean;
 };
 
 // getSharedWithMe — every rhythm shared WITH the caller, via the

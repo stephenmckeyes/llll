@@ -629,12 +629,16 @@ function ActivityFormModal({
     default_skill_tags: existing?.defaultSkillTags ?? [],
     start_date: existing?.startDate ?? todayStr,
     end_date: existing?.endDate ?? null,
-    reminders: [],
-    track_on_grid: false,
-    rollover_missed_days: false,
-    rollover_change_rhythm: false,
+    // ActivityFormInitial.reminders is legacy-typed {amount,unit}[]; real
+    // data (and RemindersField) use {days,hours,minutes}, coerced by
+    // normalizeReminder. Cast through unknown at the boundary.
+    reminders: (existing?.reminders ??
+      []) as unknown as ActivityFormInitial["reminders"],
+    track_on_grid: existing?.trackOnGrid ?? false,
+    rollover_missed_days: existing?.rolloverMissedDays ?? false,
+    rollover_change_rhythm: existing?.rolloverChangeRhythm ?? false,
     auto_archive: false,
-    pinned: false,
+    pinned: existing?.pinned ?? false,
     auto_resolve: existing?.autoResolve ?? false,
   };
 
@@ -657,14 +661,13 @@ function ActivityFormModal({
           {existing ? "Edit activity" : "Add activity"}
         </h2>
 
+        {/* Full option parity with the personal add/edit form: Streaks,
+            Pinned, Rollover, Reminders all show (Priority stays hidden by
+            the compact density, matching the personal compact form) — plus
+            the community-only completion-type toggle. */}
         <ActivityFormFields
           initialValues={initialValues}
           tagMap={tagMap}
-          showPriority={false}
-          showStreaks={false}
-          showPinned={false}
-          showReminders={false}
-          showRollover={false}
           showCompletionType
           initialCompletionType={existing?.completionType ?? "collective"}
         />
