@@ -17,6 +17,8 @@ import { useRouter } from "next/navigation";
 import {
   archiveCommunityCalendarActivity,
   createCommunityCalendarActivity,
+  deleteCommunityCalendarActivity,
+  restoreCommunityCalendarActivity,
   setCommunityInstanceStatus,
   updateCommunityCalendarActivity,
   type CommunityActivityBundle,
@@ -49,6 +51,7 @@ export function CommunityOwnedCalendar({
   const [view, setView] = useState<CalView>("calendar");
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<SharedActivity | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
   const [picked, setPicked] = useState<{
     instanceId: string;
     name: string;
@@ -189,6 +192,44 @@ export function CommunityOwnedCalendar({
               </li>
             ))}
           </ul>
+
+          {bundle.archivedActivities.length > 0 && (
+            <div className="mt-1 flex flex-col gap-1.5">
+              <button
+                type="button"
+                onClick={() => setShowArchived((v) => !v)}
+                className="self-start text-xs font-medium text-zinc-500 hover:underline"
+              >
+                {showArchived ? "Hide" : "Show"} archived (
+                {bundle.archivedActivities.length})
+              </button>
+              {showArchived && (
+                <ul className="flex flex-col gap-1.5">
+                  {bundle.archivedActivities.map((a) => (
+                    <li
+                      key={a.activityId}
+                      className="flex items-center justify-between gap-2 rounded-md border border-dashed border-zinc-300 px-3 py-1.5 dark:border-zinc-700"
+                    >
+                      <span className="min-w-0 truncate text-sm text-zinc-500">
+                        {a.name}
+                      </span>
+                      <div className="flex shrink-0 gap-1">
+                        <RestoreButton
+                          activityId={a.activityId}
+                          onDone={() => router.refresh()}
+                        />
+                        <DeleteButton
+                          activityId={a.activityId}
+                          name={a.name}
+                          onDone={() => router.refresh()}
+                        />
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -263,6 +304,66 @@ function ArchiveButton({
       className="rounded-md border border-red-300 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
     >
       Archive
+    </button>
+  );
+}
+
+function RestoreButton({
+  activityId,
+  onDone,
+}: {
+  activityId: string;
+  onDone: () => void;
+}) {
+  const [isPending, startTransition] = useTransition();
+  return (
+    <button
+      type="button"
+      disabled={isPending}
+      onClick={() =>
+        startTransition(async () => {
+          const res = await restoreCommunityCalendarActivity(activityId);
+          if (!("error" in res)) onDone();
+        })
+      }
+      className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+    >
+      Restore
+    </button>
+  );
+}
+
+function DeleteButton({
+  activityId,
+  name,
+  onDone,
+}: {
+  activityId: string;
+  name: string;
+  onDone: () => void;
+}) {
+  const [isPending, startTransition] = useTransition();
+  function del() {
+    if (
+      !window.confirm(
+        `Permanently delete "${name}"? This removes it and all its history for the community and can't be undone.`
+      )
+    ) {
+      return;
+    }
+    startTransition(async () => {
+      const res = await deleteCommunityCalendarActivity(activityId);
+      if (!("error" in res)) onDone();
+    });
+  }
+  return (
+    <button
+      type="button"
+      onClick={del}
+      disabled={isPending}
+      className="rounded-md border border-red-300 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
+    >
+      Delete
     </button>
   );
 }

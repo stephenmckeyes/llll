@@ -259,15 +259,20 @@ occurrence) and **ranks-gated management** (adding/editing gated by
   is now a create/edit `ActivityFormModal` (prefilled from the existing
   activity); a leadership-only "Manage activities" list under the calendar
   with Edit + Archive (archive reuses `archiveCommunityCalendarActivity`).
+- ✅ Phase 3b (archived view): migration 0058 adds
+  restore_community_activity + delete_community_activity (both
+  can_add_activities-gated; delete cascades occurrences). The bundle now
+  carries archivedActivities; the "Manage activities" list has a
+  "Show archived (N)" toggle with Restore + permanent Delete (confirm)
+  per archived activity — mirrors the personal "delete only from
+  Archived" rule.
 - STILL TODO: full parity with the personal Add-Activity form (the form is
   a focused subset — no multi-daily modifier, priority, pinned, reminders,
   rollover, form-type); inline completion in the Day list (currently
   tap-opens-modal, not inline Complete/Missed buttons like the dashboard);
-  an Archived view + permanent delete (archive works but archived
-  activities aren't listed/restorable yet); Year-view name banners; and
-  per-viewer streak/stats in the community Grid (currently streakMode
-  "none"). Also decide whether to fully delete the now-dead
-  member-share/copy/auto-add backend.
+  Year-view name banners; and per-viewer streak/stats in the community
+  Grid (currently streakMode "none"). Also decide whether to fully delete
+  the now-dead member-share/copy/auto-add backend.
 
 **Community chat (phase 7).** Every community gets a group chat, distinct
 from the 1:1 friend DMs (`messages` table + `ChatThread`). Reuse that

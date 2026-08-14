@@ -876,6 +876,8 @@ export type CommunityActivityBundle = {
    *  SharedActivity/SharedInstance shape so the calendar renders them. */
   ownedActivities: SharedActivity[];
   ownedInstances: SharedInstance[];
+  /** Archived community-owned activities (for the manage/archived list). */
+  archivedActivities: SharedActivity[];
   tagMap: TagMap;
   /** Caller's "today" in their own timezone (anchors the calendar). */
   todayStr: string;
@@ -922,6 +924,7 @@ export async function getCommunityActivityBundle(
   return {
     ownedActivities: owned.activities,
     ownedInstances: owned.instances,
+    archivedActivities: owned.archived,
     tagMap,
     todayStr,
   };
@@ -980,7 +983,11 @@ async function getCommunityOwnedBundle(
   communityId: string,
   from: string,
   to: string
-): Promise<{ activities: SharedActivity[]; instances: SharedInstance[] }> {
+): Promise<{
+  activities: SharedActivity[];
+  instances: SharedInstance[];
+  archived: SharedActivity[];
+}> {
   const supabase = await createClient();
 
   const { data: actRows } = await supabase
@@ -989,11 +996,14 @@ async function getCommunityOwnedBundle(
       "id, community_id, name, notes, rhythm, scheduled_times, scheduled_end_times, priority, default_skill_tags, start_date, end_date, created_at, archived_at"
     )
     .eq("community_id", communityId)
-    .is("archived_at", null)
     .order("name", { ascending: true });
-  const acts = (actRows ?? []) as OwnedActivityRow[];
+  const allActs = (actRows ?? []) as OwnedActivityRow[];
+  const acts = allActs.filter((a) => a.archived_at === null);
+  const archived = allActs
+    .filter((a) => a.archived_at !== null)
+    .map(mapOwnedActivity);
   const activities = acts.map(mapOwnedActivity);
-  if (activities.length === 0) return { activities: [], instances: [] };
+  if (activities.length === 0) return { activities: [], instances: [], archived };
 
   const activeIds = new Set(acts.map((a) => a.id));
   const { data: instRows } = await supabase
@@ -1023,7 +1033,7 @@ async function getCommunityOwnedBundle(
       completionDates: [],
       comment: i.comment,
     }));
-  return { activities, instances };
+  return { activities, instances, archived };
 }
 
 // backfillCommunityCalendar — extend each owned activity's occurrences up to
@@ -1229,6 +1239,75 @@ export async function archiveCommunityCalendarActivity(
   if (!user) redirect("/login");
 
   const { error } = await supabase.rpc("archive_community_activity", {
+    p_activity_id: activityId,
+  });
+  if (error) return { error: error.message };
+  revalidateCommunityPaths();
+  return { ok: true };
+}
+
+// restoreCommunityCalendarActivity — un-archive + re-materialize occurrences.
+export async function restoreCommunityCalendarActivity(
+  activityId: string
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase.rpc("restore_community_activity", {
+    p_activity_id: activityId,
+  });
+  if (error) return { error: error.message };
+
+  // Rebuild future occurrences for the restored activity.
+  const { data: row } = await supabase
+    .from("community_owned_activities")
+    .select("rhythm, start_date, end_date")
+    .eq("id", activityId)
+    .maybeSingle();
+  const a = row as {
+    rhythm: Rhythm;
+    start_date: string;
+    end_date: string | null;
+  } | null;
+  if (a) {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const from = a.start_date > todayStr ? a.start_date : todayStr;
+    const horizon = shiftYmd(todayStr, COMMUNITY_OWNED_HORIZON_DAYS);
+    const to = a.end_date && a.end_date < horizon ? a.end_date : horizon;
+    if (from <= to) {
+      try {
+        const dates = generateInstances(a.rhythm, { from, to }).map(
+          (i) => i.scheduledFor
+        );
+        if (dates.length > 0) {
+          await supabase.rpc("insert_community_instances", {
+            p_activity_id: activityId,
+            p_dates: dates,
+          });
+        }
+      } catch {
+        /* tops up on next view */
+      }
+    }
+  }
+  revalidateCommunityPaths();
+  return { ok: true };
+}
+
+// deleteCommunityCalendarActivity — permanently delete (Archived only in UI).
+export async function deleteCommunityCalendarActivity(
+  activityId: string
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase.rpc("delete_community_activity", {
     p_activity_id: activityId,
   });
   if (error) return { error: error.message };
