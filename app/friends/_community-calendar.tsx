@@ -117,13 +117,12 @@ export function CommunityOwnedCalendar({
         )}
       </div>
 
-      {bundle.ownedActivities.length === 0 ? (
-        <p className="shrink-0 rounded-md border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700">
-          {canManage
-            ? "No activities yet — add one to build this community's calendar."
-            : "No activities yet."}
-        </p>
-      ) : (
+      {/* Always render the calendar shell — even with zero activities it
+          shows the empty Day/Week/Month/Year (and Grid) exactly like the
+          personal calendar, so every community calendar looks identical
+          regardless of content. The "+ Add activity" CTA lives in the
+          header for members who can manage. */}
+      {
         <>
           {view === "calendar" ? (
             <FriendCalendar
@@ -190,7 +189,7 @@ export function CommunityOwnedCalendar({
             ))}
           </nav>
         </>
-      )}
+      }
 
       {manageOpen && (
         <ManageActivitiesModal
