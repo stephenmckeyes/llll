@@ -142,31 +142,6 @@ export function FriendGrid({
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Range sub-tabs (Week / Month / Total / Custom) */}
-      <nav className="flex gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800">
-        {(
-          [
-            ["week", "Week"],
-            ["month", "Month"],
-            ["total", "Total"],
-            ["custom", "Custom"],
-          ] as const
-        ).map(([val, label]) => (
-          <button
-            key={val}
-            type="button"
-            onClick={() => setRange(val)}
-            className={`flex flex-1 items-center justify-center rounded px-3 py-0.5 text-center text-xs font-medium transition-colors ${
-              range === val
-                ? "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
-                : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </nav>
-
       {/* Navigator: prev / next / today for week+month; two date inputs for
           custom; total has no nav. Plus the tag filter. */}
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -271,6 +246,32 @@ export function FriendGrid({
         showStats={showStats}
         statsAccuracy={statsAccuracy}
       />
+
+      {/* Range sub-tabs pinned at the BOTTOM (reversed), matching the
+          personal dashboard's bottom-anchored Grid range switcher. */}
+      <nav className="flex flex-row-reverse gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800">
+        {(
+          [
+            ["week", "Week"],
+            ["month", "Month"],
+            ["total", "Total"],
+            ["custom", "Custom"],
+          ] as const
+        ).map(([val, label]) => (
+          <button
+            key={val}
+            type="button"
+            onClick={() => setRange(val)}
+            className={`flex flex-1 items-center justify-center rounded px-3 py-0.5 text-center text-xs font-medium transition-colors ${
+              range === val
+                ? "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
+                : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
     </div>
   );
 }

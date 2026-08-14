@@ -113,28 +113,6 @@ export function CommunityOwnedCalendar({
         </p>
       ) : (
         <>
-          <nav className="flex gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800">
-            {(
-              [
-                ["calendar", "Calendar"],
-                ["grid", "Grid"],
-              ] as const
-            ).map(([val, label]) => (
-              <button
-                key={val}
-                type="button"
-                onClick={() => setView(val)}
-                className={`flex flex-1 items-center justify-center rounded px-3 py-0.5 text-center text-xs font-medium transition-colors ${
-                  view === val
-                    ? "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
-                    : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </nav>
-
           {view === "calendar" ? (
             <FriendCalendar
               shares={bundle.ownedActivities}
@@ -171,6 +149,31 @@ export function CommunityOwnedCalendar({
               statsAccuracy={false}
             />
           )}
+
+          {/* Calendar / Grid switcher pinned at the BOTTOM (reversed
+              left-to-right), matching the personal dashboard's section
+              tabs sitting below the sub-tabs. */}
+          <nav className="flex flex-row-reverse gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800">
+            {(
+              [
+                ["calendar", "Calendar"],
+                ["grid", "Grid"],
+              ] as const
+            ).map(([val, label]) => (
+              <button
+                key={val}
+                type="button"
+                onClick={() => setView(val)}
+                className={`flex flex-1 items-center justify-center rounded px-3 py-0.5 text-center text-xs font-medium transition-colors ${
+                  view === val
+                    ? "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
+                    : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
         </>
       )}
 

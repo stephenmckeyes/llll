@@ -55,6 +55,7 @@ export function FriendCalendar({
   onOpenActivity,
   loadYearCounts,
   collective,
+  fillHeight = false,
 }: {
   shares: SharedActivity[];
   instances: SharedInstance[];
@@ -68,6 +69,10 @@ export function FriendCalendar({
   /** Collective-completion handlers (community calendar). When set, the Day
    *  sub-view renders inline Complete/Missed wired to these. */
   collective?: CollectiveHandlers;
+  /** App-shell mode: fill the bounded parent so the header/sub-tabs pin
+   *  and only the calendar body scrolls (Day list gets fillHeight).
+   *  Default false keeps the friend view's natural-height layout. */
+  fillHeight?: boolean;
 }) {
   const [sub, setSub] = useState<Sub>("day");
   const [refDate, setRefDate] = useState<string>(todayStr);
@@ -112,41 +117,11 @@ export function FriendCalendar({
   };
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-2">
-        <nav className="flex flex-1 gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800">
-          {(
-            [
-              ["day", "Day"],
-              ["week", "Week"],
-              ["month", "Month"],
-              ["year", "Year"],
-            ] as const
-          ).map(([val, label]) => (
-            <button
-              key={val}
-              type="button"
-              onClick={() => setSub(val)}
-              className={`flex flex-1 items-center justify-center rounded px-3 py-0.5 text-center text-xs font-medium transition-colors ${
-                sub === val
-                  ? "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
-                  : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </nav>
-        {/* Unlabeled chip — same styling as the personal view. Clicking
-            jumps into THIS friend's Day sub-view at their oldest past-
-            due date. On the Day sub-view the DayList renders its own
-            chip inside its date navigator, so skip this outer copy to
-            avoid the duplicate. */}
-        {sub !== "day" && (
-          <IncompleteButton info={incompleteInfo} onJump={jumpToDay} />
-        )}
-      </div>
-
+    <div
+      className={`flex flex-col gap-3 ${
+        fillHeight ? "min-h-0 flex-1" : ""
+      }`}
+    >
       {sub === "day" && (
         <DashboardDayList
           initialDate={refDate}
@@ -157,6 +132,7 @@ export function FriendCalendar({
           incompleteInfo={incompleteInfo}
           tagMap={tagMap}
           readOnly
+          fillHeight={fillHeight}
           collective={collective}
           onReadOnlyOpen={(inst) =>
             onOpenActivity(inst.activity.id, {
@@ -207,6 +183,39 @@ export function FriendCalendar({
           }}
         />
       )}
+
+      {/* Sub-tabs pinned at the BOTTOM (shrink-0), reversed left-to-right,
+          matching the personal dashboard's bottom-anchored view switcher.
+          The Unlabeled chip rides on the same row (skipped on Day, where
+          the DayList renders its own inside the date navigator). */}
+      <div className="mt-auto flex shrink-0 items-center gap-2 pt-1">
+        <nav className="flex flex-1 flex-row-reverse gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800">
+          {(
+            [
+              ["day", "Day"],
+              ["week", "Week"],
+              ["month", "Month"],
+              ["year", "Year"],
+            ] as const
+          ).map(([val, label]) => (
+            <button
+              key={val}
+              type="button"
+              onClick={() => setSub(val)}
+              className={`flex flex-1 items-center justify-center rounded px-3 py-0.5 text-center text-xs font-medium transition-colors ${
+                sub === val
+                  ? "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
+                  : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
+        {sub !== "day" && (
+          <IncompleteButton info={incompleteInfo} onJump={jumpToDay} />
+        )}
+      </div>
     </div>
   );
 }
