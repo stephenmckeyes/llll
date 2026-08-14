@@ -15,14 +15,21 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import {
+  archiveCommunityCalendarActivity,
   createCommunityCalendarActivity,
   setCommunityInstanceStatus,
+  updateCommunityCalendarActivity,
   type CommunityActivityBundle,
   type CommunityDetail,
 } from "@/app/actions/communities";
-import type { SharedInstance } from "@/app/actions/sharing";
+import type { SharedActivity, SharedInstance } from "@/app/actions/sharing";
+import { summarizeRhythm } from "@/lib/domain/rhythm-summary";
 import { useBodyScrollLock } from "@/lib/ui/body-scroll-lock";
-import type { DayOfWeek, Rhythm } from "@/lib/validators/rhythm";
+import {
+  normalizeFrequencyPeriod,
+  type DayOfWeek,
+  type Rhythm,
+} from "@/lib/validators/rhythm";
 
 import { FriendCalendar } from "./[friendId]/friend-calendar";
 import { FriendGrid } from "./[friendId]/friend-grid";
@@ -41,6 +48,7 @@ export function CommunityOwnedCalendar({
   const canManage = detail.myPermissions.can_add_activities;
   const [view, setView] = useState<CalView>("calendar");
   const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<SharedActivity | null>(null);
   const [picked, setPicked] = useState<{
     instanceId: string;
     name: string;
@@ -147,6 +155,43 @@ export function CommunityOwnedCalendar({
         </>
       )}
 
+      {canManage && bundle.ownedActivities.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+            Manage activities
+          </p>
+          <ul className="flex flex-col gap-1.5">
+            {bundle.ownedActivities.map((a) => (
+              <li
+                key={a.activityId}
+                className="flex items-center justify-between gap-2 rounded-md border border-zinc-200 px-3 py-1.5 dark:border-zinc-800"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{a.name}</p>
+                  <p className="truncate text-xs text-zinc-500">
+                    {summarizeRhythm(a.rhythm, a.scheduledTimes)}
+                  </p>
+                </div>
+                <div className="flex shrink-0 gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setEditing(a)}
+                    className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                  >
+                    Edit
+                  </button>
+                  <ArchiveButton
+                    activityId={a.activityId}
+                    name={a.name}
+                    onDone={() => router.refresh()}
+                  />
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {picked && (
         <CompletionModal
           instanceId={picked.instanceId}
@@ -161,18 +206,64 @@ export function CommunityOwnedCalendar({
         />
       )}
 
-      {creating && (
-        <CreateCommunityActivityModal
+      {(creating || editing) && (
+        <ActivityFormModal
           communityId={detail.id}
           todayStr={bundle.todayStr}
-          onClose={() => setCreating(false)}
-          onCreated={() => {
+          existing={editing}
+          onClose={() => {
             setCreating(false);
+            setEditing(null);
+          }}
+          onSaved={() => {
+            setCreating(false);
+            setEditing(null);
             router.refresh();
           }}
         />
       )}
     </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ArchiveButton — soft-delete a community-owned activity (with a confirm).
+// ---------------------------------------------------------------------------
+
+function ArchiveButton({
+  activityId,
+  name,
+  onDone,
+}: {
+  activityId: string;
+  name: string;
+  onDone: () => void;
+}) {
+  const [isPending, startTransition] = useTransition();
+
+  function archive() {
+    if (
+      !window.confirm(
+        `Archive "${name}"? It will be removed from the community calendar.`
+      )
+    ) {
+      return;
+    }
+    startTransition(async () => {
+      const res = await archiveCommunityCalendarActivity(activityId);
+      if (!("error" in res)) onDone();
+    });
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={archive}
+      disabled={isPending}
+      className="rounded-md border border-red-300 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
+    >
+      Archive
+    </button>
   );
 }
 
@@ -304,35 +395,80 @@ const WEEKDAYS: { key: DayOfWeek; label: string }[] = [
   { key: "sun", label: "Sun" },
 ];
 
-function CreateCommunityActivityModal({
+function deriveInitial(existing?: SharedActivity | null): {
+  rhythmType: RhythmType;
+  days: DayOfWeek[];
+  intervalDays: number;
+  freqCount: number;
+  freqPerCount: number;
+  freqPerUnit: "days" | "weeks" | "months";
+} {
+  const base = {
+    rhythmType: "daily" as RhythmType,
+    days: [] as DayOfWeek[],
+    intervalDays: 2,
+    freqCount: 3,
+    freqPerCount: 1,
+    freqPerUnit: "weeks" as "days" | "weeks" | "months",
+  };
+  const r = existing?.rhythm;
+  if (!r) return base;
+  switch (r.type) {
+    case "single":
+      return { ...base, rhythmType: "single" };
+    case "daily":
+      return { ...base, rhythmType: "daily" };
+    case "weekdays":
+      return { ...base, rhythmType: "weekdays", days: r.days };
+    case "interval":
+      return { ...base, rhythmType: "interval", intervalDays: r.days };
+    case "frequency": {
+      const { perCount, perUnit } = normalizeFrequencyPeriod(r);
+      return {
+        ...base,
+        rhythmType: "frequency",
+        freqCount: r.count,
+        freqPerCount: perCount,
+        freqPerUnit: perUnit,
+      };
+    }
+    default:
+      return base;
+  }
+}
+
+function ActivityFormModal({
   communityId,
   todayStr,
+  existing,
   onClose,
-  onCreated,
+  onSaved,
 }: {
   communityId: string;
   todayStr: string;
+  existing?: SharedActivity | null;
   onClose: () => void;
-  onCreated: () => void;
+  onSaved: () => void;
 }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   useBodyScrollLock();
 
-  const [name, setName] = useState("");
-  const [notes, setNotes] = useState("");
-  const [rhythmType, setRhythmType] = useState<RhythmType>("daily");
-  const [days, setDays] = useState<DayOfWeek[]>([]);
-  const [intervalDays, setIntervalDays] = useState(2);
-  const [freqCount, setFreqCount] = useState(3);
-  const [freqPerCount, setFreqPerCount] = useState(1);
+  const init = deriveInitial(existing);
+  const [name, setName] = useState(existing?.name ?? "");
+  const [notes, setNotes] = useState(existing?.notes ?? "");
+  const [rhythmType, setRhythmType] = useState<RhythmType>(init.rhythmType);
+  const [days, setDays] = useState<DayOfWeek[]>(init.days);
+  const [intervalDays, setIntervalDays] = useState(init.intervalDays);
+  const [freqCount, setFreqCount] = useState(init.freqCount);
+  const [freqPerCount, setFreqPerCount] = useState(init.freqPerCount);
   const [freqPerUnit, setFreqPerUnit] = useState<"days" | "weeks" | "months">(
-    "weeks"
+    init.freqPerUnit
   );
-  const [times, setTimes] = useState<string[]>([]);
-  const [tags, setTags] = useState("");
-  const [startDate, setStartDate] = useState(todayStr);
-  const [endDate, setEndDate] = useState("");
+  const [times, setTimes] = useState<string[]>(existing?.scheduledTimes ?? []);
+  const [tags, setTags] = useState((existing?.defaultSkillTags ?? []).join(", "));
+  const [startDate, setStartDate] = useState(existing?.startDate ?? todayStr);
+  const [endDate, setEndDate] = useState(existing?.endDate ?? "");
 
   function toggleDay(d: DayOfWeek) {
     setDays((cur) =>
@@ -380,18 +516,29 @@ function CreateCommunityActivityModal({
       .map((t) => t.trim())
       .filter(Boolean);
     startTransition(async () => {
-      const res = await createCommunityCalendarActivity({
-        communityId,
-        name,
-        notes: notes.trim() || undefined,
-        rhythm,
-        scheduledTimes: cleanTimes,
-        tags: tagList,
-        startDate,
-        endDate: endDate || null,
-      });
+      const res = existing
+        ? await updateCommunityCalendarActivity({
+            activityId: existing.activityId,
+            name,
+            notes: notes.trim() || undefined,
+            rhythm,
+            scheduledTimes: cleanTimes,
+            tags: tagList,
+            startDate,
+            endDate: endDate || null,
+          })
+        : await createCommunityCalendarActivity({
+            communityId,
+            name,
+            notes: notes.trim() || undefined,
+            rhythm,
+            scheduledTimes: cleanTimes,
+            tags: tagList,
+            startDate,
+            endDate: endDate || null,
+          });
       if ("error" in res) setError(res.error);
-      else onCreated();
+      else onSaved();
     });
   }
 
@@ -409,7 +556,9 @@ function CreateCommunityActivityModal({
         onClick={(e) => e.stopPropagation()}
         className="flex max-h-[92svh] w-full max-w-md flex-col gap-3 overflow-y-auto rounded-t-2xl bg-white p-5 shadow-xl dark:bg-zinc-950 sm:rounded-2xl"
       >
-        <h2 className="text-xl font-semibold tracking-tight">Add activity</h2>
+        <h2 className="text-xl font-semibold tracking-tight">
+          {existing ? "Edit activity" : "Add activity"}
+        </h2>
 
         <label className="flex flex-col gap-1">
           <span className="text-sm font-medium">Name</span>
@@ -612,7 +761,13 @@ function CreateCommunityActivityModal({
             disabled={isPending || name.trim().length === 0}
             className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
           >
-            {isPending ? "Adding…" : "Add activity"}
+            {isPending
+              ? existing
+                ? "Saving…"
+                : "Adding…"
+              : existing
+                ? "Save changes"
+                : "Add activity"}
           </button>
         </div>
       </div>

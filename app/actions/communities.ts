@@ -1131,6 +1131,73 @@ export async function createCommunityCalendarActivity(input: {
   return { ok: true, id: id as string };
 }
 
+// updateCommunityCalendarActivity — edit a community-owned activity. The RPC
+// clears future pending occurrences; we then re-materialize from today.
+export async function updateCommunityCalendarActivity(input: {
+  activityId: string;
+  name: string;
+  notes?: string;
+  rhythm: Rhythm;
+  scheduledTimes?: string[];
+  scheduledEndTimes?: string[];
+  priority?: number;
+  tags?: string[];
+  startDate: string;
+  endDate?: string | null;
+}): Promise<{ error: string } | { ok: true }> {
+  const name = input.name.trim();
+  if (name.length === 0 || name.length > 120) {
+    return { error: "Name must be 1–120 characters." };
+  }
+  const parsed = rhythmSchema.safeParse(input.rhythm);
+  if (!parsed.success) return { error: "Please pick a valid rhythm." };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase.rpc("update_community_activity", {
+    p_activity_id: input.activityId,
+    p_name: name,
+    p_notes: input.notes ?? null,
+    p_rhythm: parsed.data,
+    p_scheduled_times: input.scheduledTimes ?? [],
+    p_scheduled_end_times: input.scheduledEndTimes ?? [],
+    p_priority: input.priority ?? 2,
+    p_tags: input.tags ?? [],
+    p_start_date: input.startDate,
+    p_end_date: input.endDate ?? null,
+  });
+  if (error) return { error: error.message };
+
+  // Re-materialize from max(start, today) to the horizon (ON CONFLICT skips
+  // any surviving completed/missed history).
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const from = input.startDate > todayStr ? input.startDate : todayStr;
+  const horizon = shiftYmd(todayStr, COMMUNITY_OWNED_HORIZON_DAYS);
+  const to =
+    input.endDate && input.endDate < horizon ? input.endDate : horizon;
+  if (from <= to) {
+    try {
+      const dates = generateInstances(parsed.data, { from, to }).map(
+        (i) => i.scheduledFor
+      );
+      if (dates.length > 0) {
+        await supabase.rpc("insert_community_instances", {
+          p_activity_id: input.activityId,
+          p_dates: dates,
+        });
+      }
+    } catch {
+      // Non-fatal: occurrences top up on next view.
+    }
+  }
+  revalidateCommunityPaths();
+  return { ok: true };
+}
+
 // setCommunityInstanceStatus — collective completion; any member.
 export async function setCommunityInstanceStatus(
   instanceId: string,

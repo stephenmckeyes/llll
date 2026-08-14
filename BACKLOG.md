@@ -253,14 +253,21 @@ occurrence) and **ranks-gated management** (adding/editing gated by
   the collective Complete/Missed/Reset modal. The share/copy/auto-add
   server actions + tables still exist but are no longer surfaced (auto-add
   notifications are now vestigial — nothing triggers them).
-- STILL TODO: full parity with the personal Add-Activity form (the create
-  modal is a focused subset — no multi-daily modifier, priority, pinned,
-  reminders, rollover, form-type); inline completion in the Day list
-  (currently tap-opens-modal, not inline Complete/Missed buttons like the
-  dashboard); edit an existing community activity; an Archived view +
-  permanent delete; Year-view name banners; and per-viewer streak/stats in
-  the community Grid (currently streakMode "none"). Also decide whether to
-  fully delete the now-dead member-share/copy/auto-add backend.
+- ✅ Phase 3 (edit + archive): `update_community_activity` (migration 0057
+  — updates the row + clears future PENDING occurrences, caller
+  re-materializes) + `updateCommunityCalendarActivity`; the create modal
+  is now a create/edit `ActivityFormModal` (prefilled from the existing
+  activity); a leadership-only "Manage activities" list under the calendar
+  with Edit + Archive (archive reuses `archiveCommunityCalendarActivity`).
+- STILL TODO: full parity with the personal Add-Activity form (the form is
+  a focused subset — no multi-daily modifier, priority, pinned, reminders,
+  rollover, form-type); inline completion in the Day list (currently
+  tap-opens-modal, not inline Complete/Missed buttons like the dashboard);
+  an Archived view + permanent delete (archive works but archived
+  activities aren't listed/restorable yet); Year-view name banners; and
+  per-viewer streak/stats in the community Grid (currently streakMode
+  "none"). Also decide whether to fully delete the now-dead
+  member-share/copy/auto-add backend.
 
 **Community chat (phase 7).** Every community gets a group chat, distinct
 from the 1:1 friend DMs (`messages` table + `ChatThread`). Reuse that
