@@ -18,6 +18,7 @@ import {
   archiveCommunityCalendarActivity,
   createCommunityCalendarActivity,
   deleteCommunityCalendarActivity,
+  getCommunityYearCounts,
   restoreCommunityCalendarActivity,
   setCommunityInstanceStatus,
   updateCommunityCalendarActivity,
@@ -141,6 +142,9 @@ export function CommunityOwnedCalendar({
               todayStr={bundle.todayStr}
               tagMap={bundle.tagMap}
               onOpenActivity={onOpen}
+              loadYearCounts={(yearStart) =>
+                getCommunityYearCounts(detail.id, yearStart)
+              }
             />
           ) : (
             <FriendGrid

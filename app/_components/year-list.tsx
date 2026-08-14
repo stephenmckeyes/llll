@@ -16,14 +16,6 @@
 // <script>, same useLayoutEffect + retry loop, same URL sync.
 // ---------------------------------------------------------------------------
 
-import {
-  addDays,
-  addYears,
-  endOfMonth,
-  format,
-  startOfWeek,
-} from "date-fns";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   useCallback,
@@ -40,6 +32,7 @@ import {
 } from "@/app/actions/calendar-fetch";
 
 import { IncompleteButton, type IncompleteInfo } from "./incomplete-button";
+import { YearMiniMonths } from "./year-mini-months";
 
 const YEAR_WINDOW_BACK = 12;
 const YEAR_WINDOW_AHEAD = 12;
@@ -420,11 +413,6 @@ function YearSection({
   counts: YearCountsByDate | undefined;
   todayStr: string;
 }) {
-  const months = Array.from({ length: 12 }, (_, m) => ({
-    monthIndex: m,
-    monthStart: new Date(entry.year, m, 1),
-  }));
-
   const isLoaded = counts !== undefined;
 
   return (
@@ -441,79 +429,13 @@ function YearSection({
           </span>
         )}
       </h2>
-      <div className="grid grid-cols-3 gap-4">
-        {months.map((m) => (
-          <MiniMonth
-            key={m.monthIndex}
-            monthStart={m.monthStart}
-            byDate={counts ?? {}}
-            todayStr={todayStr}
-          />
-        ))}
-      </div>
+      <YearMiniMonths
+        year={entry.year}
+        countsByDate={counts ?? {}}
+        todayStr={todayStr}
+        monthHref={(monthDateStr) => `/?view=month&date=${monthDateStr}`}
+      />
     </section>
-  );
-}
-
-function MiniMonth({
-  monthStart,
-  byDate,
-  todayStr,
-}: {
-  monthStart: Date;
-  byDate: YearCountsByDate;
-  todayStr: string;
-}) {
-  const monthEnd = endOfMonth(monthStart);
-  const gridStart = startOfWeek(monthStart, { weekStartsOn: 1 });
-  const monthDateStr = format(monthStart, "yyyy-MM-dd");
-  const monthLabel = monthStart.toLocaleString(undefined, { month: "long" });
-
-  const cells = Array.from({ length: 42 }, (_, i) => {
-    const date = addDays(gridStart, i);
-    const dateStr = format(date, "yyyy-MM-dd");
-    const inMonth = date >= monthStart && date <= monthEnd;
-    const c = byDate[dateStr] ?? { pending: 0, completed: 0 };
-    return {
-      date,
-      dateStr,
-      inMonth,
-      isToday: dateStr === todayStr,
-      hasActivity: inMonth && (c.pending > 0 || c.completed > 0),
-    };
-  });
-
-  return (
-    <Link
-      href={`/?view=month&date=${monthDateStr}`}
-      className="flex flex-col gap-1.5 rounded-md border border-zinc-200 p-2 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900"
-    >
-      <h3 className="text-center text-xs font-medium">{monthLabel}</h3>
-      <div className="grid grid-cols-7 gap-px">
-        {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
-          <div
-            key={i}
-            className="text-center text-[8px] font-medium text-zinc-400"
-          >
-            {d}
-          </div>
-        ))}
-        {cells.map((c) => (
-          <div
-            key={c.dateStr}
-            className={`flex aspect-square items-center justify-center rounded text-[8px] ${
-              !c.inMonth
-                ? "text-zinc-200 dark:text-zinc-800"
-                : c.hasActivity
-                  ? "bg-zinc-900 font-semibold text-white dark:bg-zinc-50 dark:text-zinc-900"
-                  : "text-zinc-600 dark:text-zinc-400"
-            } ${c.isToday ? "ring-1 ring-zinc-900 dark:ring-zinc-50" : ""}`}
-          >
-            {c.inMonth ? c.date.getDate() : ""}
-          </div>
-        ))}
-      </div>
-    </Link>
   );
 }
 

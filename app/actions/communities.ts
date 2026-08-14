@@ -22,6 +22,7 @@ import {
   type CommunityRank,
   type CommunityVisibility,
 } from "@/lib/domain/community";
+import type { YearCountsByDate } from "@/app/actions/calendar-fetch";
 import type { SharedActivity, SharedInstance } from "@/app/actions/sharing";
 import { generateInstances } from "@/lib/domain/rhythms";
 import { rhythmSchema, type Rhythm } from "@/lib/validators/rhythm";
@@ -1034,6 +1035,50 @@ async function getCommunityOwnedBundle(
       comment: i.comment,
     }));
   return { activities, instances, archived };
+}
+
+// getCommunityYearCounts — per-day {pending, completed} for one year of the
+// community's OWN occurrences (for the rich mini-month Year view). Members
+// only (RLS). Archived activities excluded.
+export async function getCommunityYearCounts(
+  communityId: string,
+  yearStart: string
+): Promise<YearCountsByDate> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const year = yearStart.slice(0, 4);
+  const { data: actRows } = await supabase
+    .from("community_owned_activities")
+    .select("id")
+    .eq("community_id", communityId)
+    .is("archived_at", null);
+  const ids = new Set(((actRows ?? []) as Array<{ id: string }>).map((a) => a.id));
+  if (ids.size === 0) return {};
+
+  const { data: instRows } = await supabase
+    .from("community_owned_instances")
+    .select("scheduled_for, status, activity_id")
+    .eq("community_id", communityId)
+    .gte("scheduled_for", `${year}-01-01`)
+    .lte("scheduled_for", `${year}-12-31`);
+
+  const result: YearCountsByDate = {};
+  for (const r of (instRows ?? []) as Array<{
+    scheduled_for: string;
+    status: string;
+    activity_id: string;
+  }>) {
+    if (!ids.has(r.activity_id)) continue;
+    const cur = result[r.scheduled_for] ?? { pending: 0, completed: 0 };
+    if (r.status === "completed") cur.completed += 1;
+    else cur.pending += 1;
+    result[r.scheduled_for] = cur;
+  }
+  return result;
 }
 
 // backfillCommunityCalendar — extend each owned activity's occurrences up to

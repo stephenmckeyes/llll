@@ -17,8 +17,9 @@ import {
   startOfMonth,
   startOfWeek,
 } from "date-fns";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
+import type { YearCountsByDate } from "@/app/actions/calendar-fetch";
 import type { SharedActivity, SharedInstance } from "@/app/actions/sharing";
 import { DayList as DashboardDayList } from "@/app/_components/day-list";
 import { IncompleteButton } from "@/app/_components/incomplete-button";
@@ -30,6 +31,7 @@ import {
 } from "@/app/_components/month-cell";
 import { SwipeNav } from "@/app/_components/swipe-nav";
 import { WeekBannerPill } from "@/app/_components/week-banner";
+import { YearMiniMonths } from "@/app/_components/year-mini-months";
 import {
   isPastDuePending,
   unlabeledLandingDay,
@@ -50,6 +52,7 @@ export function FriendCalendar({
   todayStr,
   tagMap,
   onOpenActivity,
+  loadYearCounts,
 }: {
   shares: SharedActivity[];
   instances: SharedInstance[];
@@ -57,6 +60,9 @@ export function FriendCalendar({
   tagMap: TagMap;
   /** Open the read-only detail for a specific occurrence (date + status). */
   onOpenActivity: (activityId: string, occurrence: Occurrence | null) => void;
+  /** Optional full-year per-day counts loader for the rich Year view. When
+   *  absent, Year is computed from the loaded `instances` window. */
+  loadYearCounts?: (yearStart: string) => Promise<YearCountsByDate>;
 }) {
   const [sub, setSub] = useState<Sub>("day");
   const [refDate, setRefDate] = useState<string>(todayStr);
@@ -185,8 +191,14 @@ export function FriendCalendar({
       {sub === "year" && (
         <YearGrid
           instances={instances}
+          todayStr={todayStr}
           refDate={refDate}
           setRefDate={setRefDate}
+          loadYearCounts={loadYearCounts}
+          onMonthClick={(monthDateStr) => {
+            setRefDate(monthDateStr);
+            setSub("month");
+          }}
         />
       )}
     </div>
@@ -438,25 +450,55 @@ function MonthGrid({
 
 function YearGrid({
   instances,
+  todayStr,
   refDate,
   setRefDate,
+  loadYearCounts,
+  onMonthClick,
 }: {
   instances: SharedInstance[];
+  todayStr: string;
   refDate: string;
   setRefDate: (s: string) => void;
+  loadYearCounts?: (yearStart: string) => Promise<YearCountsByDate>;
+  onMonthClick: (monthDateStr: string) => void;
 }) {
   const ref = parseYmd(refDate);
   const year = ref.getFullYear();
-  const countByMonth = useMemo(() => {
-    const arr = new Array(12).fill(0) as number[];
+  const yearStart = `${year}-01-01`;
+
+  // Fallback: per-day counts from the loaded instance window (used when no
+  // full-year loader is supplied, e.g. the friend view).
+  const fallbackCounts = useMemo(() => {
+    const m: YearCountsByDate = {};
     for (const i of instances) {
-      const [y, m] = i.scheduledFor.split("-").map(Number);
-      if (y === year) arr[m - 1] += 1;
+      if (Number(i.scheduledFor.slice(0, 4)) !== year) continue;
+      const cur = m[i.scheduledFor] ?? { pending: 0, completed: 0 };
+      if (i.status === "completed") cur.completed += 1;
+      else cur.pending += 1;
+      m[i.scheduledFor] = cur;
     }
-    return arr;
+    return m;
   }, [instances, year]);
 
-  const max = Math.max(1, ...countByMonth);
+  // Full-year counts loaded on demand (community calendar).
+  const [loaded, setLoaded] = useState<Record<string, YearCountsByDate>>({});
+  useEffect(() => {
+    if (!loadYearCounts || loaded[yearStart]) return;
+    let alive = true;
+    loadYearCounts(yearStart)
+      .then((c) => {
+        if (alive) setLoaded((prev) => ({ ...prev, [yearStart]: c }));
+      })
+      .catch(() => {
+        /* fall back to window counts */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [loadYearCounts, yearStart, loaded]);
+
+  const counts = loadYearCounts ? loaded[yearStart] ?? {} : fallbackCounts;
 
   return (
     <div className="flex flex-col gap-3">
@@ -466,30 +508,12 @@ function YearGrid({
         onNext={() => setRefDate(format(addYears(ref, 1), "yyyy-MM-dd"))}
         onToday={() => setRefDate(format(new Date(), "yyyy-MM-dd"))}
       />
-      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-        {countByMonth.map((count, i) => {
-          const intensity = count === 0 ? 0 : Math.ceil((count / max) * 3);
-          const bg =
-            intensity === 0
-              ? "bg-zinc-100 dark:bg-zinc-900"
-              : intensity === 1
-                ? "bg-emerald-200 dark:bg-emerald-900"
-                : intensity === 2
-                  ? "bg-emerald-400 dark:bg-emerald-700"
-                  : "bg-emerald-600 text-white dark:bg-emerald-500";
-          return (
-            <div
-              key={i}
-              className={`flex flex-col items-center gap-1 rounded-md border border-zinc-200 p-3 dark:border-zinc-800 ${bg}`}
-            >
-              <span className="text-xs font-medium">
-                {format(new Date(year, i, 1), "MMM")}
-              </span>
-              <span className="text-sm font-semibold tabular-nums">{count}</span>
-            </div>
-          );
-        })}
-      </div>
+      <YearMiniMonths
+        year={year}
+        countsByDate={counts}
+        todayStr={todayStr}
+        onMonthClick={onMonthClick}
+      />
     </div>
   );
 }

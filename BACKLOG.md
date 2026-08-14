@@ -18,12 +18,15 @@ and data is fetched server-side per view (best for privacy + performance).
   occurrences in red (was dark) — intentional consistency.
 - ✅ Month: cell pill already shared (MonthCell / MonthBannerPill) across
   personal MonthList + friend/community MonthGrid.
-- ⏳ Year: NOT unified — the personal Year (endless-scroll mini-month dot
-  grids, lazy-loaded full-year data) and the friend/community Year (single-
-  year density heatmap over the ±35-day loaded window) are different DESIGNS
-  and the shared calendars don't load full-year data. Needs a product call
-  (which visualization wins everywhere) + full-year data loading for shared
-  calendars before it can share a component. DECIDE THIS with the user.
+- ✅ Year: unified on the RICH mini-month design (per user). Shared
+  `app/_components/year-mini-months.tsx` (YearMiniMonths) now renders the
+  personal Year (YearList, monthHref → /?view=month) AND the friend/
+  community Year (FriendCalendar YearGrid, onMonthClick → Month sub-view).
+  Community loads full-year per-day counts via `getCommunityYearCounts`
+  (FriendCalendar's optional `loadYearCounts` prop); the friend view falls
+  back to computing from its loaded instance window (data-limited — a
+  friend full-year loader is a later nicety). Old density-heatmap Year
+  deleted. Verified live: personal + community Year render the shared grid.
 - ⏳ Day: the biggest one — converge the personal DayList (inline
   complete/miss) and the friend/community read-only+modal path behind the
   CalendarCapabilities interface (onComplete? etc.). This is where community
