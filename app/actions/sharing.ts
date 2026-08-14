@@ -233,6 +233,10 @@ export type SharedActivity = {
   endDate: string | null;
   archivedAt: string | null;
   createdAt: string;
+  /** Migration 0059/0060 — "auto-drop when past". Only community-owned
+   *  activities populate this (personal shares don't carry it); undefined
+   *  reads as false. Drives the shared DayList's visibleOnDay drop rule. */
+  autoResolve?: boolean;
 };
 
 // getSharedWithMe — every rhythm shared WITH the caller, via the

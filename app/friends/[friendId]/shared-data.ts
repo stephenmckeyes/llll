@@ -75,6 +75,10 @@ export function toDayInstance(
       // auto_archive is a personal setting that isn't shared. False
       // is a safe default for the friend-side read-only view.
       auto_archive: false,
+      // auto_resolve (migration 0059/0060): community-owned activities
+      // carry it so the shared visibleOnDay drops past-due unmarked
+      // occurrences. Friend shares leave it undefined → false.
+      auto_resolve: share.autoResolve ?? false,
     },
   };
 }

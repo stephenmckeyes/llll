@@ -112,6 +112,11 @@ export function ActivityFormFields({
   blankStartDate = false,
   tagMap,
   density = "compact",
+  showPriority = true,
+  showStreaks = true,
+  showPinned = true,
+  showReminders = true,
+  showRollover = true,
 }: {
   initialValues: ActivityFormInitial;
   /** When true, render the start-date input empty regardless of the
@@ -119,6 +124,17 @@ export function ActivityFormFields({
    *  is forced to choose a fresh start date. */
   blankStartDate?: boolean;
   tagMap: TagMap;
+  // --- Field-set capability flags. All default true (personal calendar).
+  // The community-owned calendar passes false for the ones that don't map
+  // to a community: no Priority (removed product-wide), no Streaks/Total
+  // (community has no Total view), no per-user Reminders, no Rollover
+  // (collective instances), no Pinned. Hiding is visual-only — the hidden
+  // FormData inputs still submit their harmless defaults. ---
+  showPriority?: boolean;
+  showStreaks?: boolean;
+  showPinned?: boolean;
+  showReminders?: boolean;
+  showRollover?: boolean;
   /** Add Activity form density (migration 0023). "compact" swaps in a
    *  stripped-down JSX that hides all section labels, drops Priority,
    *  turns the rhythm picker into inline text chips, collapses Tags to
@@ -566,15 +582,19 @@ export function ActivityFormFields({
           </div>
           {/* Vertical hairline splits the two groups so it reads as
               "times | reminders" even when both wrap. */}
-          <span
-            aria-hidden
-            className="h-4 w-px shrink-0 bg-zinc-300 dark:bg-zinc-700"
-          />
-          <RemindersField
-            reminders={reminders}
-            setReminders={setReminders}
-            compact
-          />
+          {showReminders && (
+            <>
+              <span
+                aria-hidden
+                className="h-4 w-px shrink-0 bg-zinc-300 dark:bg-zinc-700"
+              />
+              <RemindersField
+                reminders={reminders}
+                setReminders={setReminders}
+                compact
+              />
+            </>
+          )}
         </div>
       ) : (
         <fieldset className="mt-4">
@@ -771,7 +791,7 @@ export function ActivityFormFields({
       {/* Compact drops Priority entirely — the hidden input above still
           submits `priority` from the last-known state (2 / Medium by
           default), so the server keeps a value to write. */}
-      {!isCompact && isSingle && (
+      {showPriority && !isCompact && isSingle && (
         <fieldset className="mt-4">
           <legend className="text-sm font-medium">Priority</legend>
           <div className="mt-1 flex gap-2">
@@ -806,7 +826,7 @@ export function ActivityFormFields({
       {/* Compact renders Reminders inline with Times above (one
           combined "when this fires" row). Default/Expanded keep the
           full RemindersField section here. */}
-      {!isCompact && (
+      {showReminders && !isCompact && (
         <div className="mt-4">
           <RemindersField reminders={reminders} setReminders={setReminders} />
         </div>
@@ -816,7 +836,7 @@ export function ActivityFormFields({
       {/* Vertical padding on the Off/On buttons trimmed ~1/3 (compact
           py-1 → py-0.5, normal py-2 → py-1) so the row doesn't
           dominate the form's vertical rhythm. */}
-      {isCompact ? (
+      {showStreaks && (isCompact ? (
         <div className="mt-2 flex gap-1">
           <button
             type="button"
@@ -869,7 +889,7 @@ export function ActivityFormFields({
             </button>
           </div>
         </fieldset>
-      )}
+      ))}
 
       {/* --- Pinned (migration 0035) ---------------------------------- */}
       {/* Replaces the old Keep-on-Active / Auto-archive toggle per user
@@ -879,7 +899,7 @@ export function ActivityFormFields({
           under the hood (singles archive on complete by default); Pinned
           is independent — a pinned single still archives, but stays
           surfaced under the Pinned filter. */}
-      {isCompact ? (
+      {showPinned && (isCompact ? (
         // Vertical padding on the toggle row trimmed ~1/3 (py-1 → py-0.5).
         // Tiny caption below the pair explains what Pinned does — kept
         // to text-[10px] so the whole block still fits in one row of
@@ -950,7 +970,7 @@ export function ActivityFormFields({
             away even after they complete.
           </p>
         </fieldset>
-      )}
+      ))}
 
       {/* --- Rollover on missed ------------------------------------- */}
       {/* Shown for every rhythm — singles get a single "Rollover missed
@@ -958,14 +978,16 @@ export function ActivityFormFields({
           missed); recurring rhythms get both toggles (defaults off).
           `changeRhythm` is hidden on singles because there's no rhythm
           to shift. */}
-      <RolloverButtonGroup
-        rhythmKind={rhythmKind}
-        rolloverMissedDays={rolloverMissedDays}
-        setRolloverMissedDays={setRolloverMissedDays}
-        rolloverChangeRhythm={rolloverChangeRhythm}
-        setRolloverChangeRhythm={setRolloverChangeRhythm}
-        compact={isCompact}
-      />
+      {showRollover && (
+        <RolloverButtonGroup
+          rhythmKind={rhythmKind}
+          rolloverMissedDays={rolloverMissedDays}
+          setRolloverMissedDays={setRolloverMissedDays}
+          rolloverChangeRhythm={rolloverChangeRhythm}
+          setRolloverChangeRhythm={setRolloverChangeRhythm}
+          compact={isCompact}
+        />
+      )}
 
       {/* --- Auto-drop when past (migration 0059) ------------------- */}
       {/* "Stays until marked" (default) keeps unmarked past occurrences as

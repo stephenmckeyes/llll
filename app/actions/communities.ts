@@ -956,6 +956,7 @@ type OwnedActivityRow = {
   default_skill_tags: string[] | null;
   start_date: string;
   end_date: string | null;
+  auto_resolve: boolean | null;
   created_at: string;
   archived_at: string | null;
 };
@@ -977,6 +978,7 @@ function mapOwnedActivity(r: OwnedActivityRow): SharedActivity {
     defaultSkillTags: r.default_skill_tags ?? [],
     startDate: r.start_date,
     endDate: r.end_date,
+    autoResolve: r.auto_resolve ?? false,
     archivedAt: r.archived_at,
     createdAt: r.created_at,
   };
@@ -998,7 +1000,7 @@ async function getCommunityOwnedBundle(
   const { data: actRows } = await supabase
     .from("community_owned_activities")
     .select(
-      "id, community_id, name, notes, rhythm, scheduled_times, scheduled_end_times, priority, default_skill_tags, start_date, end_date, created_at, archived_at"
+      "id, community_id, name, notes, rhythm, scheduled_times, scheduled_end_times, priority, default_skill_tags, start_date, end_date, auto_resolve, created_at, archived_at"
     )
     .eq("community_id", communityId)
     .order("name", { ascending: true });
@@ -1209,6 +1211,7 @@ export async function createCommunityCalendarActivity(input: {
   tags?: string[];
   startDate: string;
   endDate?: string | null;
+  autoResolve?: boolean;
 }): Promise<{ error: string } | { ok: true; id: string }> {
   const name = input.name.trim();
   if (name.length === 0 || name.length > 120) {
@@ -1234,6 +1237,7 @@ export async function createCommunityCalendarActivity(input: {
     p_tags: input.tags ?? [],
     p_start_date: input.startDate,
     p_end_date: input.endDate ?? null,
+    p_auto_resolve: input.autoResolve ?? false,
   });
   if (error) return { error: error.message };
 
@@ -1275,6 +1279,7 @@ export async function updateCommunityCalendarActivity(input: {
   tags?: string[];
   startDate: string;
   endDate?: string | null;
+  autoResolve?: boolean;
 }): Promise<{ error: string } | { ok: true }> {
   const name = input.name.trim();
   if (name.length === 0 || name.length > 120) {
@@ -1300,6 +1305,7 @@ export async function updateCommunityCalendarActivity(input: {
     p_tags: input.tags ?? [],
     p_start_date: input.startDate,
     p_end_date: input.endDate ?? null,
+    p_auto_resolve: input.autoResolve ?? false,
   });
   if (error) return { error: error.message };
 
@@ -1327,6 +1333,156 @@ export async function updateCommunityCalendarActivity(input: {
   }
   revalidateCommunityPaths();
   return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// FormData wrappers — let the community calendar reuse the SAME shared
+// ActivityFormFields component the personal edit-rhythm modal uses. The
+// component submits via native <form> FormData (hidden inputs + name
+// attributes); these actions parse that FormData into the object shape the
+// create/update actions above expect, so there's one form body for both
+// surfaces. Bound with communityId / activityId at the call site and driven
+// by useActionState. Fields that don't apply to communities (pinned,
+// streaks, reminders, rollover, priority) are hidden by the form and simply
+// ignored here.
+// ---------------------------------------------------------------------------
+
+type CommunityActivityFormResult = { error: string } | { ok: true } | null;
+
+// Parse the shared form's FormData into the create/update input shape.
+// Mirrors createActivity's rhythm + times parsing (multi-time Daily →
+// frequency), minus the personal-only fields.
+function parseCommunityActivityForm(formData: FormData):
+  | {
+      name: string;
+      notes?: string;
+      rhythm: Rhythm;
+      scheduledTimes: string[];
+      scheduledEndTimes: string[];
+      tags: string[];
+      startDate: string;
+      endDate: string | null;
+      autoResolve: boolean;
+    }
+  | { error: string } {
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) return { error: "Activity name is required." };
+  if (name.length > 120) return { error: "Name is too long (max 120)." };
+
+  const notesRaw = String(formData.get("notes") ?? "").trim();
+  const tags = Array.from(
+    new Set(
+      formData
+        .getAll("tag")
+        .map(String)
+        .map((s) => s.trim())
+        .filter(Boolean)
+    )
+  );
+  const autoResolve = String(formData.get("autoResolve")) === "true";
+
+  // Times of day: zip parallel scheduledTime / scheduledEndTime arrays,
+  // dropping blank starts and keeping ends aligned by index.
+  const rawStarts = formData.getAll("scheduledTime").map(String);
+  const rawEnds = formData.getAll("scheduledEndTime").map(String);
+  const scheduledTimes: string[] = [];
+  const scheduledEndTimes: string[] = [];
+  for (let i = 0; i < rawStarts.length; i++) {
+    const t = rawStarts[i].trim();
+    if (!/^\d{2}:\d{2}$/.test(t)) continue;
+    scheduledTimes.push(t);
+    const e = (rawEnds[i] ?? "").trim();
+    scheduledEndTimes.push(/^\d{2}:\d{2}$/.test(e) ? e : "");
+  }
+
+  const rhythmType = String(formData.get("rhythmType") ?? "single");
+  let candidate: unknown;
+  switch (rhythmType) {
+    case "single":
+      candidate = { type: "single" };
+      break;
+    case "daily":
+      // Multi-time Daily → frequency (count = N per day) so the X/Y
+      // progress model applies, matching the personal form.
+      candidate =
+        scheduledTimes.length > 1
+          ? {
+              type: "frequency",
+              count: scheduledTimes.length,
+              perCount: 1,
+              perUnit: "days",
+            }
+          : { type: "daily" };
+      break;
+    case "weekdays":
+      candidate = { type: "weekdays", days: formData.getAll("weekday").map(String) };
+      break;
+    case "interval": {
+      const n = parseInt(String(formData.get("intervalDays") ?? "2"), 10);
+      candidate = { type: "interval", days: Number.isFinite(n) ? Math.min(Math.max(n, 1), 365) : 2 };
+      break;
+    }
+    case "frequency": {
+      const count = parseInt(String(formData.get("frequencyCount") ?? "3"), 10);
+      const perCount = parseInt(String(formData.get("frequencyPerCount") ?? "1"), 10);
+      candidate = {
+        type: "frequency",
+        count: Number.isFinite(count) ? Math.min(Math.max(count, 1), 99) : 3,
+        perCount: Number.isFinite(perCount) ? Math.min(Math.max(perCount, 1), 99) : 1,
+        perUnit: String(formData.get("frequencyPerUnit") ?? "weeks"),
+      };
+      break;
+    }
+    default:
+      return { error: `Unknown rhythm type: ${rhythmType}` };
+  }
+  const parsed = rhythmSchema.safeParse(candidate);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid rhythm." };
+  }
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const startDate = String(formData.get("startDate") ?? "").trim() || todayStr;
+  const endRaw = String(formData.get("endDate") ?? "").trim();
+  const endDate =
+    parsed.data.type === "single" ? null : endRaw.length > 0 ? endRaw : null;
+  if (endDate && endDate < startDate) {
+    return { error: "End date must be on or after the start date." };
+  }
+
+  return {
+    name,
+    notes: notesRaw.length > 0 ? notesRaw : undefined,
+    rhythm: parsed.data,
+    scheduledTimes,
+    scheduledEndTimes,
+    tags,
+    startDate,
+    endDate,
+    autoResolve,
+  };
+}
+
+export async function createCommunityActivityFormAction(
+  communityId: string,
+  _prev: CommunityActivityFormResult,
+  formData: FormData
+): Promise<CommunityActivityFormResult> {
+  const parsed = parseCommunityActivityForm(formData);
+  if ("error" in parsed) return parsed;
+  const res = await createCommunityCalendarActivity({ communityId, ...parsed });
+  if ("error" in res) return res;
+  return { ok: true };
+}
+
+export async function updateCommunityActivityFormAction(
+  activityId: string,
+  _prev: CommunityActivityFormResult,
+  formData: FormData
+): Promise<CommunityActivityFormResult> {
+  const parsed = parseCommunityActivityForm(formData);
+  if ("error" in parsed) return parsed;
+  return updateCommunityCalendarActivity({ activityId, ...parsed });
 }
 
 // setCommunityInstanceStatus — collective completion; any member.
