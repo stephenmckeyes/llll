@@ -22,6 +22,10 @@ import {
   type CommunityRank,
   type CommunityVisibility,
 } from "@/lib/domain/community";
+import {
+  normalizeHomeLayout,
+  type HomeLayout,
+} from "@/lib/domain/community-home";
 import type {
   YearCountsByDate,
   MonthBannersByDate,
@@ -72,8 +76,15 @@ export type CommunityDetail = CommunitySummary & {
   /** Chat settings (Phase 4). */
   chatEnabled: boolean;
   chatWhoCanSpeak: CommunityChatWhoCanSpeak;
-  /** Editable homepage content (null = none yet). */
+  /** Editable homepage content (null = none yet). Legacy — the widget
+   *  layout below supersedes it; kept to seed a text widget on first edit. */
   homeContent: string | null;
+  /** Customizable Home widget layout + fit-vs-scroll flag (migration 0064). */
+  homeLayout: HomeLayout;
+  homeFitOnePage: boolean;
+  /** Next few upcoming occurrences of the community's own activities — feeds
+   *  the "Upcoming activities" home widget. */
+  upcoming: Array<{ activityId: string; name: string; scheduledFor: string }>;
   /** Whether the member roster + count are shown on Home. */
   showMembers: boolean;
   /** Public-community outsider preview flags (migration 0054). */
@@ -177,7 +188,7 @@ export async function getCommunity(
   const { data: community } = await supabase
     .from("communities")
     .select(
-      "id, kind, name, handle, description, visibility, join_policy, created_at, calendar_display, chat_enabled, chat_who_can_speak, home_content, show_members, outsider_visibility"
+      "id, kind, name, handle, description, visibility, join_policy, created_at, calendar_display, chat_enabled, chat_who_can_speak, home_content, home_layout, home_fit_one_page, show_members, outsider_visibility"
     )
     .eq("id", communityId)
     .maybeSingle();
@@ -195,6 +206,8 @@ export async function getCommunity(
     chat_enabled: boolean | null;
     chat_who_can_speak: string | null;
     home_content: string | null;
+    home_layout: unknown;
+    home_fit_one_page: boolean | null;
     show_members: boolean | null;
     outsider_visibility: Record<string, unknown> | null;
   };
@@ -258,6 +271,48 @@ export async function getCommunity(
   }
   const myPermissions = resolvePermissions(myRow?.role ?? null, ranks);
 
+  // Upcoming occurrences of the community's OWN activities (members only via
+  // RLS) — feeds the "Upcoming activities" home widget. Next ~15 pending from
+  // today, soonest first.
+  const upcoming: CommunityDetail["upcoming"] = [];
+  if (myRow) {
+    const nowStr = new Date().toISOString().slice(0, 10);
+    const { data: actRows } = await supabase
+      .from("community_owned_activities")
+      .select("id, name")
+      .eq("community_id", communityId)
+      .is("archived_at", null);
+    const nameById = new Map(
+      ((actRows ?? []) as Array<{ id: string; name: string }>).map((a) => [
+        a.id,
+        a.name,
+      ])
+    );
+    if (nameById.size > 0) {
+      const { data: instRows } = await supabase
+        .from("community_owned_instances")
+        .select("activity_id, scheduled_for, status")
+        .eq("community_id", communityId)
+        .gte("scheduled_for", nowStr)
+        .order("scheduled_for", { ascending: true })
+        .limit(60);
+      for (const r of (instRows ?? []) as Array<{
+        activity_id: string;
+        scheduled_for: string;
+        status: string;
+      }>) {
+        const name = nameById.get(r.activity_id);
+        if (!name) continue;
+        upcoming.push({
+          activityId: r.activity_id,
+          name,
+          scheduledFor: r.scheduled_for,
+        });
+        if (upcoming.length >= 20) break;
+      }
+    }
+  }
+
   return {
     id: c.id,
     kind: c.kind as CommunityKind,
@@ -272,6 +327,9 @@ export async function getCommunity(
     chatEnabled: c.chat_enabled ?? true,
     chatWhoCanSpeak: c.chat_who_can_speak === "leadership" ? "leadership" : "everyone",
     homeContent: c.home_content ?? null,
+    homeLayout: normalizeHomeLayout(c.home_layout),
+    homeFitOnePage: c.home_fit_one_page ?? false,
+    upcoming,
     showMembers: c.show_members ?? true,
     outsiderShowMembers: c.outsider_visibility?.showMembers === true,
     outsiderShowActivities: c.outsider_visibility?.showActivities === true,
@@ -1706,6 +1764,21 @@ export async function setCommunityHome(
   return callSettingsRpc("set_community_home", {
     p_community_id: communityId,
     p_content: content,
+  });
+}
+
+// setCommunityHomeLayout — leadership save the Home widget layout + the
+// fit-one-page-vs-scroll flag (migration 0064). Re-normalized server-side so
+// only valid widgets are persisted.
+export async function setCommunityHomeLayout(
+  communityId: string,
+  layout: HomeLayout,
+  fitOnePage: boolean
+): Promise<{ error: string } | { ok: true }> {
+  return callSettingsRpc("set_community_home_layout", {
+    p_community_id: communityId,
+    p_layout: normalizeHomeLayout(layout),
+    p_fit: fitOnePage,
   });
 }
 

@@ -34,7 +34,6 @@ import {
   requestJoinCommunity,
   searchPublicCommunities,
   setCommunityChatSettings,
-  setCommunityHome,
   setCommunityJoinPolicy,
   setCommunityOutsiderVisibility,
   setCommunityShowMembers,
@@ -69,6 +68,10 @@ import { useBodyScrollLock } from "@/lib/ui/body-scroll-lock";
 
 import { CommunityChat } from "./_community-chat";
 import { CommunityOwnedCalendar } from "./_community-calendar";
+import {
+  CommunityHomeEditor,
+  CommunityHomeWidgets,
+} from "./_community-home";
 import { InviteCombobox } from "./_invite-combobox";
 
 // Per-type copy — kept here so every page passes the same props and
@@ -583,19 +586,10 @@ function CommunityHome({ detail }: { detail: CommunityDetail }) {
   const router = useRouter();
   const canManage = detail.myPermissions.can_edit_settings;
   const [editing, setEditing] = useState(false);
-  const [content, setContent] = useState(detail.homeContent ?? "");
 
-  function onSaveHome() {
-    setError(null);
-    startTransition(async () => {
-      const res = await setCommunityHome(detail.id, content);
-      if ("error" in res) setError(res.error);
-      else {
-        setEditing(false);
-        router.refresh();
-      }
-    });
-  }
+  // Fit clips Home to one screen; scroll grows. While editing we always
+  // scroll (the editor can be tall).
+  const scrollMode = editing || !detail.homeFitOnePage;
 
   function onLeave() {
     if (
@@ -613,11 +607,23 @@ function CommunityHome({ detail }: { detail: CommunityDetail }) {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-2">
-        <h2 className="truncate text-xl font-semibold tracking-tight">
-          {detail.name}
-        </h2>
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
+      {/* Community identity — always visible, doesn't scroll. */}
+      <div className="flex shrink-0 flex-col gap-2">
+        <div className="flex items-start justify-between gap-2">
+          <h2 className="truncate text-xl font-semibold tracking-tight">
+            {detail.name}
+          </h2>
+          {canManage && !editing && (
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="shrink-0 text-xs font-medium text-zinc-500 underline-offset-2 hover:underline dark:text-zinc-400"
+            >
+              Edit home
+            </button>
+          )}
+        </div>
         <p className="text-xs uppercase tracking-wide text-zinc-500">
           {detail.visibility === "public" ? "Public" : "Private"} ·{" "}
           {policyLabel(detail.joinPolicy)}
@@ -634,118 +640,75 @@ function CommunityHome({ detail }: { detail: CommunityDetail }) {
         )}
       </div>
 
-      {/* Editable homepage content (leadership edits). */}
-      <section className="flex flex-col gap-2">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-            Home
-          </h3>
-          {canManage && !editing && (
-            <button
-              type="button"
-              onClick={() => {
-                setContent(detail.homeContent ?? "");
-                setEditing(true);
-              }}
-              className="text-xs font-medium text-zinc-500 underline-offset-2 hover:underline dark:text-zinc-400"
-            >
-              Edit
-            </button>
-          )}
-        </div>
+      {/* Customizable widget area + members + leave. Respects the fit-one-
+          page (clip) vs scroll setting; always scrolls while editing. */}
+      <div
+        className={`flex min-h-0 flex-1 flex-col gap-6 pr-1 ${
+          scrollMode ? "overflow-y-auto" : "overflow-hidden"
+        }`}
+      >
         {editing ? (
-          <div className="flex flex-col gap-2">
-            <textarea
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              rows={6}
-              maxLength={8000}
-              placeholder="Welcome message, description, rules, links…"
-              className="w-full resize-y rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-900 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-zinc-50"
-            />
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setEditing(false)}
-                className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={onSaveHome}
-                disabled={isPending}
-                className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
-              >
-                Save
-              </button>
-            </div>
-          </div>
-        ) : detail.homeContent ? (
-          <p className="whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">
-            {detail.homeContent}
-          </p>
+          <CommunityHomeEditor
+            detail={detail}
+            onClose={() => setEditing(false)}
+          />
         ) : (
-          <p className="rounded-md border border-dashed border-zinc-300 p-4 text-center text-sm text-zinc-500 dark:border-zinc-700">
-            {canManage
-              ? "No homepage yet — tap Edit to add a welcome."
-              : "No homepage yet."}
+          <CommunityHomeWidgets detail={detail} />
+        )}
+
+        {/* Members — shown only when leadership has enabled it. */}
+        {!editing && detail.showMembers && (
+          <section className="flex flex-col gap-2">
+            <h3 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+              Members ({detail.memberCount})
+            </h3>
+            {detail.members.length > 0 && (
+              <ul className="flex flex-col gap-1">
+                {detail.members.map((m) => (
+                  <li
+                    key={m.userId}
+                    className="flex items-center justify-between gap-3 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                  >
+                    <span className="min-w-0 truncate">
+                      {m.displayName ??
+                        (m.username ? `@${m.username}` : "A member")}
+                    </span>
+                    <span className="shrink-0 text-xs uppercase tracking-wide text-zinc-500">
+                      {m.role === "leader"
+                        ? "Leader"
+                        : m.role === "co_leader"
+                          ? "Co-leader"
+                          : "Member"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        )}
+
+        {error && (
+          <p
+            role="alert"
+            className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300"
+          >
+            {error}
           </p>
         )}
-      </section>
 
-      {/* Members — shown only when leadership has enabled it. */}
-      {detail.showMembers && (
-        <section className="flex flex-col gap-2">
-          <h3 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-            Members ({detail.memberCount})
-          </h3>
-          {detail.members.length > 0 && (
-            <ul className="flex flex-col gap-1">
-              {detail.members.map((m) => (
-                <li
-                  key={m.userId}
-                  className="flex items-center justify-between gap-3 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-                >
-                  <span className="min-w-0 truncate">
-                    {m.displayName ??
-                      (m.username ? `@${m.username}` : "A member")}
-                  </span>
-                  <span className="shrink-0 text-xs uppercase tracking-wide text-zinc-500">
-                    {m.role === "leader"
-                      ? "Leader"
-                      : m.role === "co_leader"
-                        ? "Co-leader"
-                        : "Member"}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      )}
-
-      {error && (
-        <p
-          role="alert"
-          className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300"
-        >
-          {error}
-        </p>
-      )}
-
-      {detail.myRole && (
-        <div className="flex justify-end">
-          <button
-            type="button"
-            onClick={onLeave}
-            disabled={isPending}
-            className="rounded-md border border-red-300 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
-          >
-            Leave {KIND_LABEL[detail.kind].one}
-          </button>
-        </div>
-      )}
+        {!editing && detail.myRole && (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={onLeave}
+              disabled={isPending}
+              className="rounded-md border border-red-300 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
+            >
+              Leave {KIND_LABEL[detail.kind].one}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
