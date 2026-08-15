@@ -1234,6 +1234,9 @@ function parseCommunityActivityForm(formData: FormData):
       pinned: boolean;
       rolloverMissedDays: boolean;
       rolloverChangeRhythm: boolean;
+      /** Present only for the "Pick Dates" (selection) rhythm — the create
+       *  action fans out one single activity per date. */
+      selectionDates?: string[];
     }
   | { error: string } {
   const name = String(formData.get("name") ?? "").trim();
@@ -1299,6 +1302,10 @@ function parseCommunityActivityForm(formData: FormData):
   let candidate: unknown;
   switch (rhythmType) {
     case "single":
+    case "selection":
+      // Selection fans out into N single activities (one per picked date);
+      // each stored row is a plain single. The fan-out happens in the create
+      // form action using selectionDates below.
       candidate = { type: "single" };
       break;
     case "daily":
@@ -1342,7 +1349,23 @@ function parseCommunityActivityForm(formData: FormData):
   }
 
   const todayStr = new Date().toISOString().slice(0, 10);
-  const startDate = String(formData.get("startDate") ?? "").trim() || todayStr;
+  // Selection submits multiple startDate values (primary + extras); every
+  // other rhythm has exactly one. Dedup + sort for a stable fan-out order.
+  const allStartDates = Array.from(
+    new Set(
+      formData
+        .getAll("startDate")
+        .map((v) => String(v).trim())
+        .filter((v) => /^\d{4}-\d{2}-\d{2}$/.test(v))
+    )
+  ).sort();
+  const startDate = allStartDates[0] ?? todayStr;
+  const selectionDates =
+    rhythmType === "selection"
+      ? allStartDates.length > 0
+        ? allStartDates
+        : [startDate]
+      : undefined;
   const endRaw = String(formData.get("endDate") ?? "").trim();
   const endDate =
     parsed.data.type === "single" ? null : endRaw.length > 0 ? endRaw : null;
@@ -1366,6 +1389,7 @@ function parseCommunityActivityForm(formData: FormData):
     pinned,
     rolloverMissedDays,
     rolloverChangeRhythm,
+    selectionDates,
   };
 }
 
@@ -1376,7 +1400,25 @@ export async function createCommunityActivityFormAction(
 ): Promise<CommunityActivityFormResult> {
   const parsed = parseCommunityActivityForm(formData);
   if ("error" in parsed) return parsed;
-  const res = await createCommunityCalendarActivity({ communityId, ...parsed });
+
+  // "Pick Dates" (selection): fan out one single activity per picked date,
+  // each sharing every other field. Matches the personal createActivity path.
+  const { selectionDates, ...rest } = parsed;
+  if (selectionDates && selectionDates.length > 0) {
+    for (const d of selectionDates) {
+      const res = await createCommunityCalendarActivity({
+        communityId,
+        ...rest,
+        rhythm: { type: "single" },
+        startDate: d,
+        endDate: null,
+      });
+      if ("error" in res) return res;
+    }
+    return { ok: true };
+  }
+
+  const res = await createCommunityCalendarActivity({ communityId, ...rest });
   if ("error" in res) return res;
   return { ok: true };
 }

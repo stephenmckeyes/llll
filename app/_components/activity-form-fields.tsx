@@ -46,6 +46,7 @@ import { TagPicker } from "./tag-picker";
 // contained).
 export type RhythmKind =
   | "single"
+  | "selection"
   | "daily"
   | "weekdays"
   | "interval"
@@ -119,6 +120,7 @@ export function ActivityFormFields({
   showRollover = true,
   showCompletionType = false,
   initialCompletionType = "collective",
+  showSelection = false,
 }: {
   initialValues: ActivityFormInitial;
   /** When true, render the start-date input empty regardless of the
@@ -142,6 +144,10 @@ export function ActivityFormFields({
    *  concept). Submits `completionType` in FormData when shown. */
   showCompletionType?: boolean;
   initialCompletionType?: "collective" | "aggregate";
+  /** Offer the "Pick Dates" (multiple one-offs) rhythm — a create-only
+   *  option that fans out into N single activities server-side. Default
+   *  false (edit contexts don't offer it). */
+  showSelection?: boolean;
   /** Add Activity form density (migration 0023). "compact" swaps in a
    *  stripped-down JSX that hides all section labels, drops Priority,
    *  turns the rhythm picker into inline text chips, collapses Tags to
@@ -196,6 +202,11 @@ export function ActivityFormFields({
   const [completionType, setCompletionType] = useState<
     "collective" | "aggregate"
   >(initialCompletionType);
+  // Extra dates for the "Pick Dates" (selection) rhythm — each becomes its
+  // own single activity server-side. The primary start date below is the
+  // first; these are additional. Only used when showSelection + kind
+  // "selection".
+  const [extraDates, setExtraDates] = useState<string[]>([]);
   const [pinned, setPinned] = useState<boolean>(
     initialValues.pinned ?? false
   );
@@ -239,7 +250,33 @@ export function ActivityFormFields({
   }
 
   const intervalDays = Math.max(1, parseInt(intervalDaysStr, 10) || 1);
-  const isSingle = rhythmKind === "single";
+  const isSelection = rhythmKind === "selection";
+  // Selection is a set of one-offs — treat it like "Once" for the schedule
+  // range (no end date; each picked date is its own single).
+  const isSingle = rhythmKind === "single" || isSelection;
+
+  function addExtraDate() {
+    setExtraDates((prev) => [...prev, initialValues.start_date]);
+  }
+  function updateExtraDate(i: number, v: string) {
+    setExtraDates((prev) => prev.map((d, idx) => (idx === i ? v : d)));
+  }
+  function removeExtraDate(i: number) {
+    setExtraDates((prev) => prev.filter((_, idx) => idx !== i));
+  }
+
+  // Rhythm picker options. "Pick Dates" (selection) is inserted after "Once"
+  // only when showSelection (create contexts) — it fans out into N singles.
+  const rhythmOptions: Array<[RhythmKind, string]> = [
+    ["single", "Once"],
+    ...(showSelection
+      ? ([["selection", "Pick Dates"]] as Array<[RhythmKind, string]>)
+      : []),
+    ["daily", "Daily"],
+    ["weekdays", "Days per Week"],
+    ["interval", "Every N Days"],
+    ["frequency", "Target Count"],
+  ];
 
   return (
     <>
@@ -363,15 +400,7 @@ export function ActivityFormFields({
           data-form-section="rhythm"
           className="mt-2 flex flex-wrap gap-1"
         >
-          {(
-            [
-              ["single", "Once"],
-              ["daily", "Daily"],
-              ["weekdays", "Days per Week"],
-              ["interval", "Every N Days"],
-              ["frequency", "Target Count"],
-            ] as const
-          ).map(([value, label]) => {
+          {rhythmOptions.map(([value, label]) => {
             const selected = rhythmKind === value;
             return (
               <button
@@ -395,15 +424,7 @@ export function ActivityFormFields({
           className="mt-4 flex flex-col gap-1"
         >
           <legend className="mb-1 text-sm font-medium">Rhythm</legend>
-          {(
-            [
-              ["single", "Once"],
-              ["daily", "Daily"],
-              ["weekdays", "Days per Week"],
-              ["interval", "Every N Days"],
-              ["frequency", "Target Count"],
-            ] as const
-          ).map(([value, label]) => {
+          {rhythmOptions.map(([value, label]) => {
             const selected = rhythmKind === value;
             return (
               <button
@@ -525,6 +546,48 @@ export function ActivityFormFields({
             <option value="weeks">weeks</option>
             <option value="months">months</option>
           </select>
+        </div>
+      )}
+
+      {/* --- Pick Dates (selection): extra one-off dates ------------- */}
+      {/* Each extra date submits its own name="startDate"; the primary
+          Start date below is the first. The server fans out one single
+          activity per date. */}
+      {isSelection && (
+        <div className="mt-3 flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+          <p className="text-xs text-zinc-500">
+            Each date becomes its own one-time activity sharing the details
+            above. The Start date below is the first.
+          </p>
+          {extraDates.length > 0 && (
+            <ul className="flex flex-col gap-2">
+              {extraDates.map((d, i) => (
+                <li key={i} className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    name="startDate"
+                    value={d}
+                    onChange={(e) => updateExtraDate(i, e.target.value)}
+                    className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeExtraDate(i)}
+                    className="rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <button
+            type="button"
+            onClick={addExtraDate}
+            className="self-start rounded-md border border-zinc-300 px-3 py-1 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+          >
+            + Add date
+          </button>
         </div>
       )}
 

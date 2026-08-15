@@ -708,6 +708,7 @@ function ActivityFormModal({
           tagMap={tagMap}
           showCompletionType
           initialCompletionType={existing?.completionType ?? "collective"}
+          showSelection={!existing}
         />
 
         {state && "error" in state && (
