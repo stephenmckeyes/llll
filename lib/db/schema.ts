@@ -250,6 +250,10 @@ export const activities = pgTable(
     // Auto-drop when past (migration 0059). true = a past-due unmarked
     // occurrence silently drops (no verdict/nag); false = stays unlabeled.
     autoResolve: boolean("auto_resolve").notNull().default(false),
+    // Completion mode (migration 0065): 'mark' | 'auto' | 'both'. Supersedes
+    // auto_resolve. 'auto'/'both' auto-complete once past; multi-day events
+    // (single with end_date > start_date) default to 'auto'.
+    completionMode: text("completion_mode").notNull().default("mark"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

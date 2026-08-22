@@ -13,6 +13,7 @@ import { z } from "zod";
 import { invalidateBackfillCache } from "@/lib/domain/backfill";
 import { logCompletion } from "@/lib/domain/completions";
 import { generateInstances } from "@/lib/domain/rhythms";
+import { coerceCompletionMode } from "@/lib/domain/completion-mode";
 import { createClient } from "@/lib/supabase/server";
 import {
   remindersSchema,
@@ -97,9 +98,10 @@ export async function createActivity(
   // create-activity forms explicitly send "true" for new singles.
   const autoArchive = String(formData.get("autoArchive")) === "true";
   const pinned = String(formData.get("pinned")) === "true";
-  // Auto-drop when past (migration 0059). Default false → keeps the
-  // stays-until-marked behavior for callers that don't send the field.
-  const autoResolve = String(formData.get("autoResolve")) === "true";
+  // Completion mode (migration 0065). Replaces the auto_resolve toggle;
+  // auto_resolve is still written (= auto) for the dormant legacy column.
+  const completionMode = coerceCompletionMode(formData.get("completionMode"));
+  const autoResolve = completionMode === "auto";
 
   // ---- 2. Reconstruct + validate the rhythm -------------------------------
 
@@ -196,12 +198,21 @@ export async function createActivity(
     };
   }
 
-  // For non-selection singles, end_date := start_date. For selection,
-  // each fanned-out activity follows the same rule (handled in the loop
-  // below). All other rhythms get the optional end_date from the form.
+  // For non-selection singles, end_date := start_date UNLESS the user set a
+  // later end date, which makes it a MULTI-DAY EVENT spanning [start, end].
+  // Selection fans out into one-day singles (end == start per iteration).
+  // All other rhythms get the optional end_date from the form.
   let endDate: string | null;
+  let multiDayEnd: string | null = null;
   if (rhythm.type === "single") {
     endDate = null; // per-activity end_date set in the loop below
+    if (!isSelection) {
+      const formEnd = parseDateField(formData.get("endDate"));
+      if (formEnd && formEnd < startDates[0]) {
+        return { error: "End date must be on or after the start date." };
+      }
+      multiDayEnd = formEnd && formEnd > startDates[0] ? formEnd : null;
+    }
   } else {
     endDate = parseDateField(formData.get("endDate"));
     // Validate against the primary start date for non-selection cases;
@@ -240,8 +251,10 @@ export async function createActivity(
   if (!user) redirect("/login");
 
   for (const startDate of startDates) {
+    // Plain single: end == start (one day) unless multiDayEnd makes it a
+    // span. Selection singles are always one day.
     const perActivityEndDate =
-      rhythm.type === "single" ? startDate : endDate;
+      rhythm.type === "single" ? multiDayEnd ?? startDate : endDate;
 
     const { data: activity, error: aerr } = await supabase
       .from("activities")
@@ -265,6 +278,7 @@ export async function createActivity(
         auto_archive: autoArchive,
         pinned,
         auto_resolve: autoResolve,
+        completion_mode: completionMode,
       })
       .select("id")
       .single();
@@ -281,10 +295,22 @@ export async function createActivity(
         ? perActivityEndDate
         : horizonStr;
 
-    const instances = generateInstances(rhythm, {
-      from: startDate,
-      to: generationTo,
-    });
+    // A multi-day event materializes one occurrence per day across its span
+    // (so it appears on every day + can render as a connected bar). Other
+    // rhythms (incl. one-day singles) use their normal generation.
+    const isSpan =
+      rhythm.type === "single" &&
+      perActivityEndDate !== null &&
+      perActivityEndDate > startDate;
+    const instances = isSpan
+      ? generateInstances(
+          { type: "daily" },
+          { from: startDate, to: perActivityEndDate as string }
+        )
+      : generateInstances(rhythm, {
+          from: startDate,
+          to: generationTo,
+        });
 
     if (instances.length > 0) {
       // Snapshot the activity's tags into each freshly-generated
@@ -398,7 +424,8 @@ export async function createDraftActivity(
       String(formData.get("rolloverChangeRhythm")) === "true",
     auto_archive: String(formData.get("autoArchive")) === "true",
     pinned: String(formData.get("pinned")) === "true",
-    auto_resolve: String(formData.get("autoResolve")) === "true",
+    auto_resolve: coerceCompletionMode(formData.get("completionMode")) === "auto",
+    completion_mode: coerceCompletionMode(formData.get("completionMode")),
     // The whole point: parked in the archive, generating no instances.
     archived_at: new Date().toISOString(),
   });
@@ -695,13 +722,20 @@ export async function updateActivityRhythm(
   const newStartDate = parseDateField(formData.get("startDate")) ?? todayStr;
   let newEndDate: string | null;
   if (newRhythm.type === "single") {
-    newEndDate = newStartDate;
+    // A single may now carry a later end date → multi-day event; otherwise
+    // end == start (one day).
+    const formEnd = parseDateField(formData.get("endDate"));
+    if (formEnd && formEnd < newStartDate) {
+      return { error: "End date must be on or after the start date." };
+    }
+    newEndDate = formEnd && formEnd > newStartDate ? formEnd : newStartDate;
   } else {
     newEndDate = parseDateField(formData.get("endDate"));
     if (newEndDate && newEndDate < newStartDate) {
       return { error: "End date must be on or after the start date." };
     }
   }
+  const completionMode = coerceCompletionMode(formData.get("completionMode"));
 
   // ---- 5. Auth + persist all fields --------------------------------------
 
@@ -731,7 +765,8 @@ export async function updateActivityRhythm(
         String(formData.get("rolloverChangeRhythm")) === "true",
       auto_archive: String(formData.get("autoArchive")) === "true",
       pinned: String(formData.get("pinned")) === "true",
-      auto_resolve: String(formData.get("autoResolve")) === "true",
+      auto_resolve: completionMode === "auto",
+      completion_mode: completionMode,
     })
     .eq("id", activityId);
   if (uerr) return { error: uerr.message };
@@ -759,10 +794,20 @@ export async function updateActivityRhythm(
   const generationTo =
     newEndDate !== null && newEndDate < horizonStr ? newEndDate : horizonStr;
 
-  const instances = generateInstances(newRhythm, {
-    from: startDate,
-    to: generationTo,
-  });
+  // Multi-day event → one occurrence per day across the span.
+  const isSpan =
+    newRhythm.type === "single" &&
+    newEndDate !== null &&
+    newEndDate > newStartDate;
+  const instances = isSpan
+    ? generateInstances(
+        { type: "daily" },
+        { from: startDate, to: newEndDate as string }
+      )
+    : generateInstances(newRhythm, {
+        from: startDate,
+        to: generationTo,
+      });
   if (instances.length > 0) {
     // Snapshot the activity's NEW tags into each regenerated instance.
     // Per the immutable-history rule, past instances + their tag

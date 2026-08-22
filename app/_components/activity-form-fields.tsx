@@ -25,6 +25,12 @@
 import { useRef, useState } from "react";
 
 import { type AddActivityDensity } from "@/lib/domain/add-activity-density";
+import {
+  COMPLETION_MODE_LABEL,
+  COMPLETION_MODES,
+  coerceCompletionMode,
+  type CompletionMode,
+} from "@/lib/domain/completion-mode";
 import type { TagMap } from "@/lib/domain/tags";
 import {
   normalizeReminder,
@@ -103,9 +109,12 @@ export type ActivityFormInitial = {
   /** Migration 0035 — user-pinned "may want to re-initiate" flag.
    *  Independent of auto_archive. Defaults false. */
   pinned?: boolean;
-  /** Migration 0059 — "auto-drop when past". true = a past-due unmarked
-   *  occurrence drops silently (no verdict/nag). Defaults false. */
+  /** Migration 0059 — "auto-drop when past". Legacy; superseded by
+   *  completion_mode. Kept so old callers still typecheck. */
   auto_resolve?: boolean;
+  /** Migration 0065 — completion mode: 'mark' (must mark), 'auto' (comment-
+   *  only, auto-completes when past), 'both'. Defaults 'mark'. */
+  completion_mode?: CompletionMode;
 };
 
 export function ActivityFormFields({
@@ -196,8 +205,25 @@ export function ActivityFormFields({
     initialValues.rollover_change_rhythm
   );
   const [autoArchive] = useState<boolean>(initialValues.auto_archive);
-  const [autoResolve, setAutoResolve] = useState<boolean>(
-    initialValues.auto_resolve ?? false
+  // Completion mode (0065). Seed from completion_mode, falling back to the
+  // legacy auto_resolve boolean for rows saved before 0065.
+  const [completionMode, setCompletionMode] = useState<CompletionMode>(
+    initialValues.completion_mode
+      ? coerceCompletionMode(initialValues.completion_mode)
+      : initialValues.auto_resolve
+        ? "auto"
+        : "mark"
+  );
+  // Whether the user has explicitly picked a mode. Until they do, a multi-day
+  // event (single with end > start) defaults to 'auto' (see effectiveMode).
+  const [modeTouched, setModeTouched] = useState<boolean>(false);
+  // Mirror the end date into state so we can detect a multi-day event
+  // (single with end > start) reactively for the default + span behavior.
+  const [endDateVal, setEndDateVal] = useState<string>(
+    initialValues.end_date ?? ""
+  );
+  const [startDateVal, setStartDateVal] = useState<string>(
+    initialValues.start_date ?? ""
   );
   const [completionType, setCompletionType] = useState<
     "collective" | "aggregate"
@@ -218,6 +244,7 @@ export function ActivityFormFields({
   function clearEndDate(which: "default" | "compact") {
     const el = which === "default" ? endDateRef.current : endDateCompactRef.current;
     if (el) el.value = "";
+    setEndDateVal("");
   }
 
   function toggleWeekday(day: DayOfWeek) {
@@ -254,6 +281,18 @@ export function ActivityFormFields({
   // Selection is a set of one-offs — treat it like "Once" for the schedule
   // range (no end date; each picked date is its own single).
   const isSingle = rhythmKind === "single" || isSelection;
+
+  // A multi-day event: a plain "Once" whose end date is after its start. It
+  // spans a contiguous range (rendered as a connected bar in Week/Month) and
+  // defaults to the Auto-Complete mode.
+  const isMultiDay =
+    rhythmKind === "single" &&
+    endDateVal !== "" &&
+    startDateVal !== "" &&
+    endDateVal > startDateVal;
+  // Until the user picks a mode, a multi-day event defaults to 'auto'.
+  const effectiveMode: CompletionMode =
+    !modeTouched && isMultiDay ? "auto" : completionMode;
 
   function addExtraDate() {
     setExtraDates((prev) => [...prev, initialValues.start_date]);
@@ -308,10 +347,13 @@ export function ActivityFormFields({
         name="pinned"
         value={pinned ? "true" : "false"}
       />
+      <input type="hidden" name="completionMode" value={effectiveMode} />
+      {/* Legacy field kept so any server still reading autoResolve maps
+          Auto-Complete → the old auto-drop bit; new code reads completionMode. */}
       <input
         type="hidden"
         name="autoResolve"
-        value={autoResolve ? "true" : "false"}
+        value={effectiveMode === "auto" ? "true" : "false"}
       />
 
       {/* --- Activity name ----------------------------------------- */}
@@ -762,6 +804,7 @@ export function ActivityFormFields({
               name="startDate"
               required
               defaultValue={blankStartDate ? "" : initialValues.start_date}
+              onChange={(e) => setStartDateVal(e.target.value)}
               className={inputClasses}
             />
             <span className="pointer-events-none absolute left-1 top-0 text-[8px] font-medium uppercase text-zinc-400 dark:text-zinc-500">
@@ -770,20 +813,22 @@ export function ActivityFormFields({
           </div>
           {/* End-date + tiny "no end date" clear button. Native
               <input type="date"> on iOS has no built-in clear, so the
-              explicit × makes going back to "indefinite" obvious. */}
+              explicit × makes going back to "indefinite" obvious. For a
+              "Once" activity an end date turns it into a multi-day event. */}
           <div className="relative">
             <input
               ref={endDateCompactRef}
               type="date"
               name="endDate"
               defaultValue={initialValues.end_date ?? ""}
-              disabled={isSingle}
+              onChange={(e) => setEndDateVal(e.target.value)}
+              disabled={isSelection}
               className={`${inputClasses} pr-7`}
             />
             <span className="pointer-events-none absolute left-1 top-0 text-[8px] font-medium uppercase text-zinc-400 dark:text-zinc-500">
               (end)
             </span>
-            {!isSingle && (
+            {!isSelection && (
               <button
                 type="button"
                 onClick={() => clearEndDate("compact")}
@@ -815,6 +860,7 @@ export function ActivityFormFields({
                 defaultValue={
                   blankStartDate ? "" : initialValues.start_date
                 }
+                onChange={(e) => setStartDateVal(e.target.value)}
                 className={`${inputClasses} mt-1`}
               />
             </label>
@@ -822,7 +868,7 @@ export function ActivityFormFields({
               <span className="text-xs font-medium text-zinc-500">
                 End date{" "}
                 <span className="font-normal">
-                  {isSingle ? "(n/a for Once)" : "(optional)"}
+                  {isSelection ? "(n/a)" : "(optional)"}
                 </span>
               </span>
               <div className="relative mt-1">
@@ -831,10 +877,11 @@ export function ActivityFormFields({
                   type="date"
                   name="endDate"
                   defaultValue={initialValues.end_date ?? ""}
-                  disabled={isSingle}
+                  onChange={(e) => setEndDateVal(e.target.value)}
+                  disabled={isSelection}
                   className={`${inputClasses} pr-8`}
                 />
-                {!isSingle && (
+                {!isSelection && (
                   <button
                     type="button"
                     onClick={() => clearEndDate("default")}
@@ -846,7 +893,7 @@ export function ActivityFormFields({
                   </button>
                 )}
               </div>
-              {!isSingle && (
+              {!isSelection && (
                 <button
                   type="button"
                   onClick={() => clearEndDate("default")}
@@ -1062,35 +1109,39 @@ export function ActivityFormFields({
         />
       )}
 
-      {/* --- Auto-drop when past (migration 0059) ------------------- */}
-      {/* "Stays until marked" (default) keeps unmarked past occurrences as
-          overdue/unlabeled; "Auto-drop when past" silently drops them once
-          the day passes — for meetings/appointments you don't want to mark. */}
-      <div className="flex gap-1">
-        <button
-          type="button"
-          onClick={() => setAutoResolve(false)}
-          aria-pressed={!autoResolve}
-          className={`flex-1 touch-manipulation rounded-md border px-2 py-1 text-center text-xs font-medium transition-colors ${
-            !autoResolve
-              ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
-              : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-          }`}
-        >
-          Stays until marked
-        </button>
-        <button
-          type="button"
-          onClick={() => setAutoResolve(true)}
-          aria-pressed={autoResolve}
-          className={`flex-1 touch-manipulation rounded-md border px-2 py-1 text-center text-xs font-medium transition-colors ${
-            autoResolve
-              ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
-              : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-          }`}
-        >
-          Auto-drop when past
-        </button>
+      {/* --- Completion mode (migration 0065) ----------------------- */}
+      {/* Mark Complete: you must mark it. Auto-Complete: comment-only, it
+          auto-marks complete once its time passes. Both: markable AND
+          auto-completes if left unmarked. Multi-day events default to Auto. */}
+      <div className="mt-1 flex flex-col gap-1">
+        <span className="text-xs font-medium text-zinc-500">
+          Completion
+          {isMultiDay && !modeTouched && (
+            <span className="ml-1 font-normal normal-case text-zinc-400">
+              (multi-day → Auto-Complete)
+            </span>
+          )}
+        </span>
+        <div className="flex gap-1">
+          {COMPLETION_MODES.map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => {
+                setCompletionMode(m);
+                setModeTouched(true);
+              }}
+              aria-pressed={effectiveMode === m}
+              className={`flex-1 touch-manipulation rounded-md border px-2 py-1 text-center text-xs font-medium transition-colors ${
+                effectiveMode === m
+                  ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                  : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+              }`}
+            >
+              {COMPLETION_MODE_LABEL[m]}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* --- Completion type (community-owned only, migration 0061) ------ */}

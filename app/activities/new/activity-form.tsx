@@ -30,6 +30,11 @@ import {
 } from "@/lib/domain/add-activity-density";
 import type { Reminder } from "@/lib/validators/reminder";
 import type { TagMap } from "@/lib/domain/tags";
+import {
+  COMPLETION_MODE_LABEL,
+  COMPLETION_MODES,
+  type CompletionMode,
+} from "@/lib/domain/completion-mode";
 
 import { CalendarPreview } from "./calendar-preview";
 
@@ -110,8 +115,9 @@ export function ActivityForm({
   // activities they may want to re-initiate. Default filter in Total
   // View surfaces pinned activities across Active / Past / Archived.
   const [pinned, setPinned] = useState(false);
-  // Auto-drop when past (migration 0059). Default false = stays until marked.
-  const [autoResolve, setAutoResolve] = useState(false);
+  // Completion mode (migration 0065). Replaces the auto_resolve toggle.
+  const [completionMode, setCompletionMode] = useState<CompletionMode>("mark");
+  const [modeTouched, setModeTouched] = useState(false);
 
   function handleSaveForLater() {
     const form = formRef.current;
@@ -190,8 +196,22 @@ export function ActivityForm({
   // logic, treat selection the same as single.
   const isSingleLike = isSingle || isSelection;
 
-  // Force end_date == start_date for singles (the server enforces this too).
-  const effectiveEndDate = isSingleLike ? startDate : endDate || null;
+  // A multi-day event: a plain "Once" whose end date is after its start.
+  const isMultiDay =
+    isSingle && endDate !== "" && startDate !== "" && endDate > startDate;
+  // Multi-day events default to Auto-Complete until the user picks a mode.
+  const effectiveMode: CompletionMode =
+    !modeTouched && isMultiDay ? "auto" : completionMode;
+
+  // Selection is always one day per pick; a plain single spans to its end
+  // date when the user set one (multi-day), else end == start.
+  const effectiveEndDate = isSelection
+    ? startDate
+    : isSingle
+      ? isMultiDay
+        ? endDate
+        : startDate
+      : endDate || null;
 
   // Compute the rhythm shape the preview should render.
   const previewRhythm = derivePreviewRhythm({
@@ -558,20 +578,20 @@ export function ActivityForm({
                 </span>
               </div>
               <div
-                className={`${dateBoxClasses} ${isSingleLike ? "opacity-60" : ""}`}
+                className={`${dateBoxClasses} ${isSelection ? "opacity-60" : ""}`}
               >
                 <input
                   type="date"
                   name="endDate"
-                  value={isSingleLike ? "" : endDate}
+                  value={isSelection ? "" : endDate}
                   onChange={(e) => setEndDate(e.target.value)}
-                  disabled={isSingleLike}
+                  disabled={isSelection}
                   className={dateInnerClasses}
                 />
                 <span className="shrink-0 pl-1 text-xs text-zinc-500 dark:text-zinc-400">
                   (End)
                 </span>
-                {!isSingleLike && endDate && (
+                {!isSelection && endDate && (
                   <button
                     type="button"
                     onClick={() => setEndDate("")}
@@ -600,7 +620,7 @@ export function ActivityForm({
                   <>
                     End date{" "}
                     <span className="font-normal text-zinc-500">
-                      {isSingleLike ? "(n/a)" : "(optional)"}
+                      {isSelection ? "(n/a)" : "(optional)"}
                     </span>
                   </>
                 }
@@ -609,12 +629,12 @@ export function ActivityForm({
                   <input
                     type="date"
                     name="endDate"
-                    value={isSingleLike ? "" : endDate}
+                    value={isSelection ? "" : endDate}
                     onChange={(e) => setEndDate(e.target.value)}
-                    disabled={isSingleLike}
+                    disabled={isSelection}
                     className={`${inputClasses} pr-8`}
                   />
-                  {!isSingleLike && endDate && (
+                  {!isSelection && endDate && (
                     <button
                       type="button"
                       onClick={() => setEndDate("")}
@@ -626,7 +646,7 @@ export function ActivityForm({
                     </button>
                   )}
                 </div>
-                {!isSingleLike && (
+                {!isSelection && (
                   <button
                     type="button"
                     onClick={() => setEndDate("")}
@@ -954,10 +974,11 @@ export function ActivityForm({
         name="pinned"
         value={pinned ? "true" : "false"}
       />
+      <input type="hidden" name="completionMode" value={effectiveMode} />
       <input
         type="hidden"
         name="autoResolve"
-        value={autoResolve ? "true" : "false"}
+        value={effectiveMode === "auto" ? "true" : "false"}
       />
       {isCompact ? (
         <div className="flex gap-1">
@@ -1054,34 +1075,38 @@ export function ActivityForm({
         compact={isCompact}
       />
 
-      {/* Auto-drop when past (migration 0059) — "Stays until marked"
-          (default) vs "Auto-drop when past" (past-due unmarked occurrences
-          silently drop; good for meetings you don't want to mark). */}
-      <div className="flex gap-1">
-        <button
-          type="button"
-          onClick={() => setAutoResolve(false)}
-          aria-pressed={!autoResolve}
-          className={`flex-1 touch-manipulation rounded-md border px-2 py-1 text-center text-xs font-medium transition-colors ${
-            !autoResolve
-              ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
-              : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-          }`}
-        >
-          Stays until marked
-        </button>
-        <button
-          type="button"
-          onClick={() => setAutoResolve(true)}
-          aria-pressed={autoResolve}
-          className={`flex-1 touch-manipulation rounded-md border px-2 py-1 text-center text-xs font-medium transition-colors ${
-            autoResolve
-              ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
-              : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-          }`}
-        >
-          Auto-drop when past
-        </button>
+      {/* Completion mode (migration 0065) — Mark Complete (must mark),
+          Auto-Complete (comment-only, auto-marks complete once past), or
+          Both. Multi-day events default to Auto-Complete. */}
+      <div className="flex flex-col gap-1">
+        <span className="text-xs font-medium text-zinc-500">
+          Completion
+          {isMultiDay && !modeTouched && (
+            <span className="ml-1 font-normal text-zinc-400">
+              (multi-day → Auto-Complete)
+            </span>
+          )}
+        </span>
+        <div className="flex gap-1">
+          {COMPLETION_MODES.map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => {
+                setCompletionMode(m);
+                setModeTouched(true);
+              }}
+              aria-pressed={effectiveMode === m}
+              className={`flex-1 touch-manipulation rounded-md border px-2 py-1 text-center text-xs font-medium transition-colors ${
+                effectiveMode === m
+                  ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                  : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+              }`}
+            >
+              {COMPLETION_MODE_LABEL[m]}
+            </button>
+          ))}
+        </div>
       </div>
       </div>
 
