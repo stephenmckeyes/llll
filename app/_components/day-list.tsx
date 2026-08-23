@@ -134,6 +134,9 @@ export type DayInstance = {
      *  Only community-owned activities set this; undefined = 'collective'
      *  (the shared/personal default). */
     completion_type?: "collective" | "aggregate";
+    /** Completion mode (migration 0065): 'mark' (must mark), 'auto'
+     *  (comment-only; auto-completes once past), 'both'. Undefined = 'mark'. */
+    completion_mode?: "mark" | "auto" | "both";
   };
 };
 
@@ -1191,17 +1194,10 @@ function visibleOnDay(
   dayStr: string,
   todayStr: string
 ): boolean {
-  // Auto-drop when past (migration 0059): a still-pending occurrence of an
-  // auto-resolve activity silently disappears once its scheduled day is
-  // behind us — no overdue nag, nothing to mark. It still shows on its own
-  // day (today / future) until then, and completed/missed ones are unaffected.
-  if (
-    inst.activity.auto_resolve &&
-    inst.status === "pending" &&
-    inst.scheduled_for < todayStr
-  ) {
-    return false;
-  }
+  // Auto-drop (migration 0059) was retired in favor of Auto-Complete
+  // (migration 0065): a past-due Auto-Complete/Both occurrence is marked
+  // completed by the dashboard backfill rather than hidden, so it moves to
+  // the day's Completed dropdown on its own — no special drop rule here.
   const r = inst.activity.rhythm;
   if (r.type === "single") {
     // Overdue singles render on BOTH today AND their original

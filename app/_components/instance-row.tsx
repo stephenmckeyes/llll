@@ -18,6 +18,7 @@ import {
   unlabelInstance,
 } from "@/app/actions/activities";
 import { rhythmCategoryLabel } from "@/lib/domain/rhythm-summary";
+import { coerceCompletionMode } from "@/lib/domain/completion-mode";
 import type { TagMap } from "@/lib/domain/tags";
 import { formatTimeRange } from "@/lib/ui/format-time";
 import { useTimeFormat } from "@/lib/ui/format-time-client";
@@ -141,6 +142,13 @@ export function InstanceRow({
   // Aggregate mode (community-owned 'aggregate' activity): the row shows the
   // group's N/M and lets the viewer mark their own. Takes precedence over the
   // collective/personal action buttons below.
+  // Completion mode (0065). 'auto' → comment-only (no manual verdict); it
+  // auto-completes once its day passes (persisted by a server backfill). Only
+  // applies to the personal actionable path — collective/aggregate community
+  // rows have their own controls.
+  const completionMode = coerceCompletionMode(activity.completion_mode);
+  const autoOnly = completionMode === "auto";
+
   const isAggregate =
     !!aggregate && activity.completion_type === "aggregate";
   const aggInfo = isAggregate ? aggregate!.getInfo(instance.id) : undefined;
@@ -571,6 +579,33 @@ export function InstanceRow({
             className="min-h-11 shrink-0 touch-manipulation rounded-md border border-zinc-300 px-3 py-2 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-100 active:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
           >
             Unlabel
+          </button>
+        </div>
+      ) : autoOnly ? (
+        // Auto-Complete: comment-only. It marks itself complete once its day
+        // passes — you can reflect on it but not mark/miss it yourself.
+        <div className="flex shrink-0 items-center gap-2">
+          <span
+            title="This activity auto-completes once its time passes."
+            className="hidden text-[11px] text-zinc-400 sm:inline"
+          >
+            auto
+          </span>
+          <button
+            type="button"
+            onClick={() => setCommentOpen(true)}
+            title={
+              instance.comment
+                ? "Edit your reflection on this occurrence"
+                : "Add a reflection"
+            }
+            className={`min-h-11 shrink-0 touch-manipulation rounded-md border px-3 py-2 text-xs font-medium transition-colors active:bg-zinc-100 dark:active:bg-zinc-900 ${
+              instance.comment
+                ? "border-zinc-900 text-zinc-900 hover:bg-zinc-100 dark:border-zinc-50 dark:text-zinc-50 dark:hover:bg-zinc-900"
+                : "border-zinc-300 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
+            }`}
+          >
+            {instance.comment ? "Comment ✓" : "Comment"}
           </button>
         </div>
       ) : (

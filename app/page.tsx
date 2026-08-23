@@ -36,6 +36,10 @@ import {
 import { isStreaksRange } from "@/lib/domain/streaks-range";
 import { ensureInstancesBackfilled } from "@/lib/domain/backfill";
 import {
+  coerceCompletionMode,
+  autoCompletesWhenPast,
+} from "@/lib/domain/completion-mode";
+import {
   frequencyDueDay,
   isPastDuePending,
   unlabeledLandingDay,
@@ -317,8 +321,9 @@ export default async function HomePage({
   // fetchIncompleteInfo READS past ones — disjoint rows), so they
   // parallelize. The per-view fetch (inside DayView / GridView / etc.)
   // runs after this resolves and therefore sees the backfilled rows.
-  const [, incompleteInfo] = await Promise.all([
+  const [, , incompleteInfo] = await Promise.all([
     ensureInstancesBackfilled(supabase, user.id, backfillThrough),
+    autoCompletePastDue(supabase, todayStr),
     fetchIncompleteInfo(supabase, todayStr),
   ]);
 
@@ -518,6 +523,29 @@ function ymdInTimeZone(iso: string, timezone: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// autoCompletePastDue — persist the Auto-Complete / Both rule (migration
+// 0065): any still-pending occurrence of an 'auto'/'both' activity whose day
+// has passed is marked completed. Run on dashboard load so streaks, the Grid,
+// and the day dropdowns all reflect it (RLS scopes the update to the user).
+async function autoCompletePastDue(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  todayStr: string
+): Promise<void> {
+  const { data: autoRows } = await supabase
+    .from("activities")
+    .select("id")
+    .is("archived_at", null)
+    .in("completion_mode", ["auto", "both"]);
+  const ids = ((autoRows ?? []) as Array<{ id: string }>).map((a) => a.id);
+  if (ids.length === 0) return;
+  await supabase
+    .from("activity_instances")
+    .update({ status: "completed" })
+    .in("activity_id", ids)
+    .eq("status", "pending")
+    .lt("scheduled_for", todayStr);
+}
+
 // fetchIncompleteInfo — used by every view's navigator to power the
 // "Incomplete (N)" chip + jump-to-oldest behavior.
 // ---------------------------------------------------------------------------
@@ -546,11 +574,11 @@ async function fetchIncompleteInfo(
   // queries cost a tiny extra round-trip but are reliable.
   const { data: activeRows } = await supabase
     .from("activities")
-    .select("id, rhythm, auto_resolve")
+    .select("id, rhythm, completion_mode")
     .is("archived_at", null)
-    // Auto-drop activities never count as unlabeled — their past-due
-    // occurrences silently drop (migration 0059).
-    .or("auto_resolve.is.null,auto_resolve.eq.false");
+    // Only Mark-Complete activities can be "unlabeled" — Auto-Complete/Both
+    // resolve themselves once past (migration 0065), so they never nag.
+    .or("completion_mode.is.null,completion_mode.eq.mark");
 
   const active = (activeRows ?? []) as Array<{ id: string; rhythm: Rhythm }>;
   if (active.length === 0) return { count: 0, oldestDate: null };
@@ -905,7 +933,8 @@ async function DayView({
         rollover_missed_days,
         rollover_change_rhythm,
         auto_archive,
-        auto_resolve
+        auto_resolve,
+        completion_mode
       ),
       completion_instances (
         completion_id,
@@ -1125,7 +1154,8 @@ async function TimelineWeekView({
         rollover_missed_days,
         rollover_change_rhythm,
         auto_archive,
-        auto_resolve
+        auto_resolve,
+        completion_mode
       ),
       completion_instances (
         completion_id,
@@ -1644,7 +1674,7 @@ async function GridView({
     supabase
       .from("activities")
       .select(
-        "id, name, notes, rhythm, priority, scheduled_times, scheduled_end_times, default_skill_tags, start_date, end_date, archived_at, reminders, streak_mode, streak_goal, track_on_grid, rollover_missed_days, rollover_change_rhythm, auto_resolve"
+        "id, name, notes, rhythm, priority, scheduled_times, scheduled_end_times, default_skill_tags, start_date, end_date, archived_at, reminders, streak_mode, streak_goal, track_on_grid, rollover_missed_days, rollover_change_rhythm, auto_resolve, completion_mode"
       )
       .eq("user_id", userId)
       .is("archived_at", null)
@@ -1677,6 +1707,7 @@ async function GridView({
     rollover_missed_days: boolean;
     rollover_change_rhythm: boolean;
     auto_resolve: boolean;
+    completion_mode: string | null;
   };
   // Grid only DISPLAYS activities the user opted into (track_on_grid).
   // Everything is still tracked elsewhere; this is a display filter.
@@ -1947,14 +1978,16 @@ async function GridView({
         state = "missed";
         missed++;
       } else if (dateStr < todayStr) {
-        // pending + past. Auto-drop activities (migration 0059) never go
-        // overdue — the occurrence silently drops, so render it blank
-        // instead of an "Unlabeled" cell.
-        if (act.auto_resolve) {
-          return makeNonInstanceCell("not-scheduled", dateStr);
+        // pending + past. Auto-Complete / Both activities (migration 0065)
+        // auto-mark complete once the day passes, so a past pending cell
+        // reads as completed rather than overdue.
+        if (autoCompletesWhenPast(coerceCompletionMode(act.completion_mode))) {
+          state = "completed";
+          done++;
+        } else {
+          state = "overdue";
+          unlabeled++;
         }
-        state = "overdue";
-        unlabeled++;
       } else {
         state = "scheduled";
       }
@@ -2208,6 +2241,8 @@ function toDayInstance(
     rollover_missed_days?: boolean;
     rollover_change_rhythm?: boolean;
     auto_archive?: boolean;
+    auto_resolve?: boolean;
+    completion_mode?: string | null;
   }
 ): DayInstance {
   return {
@@ -2246,6 +2281,8 @@ function toDayInstance(
       rollover_missed_days: act.rollover_missed_days ?? false,
       rollover_change_rhythm: act.rollover_change_rhythm ?? false,
       auto_archive: act.auto_archive ?? false,
+      auto_resolve: act.auto_resolve ?? false,
+      completion_mode: coerceCompletionMode(act.completion_mode),
     },
   };
 }

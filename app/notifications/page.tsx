@@ -150,8 +150,9 @@ export default async function NotificationsPage() {
     .from("activities")
     .select("id, name, rhythm")
     .is("archived_at", null)
-    // Auto-drop activities (migration 0059) don't nag as overdue reminders.
-    .or("auto_resolve.is.null,auto_resolve.eq.false");
+    // Only Mark-Complete activities nag as overdue reminders — Auto-Complete/
+    // Both resolve themselves once past (migration 0065).
+    .or("completion_mode.is.null,completion_mode.eq.mark");
   const active = (activeRows ?? []) as Array<{
     id: string;
     name: string;
