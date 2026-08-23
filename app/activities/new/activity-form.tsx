@@ -1079,14 +1079,6 @@ export function ActivityForm({
           Auto-Complete (comment-only, auto-marks complete once past), or
           Both. Multi-day events default to Auto-Complete. */}
       <div className="flex flex-col gap-1">
-        <span className="text-xs font-medium text-zinc-500">
-          Completion
-          {isMultiDay && !modeTouched && (
-            <span className="ml-1 font-normal text-zinc-400">
-              (multi-day → Auto-Complete)
-            </span>
-          )}
-        </span>
         <div className="flex gap-1">
           {COMPLETION_MODES.map((m) => (
             <button

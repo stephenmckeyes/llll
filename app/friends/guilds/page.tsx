@@ -1,49 +1,15 @@
 // ---------------------------------------------------------------------------
-// /friends/guilds — Guilds tab. Real end-to-end for phase 1: list + create
-// + view. Guild-specific skill/adventure tracks land in a follow-up phase
-// (see BACKLOG.md → "Communities" → guild_tracks).
+// /friends/guilds — CLOSED for now.
+//
+// Guilds are being reworked into certified groups responsible for creating
+// adventures and (eventually) "achievement diaries". Until that ships the
+// tab is hidden and this route redirects to /friends so old links/bookmarks
+// don't land on a dead page. The full guild implementation (CommunityTab
+// with kind="guild") is preserved in git history for when it returns.
 // ---------------------------------------------------------------------------
 
-import {
-  getCommunity,
-  getCommunityActivityBundle,
-  listMyCommunities,
-} from "@/app/actions/communities";
-import { requireOnboardedUser } from "@/lib/auth/require-onboarded-user";
+import { redirect } from "next/navigation";
 
-import { CommunityShell } from "../_community-shell";
-import { CommunityTab } from "../_community-tab";
-
-export default async function GuildsTabPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
-  await requireOnboardedUser();
-  const params = await searchParams;
-  const rawId = params.id;
-  const id = typeof rawId === "string" ? rawId : null;
-
-  const communities = await listMyCommunities("guild");
-  const effectiveId =
-    id && communities.some((c) => c.id === id)
-      ? id
-      : (communities[0]?.id ?? null);
-  const [detail, bundle] = effectiveId
-    ? await Promise.all([
-        getCommunity(effectiveId),
-        getCommunityActivityBundle(effectiveId),
-      ])
-    : [null, null];
-
-  return (
-    <CommunityShell active="guilds">
-      <CommunityTab
-        kind="guild"
-        communities={communities}
-        detail={detail}
-        bundle={bundle}
-      />
-    </CommunityShell>
-  );
+export default function GuildsClosedPage() {
+  redirect("/friends");
 }

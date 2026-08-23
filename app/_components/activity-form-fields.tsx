@@ -1114,14 +1114,6 @@ export function ActivityFormFields({
           auto-marks complete once its time passes. Both: markable AND
           auto-completes if left unmarked. Multi-day events default to Auto. */}
       <div className="mt-1 flex flex-col gap-1">
-        <span className="text-xs font-medium text-zinc-500">
-          Completion
-          {isMultiDay && !modeTouched && (
-            <span className="ml-1 font-normal normal-case text-zinc-400">
-              (multi-day → Auto-Complete)
-            </span>
-          )}
-        </span>
         <div className="flex gap-1">
           {COMPLETION_MODES.map((m) => (
             <button
@@ -1152,9 +1144,6 @@ export function ActivityFormFields({
         <>
           <input type="hidden" name="completionType" value={completionType} />
           <div className="mt-1 flex flex-col gap-1">
-            <span className="text-xs font-medium text-zinc-500">
-              Completion
-            </span>
             <div className="flex gap-1">
               <button
                 type="button"

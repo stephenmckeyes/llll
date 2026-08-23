@@ -1,12 +1,13 @@
 // ---------------------------------------------------------------------------
 // FriendsTabs — the top-level tab switcher shared by /friends and its
-// sibling routes /friends/groups, /friends/clubs, /friends/guilds.
+// sibling routes /friends/groups, /friends/clubs, /friends/coaches.
 //
 // Same visual pattern as SectionTabs (which fronts Calendar / Streaks /
-// Total on the Schedule surface). Four peers here — the "Friends" tab is
-// the existing per-person view; the other three are community types
-// (many groups / many clubs / many guilds per user, each with their own
-// dropdown selector inside the tab).
+// Total on the Schedule surface). The "Friends" tab is the existing
+// per-person view; Groups / Clubs are community types (many per user, each
+// with their own dropdown selector inside the tab); Coaches is a
+// placeholder for the upcoming professional-coaching marketplace. Guilds are
+// temporarily closed (being reworked) — no tab, route redirects to /friends.
 //
 // Kept in its own file so all four pages render the tab strip
 // identically without dragging component state into the page bodies.
@@ -16,7 +17,12 @@ import Link from "next/link";
 
 import { TabPending } from "@/app/_components/tab-pending";
 
-export type FriendsTabKind = "friends" | "groups" | "clubs" | "guilds";
+export type FriendsTabKind =
+  | "friends"
+  | "groups"
+  | "clubs"
+  | "guilds"
+  | "coaches";
 
 export function FriendsTabs({
   active,
@@ -38,7 +44,9 @@ export function FriendsTabs({
       <FriendsTab label="Friends" href="/friends" active={active === "friends"} />
       <FriendsTab label="Groups" href="/friends/groups" active={active === "groups"} />
       <FriendsTab label="Clubs" href="/friends/clubs" active={active === "clubs"} />
-      <FriendsTab label="Guilds" href="/friends/guilds" active={active === "guilds"} />
+      <FriendsTab label="Coaches" href="/friends/coaches" active={active === "coaches"} />
+      {/* Guilds are closed for now — being reworked into certified groups that
+          create adventures + achievement diaries. Tab hidden; route redirects. */}
     </nav>
   );
 }
