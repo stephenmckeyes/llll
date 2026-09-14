@@ -336,11 +336,54 @@ function WeekGrid({
 
   const byDate = useMemo(() => indexByDate(instances), [instances]);
 
+  // A shared multi-day event: a "Once" activity whose end_date is after its
+  // start. Rendered as a connected bar across its days (same as personal).
+  const isShareSpan = (inst: SharedInstance): boolean => {
+    const a = byId.get(inst.activityId);
+    return (
+      !!a &&
+      a.rhythm.type === "single" &&
+      !!a.endDate &&
+      !!a.startDate &&
+      a.endDate > a.startDate
+    );
+  };
+
   const days = Array.from({ length: 7 }, (_, i) => {
     const date = addDays(weekStart, i);
     const dateStr = format(date, "yyyy-MM-dd");
-    // Time-of-day order (no-time last), matching the personal Week view.
-    return { date, dateStr, items: sortByTime(byDate.get(dateStr) ?? [], byId) };
+    // Spans first (stable by start+activity so a bar keeps one lane across
+    // days), then the usual time-of-day order.
+    const items = sortByTime(byDate.get(dateStr) ?? [], byId).slice();
+    items.sort((a, b) => {
+      const sa = isShareSpan(a);
+      const sb = isShareSpan(b);
+      if (sa !== sb) return sa ? -1 : 1;
+      if (sa && sb) {
+        const aa = byId.get(a.activityId);
+        const bb = byId.get(b.activityId);
+        const s = (aa?.startDate ?? "").localeCompare(bb?.startDate ?? "");
+        if (s !== 0) return s;
+        return a.activityId.localeCompare(b.activityId);
+      }
+      return 0; // keep sortByTime order for non-spans (stable sort)
+    });
+    return { date, dateStr, items };
+  });
+
+  // Per-instance span connect flags (same activity present on the adjacent day).
+  const spanActIdsByDay = days.map(
+    (d) => new Set(d.items.filter(isShareSpan).map((i) => i.activityId))
+  );
+  const spanConnect = new Map<string, { left: boolean; right: boolean }>();
+  days.forEach((d, di) => {
+    for (const inst of d.items) {
+      if (!isShareSpan(inst)) continue;
+      spanConnect.set(inst.instanceId, {
+        left: di > 0 && spanActIdsByDay[di - 1].has(inst.activityId),
+        right: di < 6 && spanActIdsByDay[di + 1].has(inst.activityId),
+      });
+    }
   });
 
   return (
@@ -416,6 +459,9 @@ function WeekGrid({
                           tags={act?.defaultSkillTags ?? []}
                           status={status}
                           tagMap={tagMap}
+                          isSpan={spanConnect.has(inst.instanceId)}
+                          connectLeft={spanConnect.get(inst.instanceId)?.left}
+                          connectRight={spanConnect.get(inst.instanceId)?.right}
                         />
                       </button>
                     </li>
@@ -456,16 +502,28 @@ function MonthGrid({
   const gridStart = startOfWeek(monthStart, { weekStartsOn: 1 });
 
   // Name banners per day, colored by first tag — matches the personal
-  // Month view (MonthCell). Time-of-day order within a day.
+  // Month view (MonthCell). Multi-day events (a "Once" activity whose
+  // end_date > start_date) are tagged with span info so they render as a
+  // connected bar across their days.
   const bannersByDate = useMemo(() => {
     const m = new Map<string, MonthBanner[]>();
     for (const inst of sortByTime(instances, byId)) {
       const act = byId.get(inst.activityId);
+      const isSpan =
+        !!act &&
+        act.rhythm.type === "single" &&
+        !!act.endDate &&
+        !!act.startDate &&
+        act.endDate > act.startDate;
       const banner: MonthBanner = {
         id: inst.instanceId,
         name: act?.name ?? "Activity",
         status: inst.status,
         tags: act?.defaultSkillTags ?? [],
+        activityId: inst.activityId,
+        ...(isSpan
+          ? { spanStart: act!.startDate, spanEnd: act!.endDate! }
+          : {}),
       };
       const arr = m.get(inst.scheduledFor);
       if (arr) arr.push(banner);
@@ -477,13 +535,45 @@ function MonthGrid({
   const cells = Array.from({ length: 42 }, (_, i) => {
     const date = addDays(gridStart, i);
     const dateStr = format(date, "yyyy-MM-dd");
+    // Clone + sort spans first (stable by start+activity) so a bar keeps one
+    // lane across days without mutating the memoized banner objects.
+    const banners = (bannersByDate.get(dateStr) ?? []).map((b) => ({ ...b }));
+    banners.sort((a, b) => {
+      const sa = !!a.spanStart;
+      const sb = !!b.spanStart;
+      if (sa !== sb) return sa ? -1 : 1;
+      if (sa && sb) {
+        const s = (a.spanStart ?? "").localeCompare(b.spanStart ?? "");
+        if (s !== 0) return s;
+        return (a.activityId ?? "").localeCompare(b.activityId ?? "");
+      }
+      return 0;
+    });
     return {
       date,
       dateStr,
       inMonth: date.getMonth() === monthStart.getMonth(),
-      banners: bannersByDate.get(dateStr) ?? [],
+      banners,
     };
   });
+
+  // Connect a span to the adjacent day in the same week row.
+  for (let row = 0; row < 6; row++) {
+    for (let col = 0; col < 7; col++) {
+      const cell = cells[row * 7 + col];
+      const prev = col > 0 ? cells[row * 7 + col - 1] : null;
+      const next = col < 6 ? cells[row * 7 + col + 1] : null;
+      for (const b of cell.banners) {
+        if (!b.spanStart || !b.activityId) continue;
+        b.connectLeft = !!prev?.banners.some(
+          (x) => x.spanStart && x.activityId === b.activityId
+        );
+        b.connectRight = !!next?.banners.some(
+          (x) => x.spanStart && x.activityId === b.activityId
+        );
+      }
+    }
+  }
 
   return (
     <div className="flex flex-col gap-3">
