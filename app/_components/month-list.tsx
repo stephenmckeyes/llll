@@ -49,7 +49,7 @@ import {
 import type { TagMap } from "@/lib/domain/tags";
 
 import { IncompleteButton, type IncompleteInfo } from "./incomplete-button";
-import { MonthCell, type MonthBanner } from "./month-cell";
+import { MonthCell } from "./month-cell";
 
 // How many months in each direction to render as scrollable grids.
 // 36 = 3 years each side, comfortable for typical review use cases.
@@ -559,14 +559,49 @@ function MonthSection({
   const cells = Array.from({ length: 42 }, (_, i) => {
     const date = addDaysUtil(gridStart, i);
     const dateStr = format(date, "yyyy-MM-dd");
+    // Clone banners so annotating connect flags below never mutates the
+    // shared monthData cache. Spans sort FIRST (stable by start + activity)
+    // so a multi-day bar holds the same lane across its days; the rest by name.
+    const instances = (banners?.[dateStr] ?? []).map((b) => ({ ...b }));
+    instances.sort((a, b) => {
+      const aSpan = !!a.spanStart;
+      const bSpan = !!b.spanStart;
+      if (aSpan !== bSpan) return aSpan ? -1 : 1;
+      if (aSpan && bSpan) {
+        const s = (a.spanStart ?? "").localeCompare(b.spanStart ?? "");
+        if (s !== 0) return s;
+        return (a.activityId ?? "").localeCompare(b.activityId ?? "");
+      }
+      return a.name.localeCompare(b.name);
+    });
     return {
       date,
       dateStr,
       inMonth: date >= entry.monthStart && date <= monthEnd,
       isToday: dateStr === todayStr,
-      instances: banners?.[dateStr] ?? ([] as MonthBanner[]),
+      instances,
     };
   });
+
+  // Connect a span to the adjacent day in the SAME week row when that day
+  // carries the same activity's span (so the bar bridges the grid gap and
+  // rounds only at its true ends / week edges).
+  for (let row = 0; row < 6; row++) {
+    for (let col = 0; col < 7; col++) {
+      const cell = cells[row * 7 + col];
+      const prev = col > 0 ? cells[row * 7 + col - 1] : null;
+      const next = col < 6 ? cells[row * 7 + col + 1] : null;
+      for (const b of cell.instances) {
+        if (!b.spanStart || !b.activityId) continue;
+        b.connectLeft = !!prev?.instances.some(
+          (x) => x.spanStart && x.activityId === b.activityId
+        );
+        b.connectRight = !!next?.instances.some(
+          (x) => x.spanStart && x.activityId === b.activityId
+        );
+      }
+    }
+  }
 
   return (
     <section

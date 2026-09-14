@@ -1255,7 +1255,7 @@ async function WeekView({
       status,
       tags,
       activities (
-        id, name, rhythm, priority, scheduled_times, default_skill_tags, archived_at
+        id, name, rhythm, priority, scheduled_times, default_skill_tags, start_date, end_date, archived_at
       )
     `
     )
@@ -1277,6 +1277,8 @@ async function WeekView({
       priority: number;
       scheduled_times: string[];
       default_skill_tags: string[];
+      start_date: string;
+      end_date: string | null;
       archived_at: string | null;
     } | null;
   };
@@ -1291,8 +1293,25 @@ async function WeekView({
       continue;
     (byDate[i.scheduled_for] ??= []).push(i);
   }
+  const isWeekSpan = (i: WeekInstance): boolean =>
+    i.activities?.rhythm.type === "single" &&
+    !!i.activities.end_date &&
+    i.activities.end_date > i.activities.start_date;
+
   for (const list of Object.values(byDate)) {
     list.sort((a, b) => {
+      // Multi-day events (spans) sort FIRST and by (start, id) so a bar holds
+      // the same lane across days; then the usual time/status/priority/name.
+      const sa = isWeekSpan(a);
+      const sb = isWeekSpan(b);
+      if (sa !== sb) return sa ? -1 : 1;
+      if (sa && sb) {
+        const s = (a.activities?.start_date ?? "").localeCompare(
+          b.activities?.start_date ?? ""
+        );
+        if (s !== 0) return s;
+        return (a.activities?.id ?? "").localeCompare(b.activities?.id ?? "");
+      }
       // Primary: time of day (08:00 before 10:00 before 13:00). Activities
       // with NO set time sort last ("99:99" sentinel). Then pending before
       // done, then priority, then name.
@@ -1316,6 +1335,28 @@ async function WeekView({
       isToday: dateStr === todayStr,
       items: byDate[dateStr] ?? [],
     };
+  });
+
+  // Span connections: a multi-day event connects to the adjacent day when
+  // that day carries the same activity. Keyed by instance id → {left,right}.
+  const spanConnect = new Map<string, { left: boolean; right: boolean }>();
+  const spanActivityIdsByDay = days.map(
+    (d) =>
+      new Set(
+        d.items
+          .filter((i) => isWeekSpan(i) && i.activities)
+          .map((i) => i.activities!.id)
+      )
+  );
+  days.forEach((d, di) => {
+    for (const i of d.items) {
+      if (!isWeekSpan(i) || !i.activities) continue;
+      const aid = i.activities.id;
+      spanConnect.set(i.id, {
+        left: di > 0 && spanActivityIdsByDay[di - 1].has(aid),
+        right: di < 6 && spanActivityIdsByDay[di + 1].has(aid),
+      });
+    }
   });
 
   const prevDate = format(addDays(weekStart, -7), "yyyy-MM-dd");
@@ -1367,7 +1408,12 @@ async function WeekView({
             ) : (
               <ul className="flex min-w-0 flex-col gap-0.5">
                 {d.items.map((i) => (
-                  <WeekBanner key={i.id} item={i} tagMap={tagMap} />
+                  <WeekBanner
+                    key={i.id}
+                    item={i}
+                    tagMap={tagMap}
+                    span={spanConnect.get(i.id)}
+                  />
                 ))}
               </ul>
             )}
@@ -1381,6 +1427,7 @@ async function WeekView({
 function WeekBanner({
   item,
   tagMap,
+  span,
 }: {
   item: {
     status: string;
@@ -1395,6 +1442,8 @@ function WeekBanner({
     } | null;
   };
   tagMap: TagMap;
+  /** Present when this is a multi-day event; drives the connected-bar look. */
+  span?: { left: boolean; right: boolean };
 }) {
   if (!item.activities) return null;
   const firstTime = item.activities.scheduled_times?.[0];
@@ -1413,9 +1462,42 @@ function WeekBanner({
         tags={item.tags ?? []}
         status={status}
         tagMap={tagMap}
+        isSpan={!!span}
+        connectLeft={span?.left}
+        connectRight={span?.right}
       />
     </li>
   );
+}
+
+// Build a MonthBanner, tagging it as a multi-day span when the parent is a
+// "Once" activity whose end_date is after its start_date. Span banners render
+// as a connected bar across their days (see MonthBannerPill / MonthSection).
+function toMonthBanner(
+  instanceId: string,
+  status: string,
+  tags: string[] | null,
+  act: {
+    id: string;
+    name: string;
+    rhythm: Rhythm;
+    start_date: string;
+    end_date: string | null;
+    default_skill_tags: string[] | null;
+  }
+): MonthBanner {
+  const isSpan =
+    act.rhythm.type === "single" &&
+    !!act.end_date &&
+    act.end_date > act.start_date;
+  return {
+    id: instanceId,
+    name: act.name,
+    status,
+    tags: tags ?? [],
+    activityId: act.id,
+    ...(isSpan ? { spanStart: act.start_date, spanEnd: act.end_date! } : {}),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1469,21 +1551,27 @@ async function MonthView({
   const { data } = await supabase
     .from("activity_instances")
     .select(
-      "id, scheduled_for, status, tags, activities!inner(name, archived_at, default_skill_tags)"
+      "id, scheduled_for, status, tags, activities!inner(id, name, rhythm, start_date, end_date, archived_at, default_skill_tags)"
     )
     .gte("scheduled_for", format(eagerFrom, "yyyy-MM-dd"))
     .lte("scheduled_for", format(eagerTo, "yyyy-MM-dd"))
     .is("activities.archived_at", null);
 
+  type MonthActRow = {
+    id: string;
+    name: string;
+    rhythm: Rhythm;
+    start_date: string;
+    end_date: string | null;
+    archived_at: string | null;
+    default_skill_tags: string[] | null;
+  };
   type Row = {
     id: string;
     scheduled_for: string;
     status: string;
     tags: string[] | null;
-    activities:
-      | { name: string; archived_at: string | null; default_skill_tags: string[] | null }
-      | Array<{ name: string; archived_at: string | null; default_skill_tags: string[] | null }>
-      | null;
+    activities: MonthActRow | MonthActRow[] | null;
   };
   // Flat byDate map (from eager fetch), then re-bucket by monthKey to
   // match the shape MonthList expects (Record<monthKey, MonthBannersByDate>).
@@ -1492,12 +1580,9 @@ async function MonthView({
     const act = Array.isArray(r.activities) ? r.activities[0] : r.activities;
     if (!act) continue;
     if (!keepForCalendar(act.default_skill_tags ?? [], hiddenTags)) continue;
-    (flat[r.scheduled_for] ??= []).push({
-      id: r.id,
-      name: act.name,
-      status: r.status,
-      tags: r.tags ?? [],
-    });
+    (flat[r.scheduled_for] ??= []).push(
+      toMonthBanner(r.id, r.status, r.tags, act)
+    );
   }
   const initialData: Record<string, MonthBannersByDate> = {};
   for (const key of windowMonths) {

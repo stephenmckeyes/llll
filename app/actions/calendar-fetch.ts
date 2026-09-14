@@ -42,22 +42,28 @@ export async function fetchMonthActivities(
   const { data } = await supabase
     .from("activity_instances")
     .select(
-      "id, scheduled_for, status, tags, activities!inner(name, archived_at, default_skill_tags)"
+      "id, scheduled_for, status, tags, activities!inner(id, name, rhythm, start_date, end_date, archived_at, default_skill_tags)"
     )
     .gte("scheduled_for", format(gridStart, "yyyy-MM-dd"))
     .lte("scheduled_for", format(gridEnd, "yyyy-MM-dd"))
     .is("activities.archived_at", null);
 
   const hiddenSet = new Set(hiddenTags);
+  type ActRow = {
+    id: string;
+    name: string;
+    rhythm: { type?: string } | null;
+    start_date: string;
+    end_date: string | null;
+    archived_at: string | null;
+    default_skill_tags: string[] | null;
+  };
   type Row = {
     id: string;
     scheduled_for: string;
     status: string;
     tags: string[] | null;
-    activities:
-      | { name: string; archived_at: string | null; default_skill_tags: string[] | null }
-      | Array<{ name: string; archived_at: string | null; default_skill_tags: string[] | null }>
-      | null;
+    activities: ActRow | ActRow[] | null;
   };
   const result: MonthBannersByDate = {};
   for (const r of (data ?? []) as Row[]) {
@@ -67,11 +73,18 @@ export async function fetchMonthActivities(
     // Hidden-tag filter: an activity's DEFAULT tags decide whether it
     // shows in Calendar. Matches keepForCalendar in page.tsx.
     if (hiddenSet.size > 0 && defaults.some((t) => hiddenSet.has(t))) continue;
+    // Multi-day event → tag with span info so it renders as a connected bar.
+    const isSpan =
+      act.rhythm?.type === "single" &&
+      !!act.end_date &&
+      act.end_date > act.start_date;
     (result[r.scheduled_for] ??= []).push({
       id: r.id,
       name: act.name,
       status: r.status,
       tags: r.tags ?? [],
+      activityId: act.id,
+      ...(isSpan ? { spanStart: act.start_date, spanEnd: act.end_date! } : {}),
     });
   }
   return result;

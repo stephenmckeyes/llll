@@ -18,6 +18,17 @@ export type MonthBanner = {
   name: string;
   status: string;
   tags: string[];
+  /** Parent activity id — lets the renderer connect the same multi-day
+   *  event across adjacent days. */
+  activityId?: string;
+  /** Multi-day event span (a "Once" activity whose end_date > start_date).
+   *  When set, the banner is drawn as a connected bar across its days. */
+  spanStart?: string;
+  spanEnd?: string;
+  /** Transient (set by MonthSection at render time): whether this span
+   *  continues into the previous / next day within the same week row. */
+  connectLeft?: boolean;
+  connectRight?: boolean;
 };
 
 // How many activity-name banners fit inside one month cell before we
@@ -128,6 +139,25 @@ export function MonthBannerPill({
     extraCls = " line-through opacity-70";
   } else if (banner.status === "pending") {
     glyph = "· ";
+  }
+
+  // Multi-day event: draw as a connected bar. Square the sides that continue
+  // into an adjacent day and keep the rounded end where the span truly
+  // starts/ends; the name prints once, at the start of the run.
+  const isSpan = !!banner.spanStart && !!banner.spanEnd;
+  if (isSpan) {
+    const roundL = banner.connectLeft ? "rounded-l-none" : "rounded-l-sm";
+    const roundR = banner.connectRight ? "rounded-r-none" : "rounded-r-sm";
+    return (
+      <span
+        title={banner.name}
+        className={`pointer-events-none block w-full truncate px-1 py-0.5 text-[10px] font-medium leading-tight ${roundL} ${roundR} ${colorCls}${extraCls}`}
+      >
+        {/* Name shows only at the start of the run; continuation cells show a
+            thin bar (a non-breaking space keeps the height). */}
+        {banner.connectLeft ? " " : `${glyph}${banner.name}`}
+      </span>
+    );
   }
 
   return (

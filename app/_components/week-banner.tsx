@@ -19,12 +19,21 @@ export function WeekBannerPill({
   tags,
   status,
   tagMap,
+  isSpan = false,
+  connectLeft = false,
+  connectRight = false,
 }: {
   name: string;
   firstTime?: string | null;
   tags: string[];
   status: OccurrenceStatus;
   tagMap: TagMap;
+  /** Multi-day event: draw as a connected bar; the name prints once at the
+   *  start of the run, and the sides that continue into an adjacent day are
+   *  squared off (rounded only at the true ends / week edges). */
+  isSpan?: boolean;
+  connectLeft?: boolean;
+  connectRight?: boolean;
 }) {
   const done = status === "completed";
   const missed = status === "missed";
@@ -33,6 +42,21 @@ export function WeekBannerPill({
     : missed
       ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
       : "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900";
+
+  if (isSpan) {
+    const roundL = connectLeft ? "rounded-l-none" : "rounded-l";
+    const roundR = connectRight ? "rounded-r-none" : "rounded-r";
+    return (
+      <span
+        className={`block min-w-0 overflow-hidden px-1 py-0.5 text-[9px] font-medium leading-tight ${roundL} ${roundR} ${cls}`}
+        title={`${name}${firstTime ? ` @ ${firstTime}` : ""}`}
+      >
+        {/* Name only at the start of the run; continuation keeps bar height. */}
+        <span className="block truncate">{connectLeft ? " " : name}</span>
+      </span>
+    );
+  }
+
   return (
     <span
       className={`block min-w-0 overflow-hidden rounded px-1 py-0.5 text-[9px] leading-tight ${cls}`}
