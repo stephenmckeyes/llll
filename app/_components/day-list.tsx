@@ -552,15 +552,29 @@ export function DayList({
     const update = () => {
       const containerRect = container.getBoundingClientRect();
       const sections = container.querySelectorAll<HTMLElement>("[data-date]");
-      let bestDate: string | null = null;
-      let bestTop = Number.POSITIVE_INFINITY;
+      // The header shows the day whose section currently occupies the TOP of
+      // the viewport, and KEEPS showing it until that day's last activity
+      // scrolls past (i.e. until the next day's header reaches the top).
+      // That's the LAST section whose top has reached/passed the viewport top
+      // (greatest `top` among those <= a small threshold). Before the first
+      // section reaches the top, fall back to the topmost (nearest) section.
+      const THRESHOLD = 8; // px: next day becomes active as its header nears the top
+      let activeDate: string | null = null;
+      let activeTop = Number.NEGATIVE_INFINITY;
+      let firstDate: string | null = null;
+      let firstTop = Number.POSITIVE_INFINITY;
       for (const sec of sections) {
         const top = sec.getBoundingClientRect().top - containerRect.top;
-        if (top >= -10 && top < bestTop) {
-          bestTop = top;
-          bestDate = sec.getAttribute("data-date");
+        if (top <= THRESHOLD && top > activeTop) {
+          activeTop = top;
+          activeDate = sec.getAttribute("data-date");
+        }
+        if (top < firstTop) {
+          firstTop = top;
+          firstDate = sec.getAttribute("data-date");
         }
       }
+      const bestDate = activeDate ?? firstDate;
       if (bestDate) {
         setCurrentDate((prev) => (prev === bestDate ? prev : bestDate!));
         setDateInputValue((prev) => (prev === bestDate ? prev : bestDate!));
