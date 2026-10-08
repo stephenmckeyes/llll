@@ -1012,13 +1012,16 @@ export async function getCommunityMonthBanners(
 
   const { data: actRows } = await supabase
     .from("community_owned_activities")
-    .select("id, name, default_skill_tags")
+    .select("id, name, default_skill_tags, rhythm, start_date, end_date")
     .eq("community_id", communityId)
     .is("archived_at", null);
   const acts = (actRows ?? []) as Array<{
     id: string;
     name: string;
     default_skill_tags: string[] | null;
+    rhythm: { type?: string } | null;
+    start_date: string;
+    end_date: string | null;
   }>;
   if (acts.length === 0) return {};
   const actMap = new Map(acts.map((a) => [a.id, a]));
@@ -1039,6 +1042,11 @@ export async function getCommunityMonthBanners(
   }>) {
     const act = actMap.get(r.activity_id);
     if (!act) continue;
+    // Multi-day event → tag with span info for the connected-bar render.
+    const isSpan =
+      act.rhythm?.type === "single" &&
+      !!act.end_date &&
+      act.end_date > act.start_date;
     const banner: MonthBanner = {
       id: r.id,
       name: act.name,
@@ -1047,13 +1055,25 @@ export async function getCommunityMonthBanners(
           ? r.status
           : "pending",
       tags: act.default_skill_tags ?? [],
+      activityId: act.id,
+      ...(isSpan ? { spanStart: act.start_date, spanEnd: act.end_date! } : {}),
     };
     (result[r.scheduled_for] ??= []).push(banner);
   }
-  // Stable order within a day: by activity name (matches the personal
-  // loader's name-sorted activity fetch).
+  // Stable order within a day: spans first (so a bar keeps one lane across
+  // days), then by activity name.
   for (const k of Object.keys(result)) {
-    result[k].sort((a, b) => a.name.localeCompare(b.name));
+    result[k].sort((a, b) => {
+      const sa = !!a.spanStart;
+      const sb = !!b.spanStart;
+      if (sa !== sb) return sa ? -1 : 1;
+      if (sa && sb) {
+        const s = (a.spanStart ?? "").localeCompare(b.spanStart ?? "");
+        if (s !== 0) return s;
+        return (a.activityId ?? "").localeCompare(b.activityId ?? "");
+      }
+      return a.name.localeCompare(b.name);
+    });
   }
   return result;
 }
@@ -1159,10 +1179,21 @@ export async function createCommunityCalendarActivity(input: {
     input.endDate && input.endDate < horizon ? input.endDate : horizon;
   if (input.startDate <= to) {
     try {
-      const dates = generateInstances(parsed.data, {
-        from: input.startDate,
-        to,
-      }).map((i) => i.scheduledFor);
+      // A multi-day event (single with a later end date) materializes one
+      // occurrence per day across its span so it shows every day and renders
+      // as a connected bar; other rhythms use their normal generation.
+      const isSpan =
+        parsed.data.type === "single" &&
+        !!input.endDate &&
+        input.endDate > input.startDate;
+      const dates = (
+        isSpan
+          ? generateInstances(
+              { type: "daily" },
+              { from: input.startDate, to }
+            )
+          : generateInstances(parsed.data, { from: input.startDate, to })
+      ).map((i) => i.scheduledFor);
       if (dates.length > 0) {
         await supabase.rpc("insert_community_instances", {
           p_activity_id: id as string,
@@ -1241,9 +1272,16 @@ export async function updateCommunityCalendarActivity(input: {
     input.endDate && input.endDate < horizon ? input.endDate : horizon;
   if (from <= to) {
     try {
-      const dates = generateInstances(parsed.data, { from, to }).map(
-        (i) => i.scheduledFor
-      );
+      // Multi-day event → one occurrence per day across the span.
+      const isSpan =
+        parsed.data.type === "single" &&
+        !!input.endDate &&
+        input.endDate > input.startDate;
+      const dates = (
+        isSpan
+          ? generateInstances({ type: "daily" }, { from, to })
+          : generateInstances(parsed.data, { from, to })
+      ).map((i) => i.scheduledFor);
       if (dates.length > 0) {
         await supabase.rpc("insert_community_instances", {
           p_activity_id: input.activityId,
@@ -1425,8 +1463,18 @@ function parseCommunityActivityForm(formData: FormData):
         : [startDate]
       : undefined;
   const endRaw = String(formData.get("endDate") ?? "").trim();
+  // Selection singles are one day each. A plain single keeps a later end date
+  // → MULTI-DAY EVENT (spans [start, end]); same day / none → one day.
   const endDate =
-    parsed.data.type === "single" ? null : endRaw.length > 0 ? endRaw : null;
+    rhythmType === "selection"
+      ? null
+      : parsed.data.type === "single"
+        ? endRaw.length > 0 && endRaw > startDate
+          ? endRaw
+          : null
+        : endRaw.length > 0
+          ? endRaw
+          : null;
   if (endDate && endDate < startDate) {
     return { error: "End date must be on or after the start date." };
   }
