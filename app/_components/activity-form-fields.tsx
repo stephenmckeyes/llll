@@ -130,6 +130,7 @@ export function ActivityFormFields({
   showCompletionType = false,
   initialCompletionType = "collective",
   showSelection = false,
+  showCompletionMode = true,
 }: {
   initialValues: ActivityFormInitial;
   /** When true, render the start-date input empty regardless of the
@@ -157,6 +158,10 @@ export function ActivityFormFields({
    *  option that fans out into N single activities server-side. Default
    *  false (edit contexts don't offer it). */
   showSelection?: boolean;
+  /** Show the Mark/Auto-Complete/Both completion-mode toggle. Default true
+   *  (personal). Off for community-owned activities, whose completion model
+   *  is collective/aggregate, not the personal mark/auto/both axis. */
+  showCompletionMode?: boolean;
   /** Add Activity form density (migration 0023). "compact" swaps in a
    *  stripped-down JSX that hides all section labels, drops Priority,
    *  turns the rhythm picker into inline text chips, collapses Tags to
@@ -1112,29 +1117,32 @@ export function ActivityFormFields({
       {/* --- Completion mode (migration 0065) ----------------------- */}
       {/* Mark Complete: you must mark it. Auto-Complete: comment-only, it
           auto-marks complete once its time passes. Both: markable AND
-          auto-completes if left unmarked. Multi-day events default to Auto. */}
-      <div className="mt-1 flex flex-col gap-1">
-        <div className="flex gap-1">
-          {COMPLETION_MODES.map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => {
-                setCompletionMode(m);
-                setModeTouched(true);
-              }}
-              aria-pressed={effectiveMode === m}
-              className={`flex-1 touch-manipulation rounded-md border px-2 py-1 text-center text-xs font-medium transition-colors ${
-                effectiveMode === m
-                  ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
-                  : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-              }`}
-            >
-              {COMPLETION_MODE_LABEL[m]}
-            </button>
-          ))}
+          auto-completes if left unmarked. Multi-day events default to Auto.
+          Hidden for community-owned activities (collective/aggregate model). */}
+      {showCompletionMode && (
+        <div className="mt-1 flex flex-col gap-1">
+          <div className="flex gap-1">
+            {COMPLETION_MODES.map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => {
+                  setCompletionMode(m);
+                  setModeTouched(true);
+                }}
+                aria-pressed={effectiveMode === m}
+                className={`flex-1 touch-manipulation rounded-md border px-2 py-1 text-center text-xs font-medium transition-colors ${
+                  effectiveMode === m
+                    ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                    : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+                }`}
+              >
+                {COMPLETION_MODE_LABEL[m]}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* --- Completion type (community-owned only, migration 0061) ------ */}
       {/* Collective: any permitted member marks the one shared occurrence

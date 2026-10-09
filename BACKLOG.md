@@ -392,6 +392,31 @@ but-related `calendar_display` idea. When it ships, the sub-tab strip +
 section renderers should read this config instead of the current hardcoded
 order. Contained phase — pick up after the aggregate-completion follow-ups.
 
+**Public (no-login) community calendar sharing (asked for, upcoming).**
+Per-community setting: each community chooses whether its calendar is
+**publicly viewable without logging in** (anyone with the link/handle can
+view the calendar online, read-only, no account) vs. **members-only** (must
+log in AND be a member to see it). Today the calendar is gated behind
+membership (RLS on `community_owned_instances` requires `is_community_member`),
+so this needs:
+- A setting on the community, e.g. `communities.public_calendar boolean`
+  (default false) — likely surfaced in Settings → Admittance next to the
+  existing `outsider_visibility` toggles, and only offerable when
+  `visibility='public'`.
+- A **public, unauthenticated route** (e.g. `/c/<handle>` or
+  `/community/<id>/calendar`) that server-renders the community's calendar
+  read-only for anonymous visitors when `public_calendar` is on. Reuse the
+  shared FriendCalendar/GridTable renderers in read-only mode (no completion
+  controls, no add/edit) over the community's own activities.
+- A **SECURITY DEFINER read** (or a dedicated public RLS policy) returning the
+  community's owned activities + occurrences for anon users ONLY when
+  `public_calendar=true` — do NOT loosen the member-only RLS; add a separate
+  anon-safe path.
+- Consider a "copy public link" affordance in the community header when the
+  setting is on. Distinct from `outsider_visibility` (0054), which is a
+  members/activities PREVIEW for logged-in non-members in Discover — this is a
+  fully public, logged-out calendar page. Contained phase.
+
 **Community chat (phase 7).** Every community gets a group chat, distinct
 from the 1:1 friend DMs (`messages` table + `ChatThread`). Reuse that
 machinery where practical.
