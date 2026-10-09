@@ -6,11 +6,39 @@ startup.
 
 ## Recently done
 
+- ✅ Multi-day events (migrations 0065/0066): a "Once" activity with an
+  end_date later than its start is a multi-day event — materializes one
+  occurrence per day across the span, defaults to Auto-Complete (comment-only;
+  past days auto-complete), and renders as a grouped bar (name shown once,
+  status-colored, squared inner corners) across Week + Month on personal,
+  friend, and community surfaces. 3-way completion mode (Mark/Auto/Both) on
+  the personal forms; community uses collective/aggregate (mode toggle hidden).
+  Verified live.
 - ✅ Remove the redundant "← Mission" back links from the bottom-nav tab
   pages (Community shell, Levels, Adventures, Settings index) — the global
   BottomNav's Schedule tab already returns to the calendar. Kept the
   intra-Settings "← Settings" links and the Notifications back link (those
   aren't bottom-nav destinations).
+
+## Multi-day events — follow-ups
+
+- **Seamless span bars.** The multi-day bar currently renders as same-colored
+  adjacent pills (name once, squared inner corners) but does NOT pixel-connect
+  across the grid gap — each day still sits in its own cell. True seamless
+  bars need a layout change: a per-week **overlay lane** where each span is one
+  element positioned with `grid-column: <startCol> / span <n>` (split at week
+  boundaries), rather than per-cell pills bridged with margins (tried; the
+  `w-full` + per-cell padding + grid gap make margin-bridging inconsistent).
+  Applies to the shared MonthSection (personal/community) + MonthGrid (friend)
+  + the Week grids. Contained but non-trivial rendering rework.
+- **Add-form schedule preview.** The standalone /new form's "Schedule preview"
+  shows a multi-day event as "1 occurrence" on the start day — it previews the
+  single rhythm, not the materialized span. Make the preview expand a multi-day
+  single to its per-day span so the count/preview matches what's created.
+- **Status coloring vs one bar.** Past days of a multi-day event auto-complete
+  (grey) while today/future stay pending (accent), so a spanning event shows a
+  two-tone bar. That's informative (progress) but if a single uniform bar is
+  preferred, derive the bar color from the activity, not per-occurrence status.
 
 ## Calendar unification (in progress)
 

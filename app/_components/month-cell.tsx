@@ -146,6 +146,10 @@ export function MonthBannerPill({
   // starts/ends; the name prints once, at the start of the run.
   const isSpan = !!banner.spanStart && !!banner.spanEnd;
   if (isSpan) {
+    // Square the sides that continue into an adjacent day (rounded only at
+    // the true ends / week edges) + name shown once, so a run of same-colored
+    // bars reads as one multi-day event. (Seamless pixel-connection across the
+    // grid gap needs a per-week overlay lane — tracked in BACKLOG.)
     const roundL = banner.connectLeft ? "rounded-l-none" : "rounded-l-sm";
     const roundR = banner.connectRight ? "rounded-r-none" : "rounded-r-sm";
     return (

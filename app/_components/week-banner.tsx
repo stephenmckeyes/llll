@@ -44,6 +44,9 @@ export function WeekBannerPill({
       : "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900";
 
   if (isSpan) {
+    // Square the sides that continue into an adjacent day; name shown once.
+    // (Seamless pixel-connection across the grid gap needs a per-week overlay
+    // lane — tracked in BACKLOG.)
     const roundL = connectLeft ? "rounded-l-none" : "rounded-l";
     const roundR = connectRight ? "rounded-r-none" : "rounded-r";
     return (
