@@ -617,7 +617,10 @@ function MonthSection({
           </span>
         )}
       </h2>
-      <div className="grid grid-cols-7 gap-1">
+      {/* gap-x-0 so multi-day span bars can meet exactly at the shared cell
+          edge (each bar cancels its cell's horizontal padding). Vertical gap
+          kept. */}
+      <div className="grid grid-cols-7 gap-x-0 gap-y-1">
         {WEEK_HEADERS.map((d) => (
           <div
             key={d}

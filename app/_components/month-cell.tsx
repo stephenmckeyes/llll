@@ -146,16 +146,16 @@ export function MonthBannerPill({
   // starts/ends; the name prints once, at the start of the run.
   const isSpan = !!banner.spanStart && !!banner.spanEnd;
   if (isSpan) {
-    // Square the sides that continue into an adjacent day (rounded only at
-    // the true ends / week edges) + name shown once, so a run of same-colored
-    // bars reads as one multi-day event. (Seamless pixel-connection across the
-    // grid gap needs a per-week overlay lane — tracked in BACKLOG.)
-    const roundL = banner.connectLeft ? "rounded-l-none" : "rounded-l-sm";
-    const roundR = banner.connectRight ? "rounded-r-none" : "rounded-r-sm";
+    // On a continuing side, cancel the cell's horizontal padding (-mx-1) so the
+    // bar reaches the shared cell edge; with the grid's gap-x removed the bars
+    // from adjacent days meet exactly, forming one seamless bar. Rounded only
+    // at the true ends / week edges; name shown once.
+    const roundL = banner.connectLeft ? "rounded-l-none -ml-1" : "rounded-l-sm";
+    const roundR = banner.connectRight ? "rounded-r-none -mr-1" : "rounded-r-sm";
     return (
       <span
         title={banner.name}
-        className={`pointer-events-none block w-full truncate px-1 py-0.5 text-[10px] font-medium leading-tight ${roundL} ${roundR} ${colorCls}${extraCls}`}
+        className={`pointer-events-none block truncate px-1 py-0.5 text-[10px] font-medium leading-tight ${roundL} ${roundR} ${colorCls}${extraCls}`}
       >
         {/* Name shows only at the start of the run; continuation cells show a
             thin bar (a non-breaking space keeps the height). */}
