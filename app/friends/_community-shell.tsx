@@ -13,7 +13,6 @@
 // ---------------------------------------------------------------------------
 
 import { NotificationBell } from "@/app/_components/notification-bell";
-import { PendingLink } from "@/app/_components/pending-link";
 
 import { FriendsTabs, type FriendsTabKind } from "./_friends-tabs";
 
@@ -26,13 +25,7 @@ export function CommunityShell({
 }) {
   return (
     <main className="mx-auto flex h-full w-full max-w-2xl flex-col bg-white px-6 pt-6 dark:bg-zinc-950">
-      <header className="mb-3 flex shrink-0 items-center justify-between gap-3">
-        <PendingLink
-          href="/"
-          className="inline-flex items-center text-sm text-zinc-500 underline-offset-2 hover:underline"
-        >
-          ← Mission
-        </PendingLink>
+      <header className="mb-3 flex shrink-0 items-center justify-end gap-3">
         <NotificationBell />
       </header>
 

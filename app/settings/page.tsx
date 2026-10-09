@@ -70,13 +70,7 @@ export default async function SettingsPage() {
     <main className="mx-auto flex h-full w-full max-w-2xl flex-col bg-white px-6 pt-6 dark:bg-zinc-950">
       <header className="mb-4 flex shrink-0 items-start justify-between gap-3">
         <div className="min-w-0">
-          <PendingLink
-            href="/"
-            className="inline-flex items-center text-sm text-zinc-500 underline-offset-2 hover:underline"
-          >
-            ← Mission
-          </PendingLink>
-          <h1 className="mt-1 text-3xl font-semibold tracking-tight">
+          <h1 className="text-3xl font-semibold tracking-tight">
             Settings
           </h1>
         </div>

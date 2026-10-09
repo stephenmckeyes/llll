@@ -4,6 +4,14 @@ Captured ideas and follow-ups for future sessions. Not in priority order.
 Imported by `CLAUDE.md` so every new Claude Code session sees this on
 startup.
 
+## Recently done
+
+- ✅ Remove the redundant "← Mission" back links from the bottom-nav tab
+  pages (Community shell, Levels, Adventures, Settings index) — the global
+  BottomNav's Schedule tab already returns to the calendar. Kept the
+  intra-Settings "← Settings" links and the Notifications back link (those
+  aren't bottom-nav destinations).
+
 ## Calendar unification (in progress)
 
 Goal (per user): personal, friend, and community calendars share ONE base
