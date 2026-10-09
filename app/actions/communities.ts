@@ -778,8 +778,19 @@ export async function getCommunityActivityBundle(
   const windowFrom = shiftYmd(todayStr, -COMMUNITY_CAL_WINDOW);
   const windowTo = shiftYmd(todayStr, COMMUNITY_CAL_WINDOW);
 
-  // Top up the community's own occurrences before reading the window.
+  // Top up the community's own occurrences before reading the window, then
+  // auto-complete past-due occurrences of auto_resolve activities (multi-day
+  // events default to Auto-Complete) so they resolve instead of nagging.
   await backfillCommunityCalendar(communityId, todayStr);
+  await supabase
+    .rpc("auto_complete_community_past_due", {
+      p_community_id: communityId,
+      p_today: todayStr,
+    })
+    .then(
+      () => {},
+      () => {} // non-fatal: pre-0066 DBs just skip auto-complete
+    );
   const owned = await getCommunityOwnedBundle(communityId, windowFrom, windowTo);
 
   // Aggregate progress for the same window (aggregate activities only).
