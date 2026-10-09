@@ -22,15 +22,19 @@ startup.
 
 ## Multi-day events — follow-ups
 
-- **Seamless span bars.** The multi-day bar currently renders as same-colored
-  adjacent pills (name once, squared inner corners) but does NOT pixel-connect
-  across the grid gap — each day still sits in its own cell. True seamless
-  bars need a layout change: a per-week **overlay lane** where each span is one
-  element positioned with `grid-column: <startCol> / span <n>` (split at week
-  boundaries), rather than per-cell pills bridged with margins (tried; the
-  `w-full` + per-cell padding + grid gap make margin-bridging inconsistent).
-  Applies to the shared MonthSection (personal/community) + MonthGrid (friend)
-  + the Week grids. Contained but non-trivial rendering rework.
+- **Seamless span bars.** ✅ DONE for MONTH (personal + community, shared
+  MonthSection/MonthBannerPill): the fix was dropping `w-full` on the span pill
+  (w-full caps width so a negative margin only shifts, never widens) so the
+  flex-stretched pill + `-ml-1`/`-mr-1` on continuing sides reaches the cell
+  edge, plus `gap-x-0` on the month grid so adjacent days' bars meet exactly →
+  0px inter-bar gaps, one continuous bar. STILL PENDING for the **Week** views
+  (personal WeekView + friend WeekGrid) and the **friend MonthGrid**: those use
+  tall/short BORDERED "card" cells with per-day separation, so the gap-x-0
+  trick would merge the cells into an unreadable wall. They need the proper
+  per-week **overlay lane** instead — bars floating ABOVE the cell grid,
+  positioned `left: startCol/7, width: n/7` (split at week edges, greedy lane
+  stacking), while the cells keep their borders. Contained rendering rework;
+  Week is a single row (no week-split) so start there.
 - **Add-form schedule preview.** The standalone /new form's "Schedule preview"
   shows a multi-day event as "1 occurrence" on the start day — it previews the
   single rhythm, not the materialized span. Make the preview expand a multi-day
