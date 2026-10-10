@@ -24,6 +24,7 @@ import {
   setCommunityInstanceStatus,
   setCommunityMemberStatus,
   updateCommunityActivityFormAction,
+  type AggregateStatus,
   type CommunityActivityBundle,
   type CommunityDetail,
 } from "@/app/actions/communities";
@@ -59,9 +60,11 @@ export function CommunityOwnedCalendar({
   const [manageOpen, setManageOpen] = useState(false);
   const [picked, setPicked] = useState<{
     instanceId: string;
+    activityId: string;
     name: string;
     scheduledFor: string;
     status: SharedInstance["status"];
+    completionType: "collective" | "aggregate";
   } | null>(null);
 
   // Index owned occurrences by activity + day so tapping a cell resolves to
@@ -74,8 +77,8 @@ export function CommunityOwnedCalendar({
     return m;
   }, [bundle.ownedInstances]);
 
-  const nameById = useMemo(
-    () => new Map(bundle.ownedActivities.map((a) => [a.activityId, a.name])),
+  const actById = useMemo(
+    () => new Map(bundle.ownedActivities.map((a) => [a.activityId, a])),
     [bundle.ownedActivities]
   );
 
@@ -83,11 +86,14 @@ export function CommunityOwnedCalendar({
     if (!occ) return;
     const inst = instByKey.get(`${activityId}:${occ.scheduledFor}`);
     if (!inst) return;
+    const act = actById.get(activityId);
     setPicked({
       instanceId: inst.instanceId,
-      name: nameById.get(activityId) ?? "Activity",
+      activityId,
+      name: act?.name ?? "Activity",
       scheduledFor: inst.scheduledFor,
       status: inst.status,
+      completionType: act?.completionType === "aggregate" ? "aggregate" : "collective",
     });
   }
 
@@ -237,7 +243,21 @@ export function CommunityOwnedCalendar({
         />
       )}
 
-      {picked && (
+      {picked && picked.completionType === "aggregate" && (
+        <AggregateModal
+          instanceId={picked.instanceId}
+          name={picked.name}
+          scheduledFor={picked.scheduledFor}
+          info={bundle.aggregateByInstance[picked.instanceId]}
+          onClose={() => setPicked(null)}
+          onChanged={() => {
+            setPicked(null);
+            router.refresh();
+          }}
+        />
+      )}
+
+      {picked && picked.completionType === "collective" && (
         <CompletionModal
           instanceId={picked.instanceId}
           name={picked.name}
@@ -598,6 +618,119 @@ function CompletionModal({
             for the group.
           </p>
         )}
+
+        {error && (
+          <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+            {error}
+          </p>
+        )}
+
+        <button
+          type="button"
+          onClick={onClose}
+          className="self-end text-sm text-zinc-500 hover:underline"
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Aggregate modal — per-member completion for one occurrence of an AGGREGATE
+// activity. Shows the group's N/M and lets the viewer mark THEIR OWN status
+// (tap the active one again to clear). Opened when a Week/Month/Streaks cell
+// of an aggregate activity is tapped (the Day list marks inline instead).
+// ---------------------------------------------------------------------------
+
+function AggregateModal({
+  instanceId,
+  name,
+  scheduledFor,
+  info,
+  onClose,
+  onChanged,
+}: {
+  instanceId: string;
+  name: string;
+  scheduledFor: string;
+  /** Current progress for this occurrence (from the bundle); may be undefined
+   *  for occurrences outside the loaded aggregate window. */
+  info: AggregateStatus | undefined;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  useBodyScrollLock();
+
+  const myStatus = info?.myStatus ?? null;
+
+  function setMine(next: "completed" | "missed" | "none") {
+    setError(null);
+    startTransition(async () => {
+      const res = await setCommunityMemberStatus(instanceId, next);
+      if (res && "error" in res) setError(res.error);
+      else onChanged();
+    });
+  }
+
+  const btn =
+    "rounded-md px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50";
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 sm:items-center"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="flex w-full max-w-sm flex-col gap-3 rounded-t-2xl bg-white p-5 shadow-xl dark:bg-zinc-950 sm:rounded-2xl"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight">{name}</h2>
+            <p className="text-xs text-zinc-500">{formatDate(scheduledFor)}</p>
+          </div>
+          <span
+            title="Members who marked this done / total members"
+            className="inline-flex items-center rounded-md bg-zinc-100 px-2.5 py-1.5 text-sm font-semibold tabular-nums text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+          >
+            {info ? `${info.marked}/${info.total}` : "—"}
+          </span>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={() => setMine(myStatus === "completed" ? "none" : "completed")}
+            aria-pressed={myStatus === "completed"}
+            className={`${btn} ${
+              myStatus === "completed"
+                ? "bg-emerald-600 text-white hover:bg-emerald-500"
+                : "border border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            }`}
+          >
+            {myStatus === "completed" ? "✓ I did this (tap to clear)" : "I did this"}
+          </button>
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={() => setMine(myStatus === "missed" ? "none" : "missed")}
+            aria-pressed={myStatus === "missed"}
+            className={`${btn} ${
+              myStatus === "missed"
+                ? "bg-red-600 text-white hover:bg-red-500"
+                : "border border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            }`}
+          >
+            {myStatus === "missed" ? "✗ I didn't do this (tap to clear)" : "I didn't do this"}
+          </button>
+        </div>
 
         {error && (
           <p role="alert" className="text-sm text-red-600 dark:text-red-400">

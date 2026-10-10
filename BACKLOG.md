@@ -6,6 +6,19 @@ startup.
 
 ## Recently done
 
+- ✅ Community aggregate completion UI (migrations 0061/0062): the "Per-member
+  (3/4)" completion type now has a full UI — Day list shows "N/M" + ✓/✗
+  self-mark inline; Week/Month/Streaks taps open an AggregateModal (fraction +
+  "I did this"/"I didn't", tap-to-clear). Collective activities keep the
+  one-mark modal. Verified live. (See HIGH PRIORITY → aggregate completion.)
+- ✅ Public (no-login) community calendar (migration 0067): a per-community
+  "Public calendar page" toggle in Settings → Admittance (public communities
+  only) exposes the community's own calendar at `/c/<id>`, read-only, with no
+  login. Anon-safe `get_public_community_calendar` SECURITY DEFINER read (granted
+  to anon + authenticated) returns activities/occurrences ONLY when
+  `public_calendar=true AND visibility='public'`; member-only RLS untouched.
+  Copy-link affordance next to the toggle. Verified live: anon fetch (no cookie)
+  → 200 + renders read-only; nonexistent + private communities → 404.
 - ✅ Multi-day events (migrations 0065/0066): a "Once" activity with an
   end_date later than its start is a multi-day event — materializes one
   occurrence per day across the span, defaults to Auto-Complete (comment-only;
@@ -92,14 +105,21 @@ Two new axes for how an activity's completion behaves. Applies to
 community-owned activities first; the second also belongs on the personal
 calendar.
 
-1. **Community aggregate completion.** Alongside today's collective
-   completion (any one member marks the single shared occurrence
-   done/missed for the whole community), add a completion type where each
-   member's status is tracked and the occurrence records the group's
-   progress as a fraction — e.g. 3/4 members did it → "3/4". Needs a
-   per-(occurrence, member) status table for these activities, plus a UI
-   that shows the fraction and lets a member mark THEIR own.
-   - **Stretch:** link a community aggregate activity to members'
+1. **Community aggregate completion.** ✅ DONE (migrations 0061/0062). A
+   community activity's completion type is pickable in the create/edit form
+   ("Shared (one mark)" vs "Per-member (3/4)"). Per-(occurrence, member)
+   status lives in `community_owned_instance_members`; a member marks THEIR
+   OWN via `set_community_member_status` ('completed' | 'missed' | 'none' to
+   clear), and `get_community_aggregate_status` returns {marked, total,
+   myStatus} per occurrence (loaded into the bundle's `aggregateByInstance`,
+   denominator = current member count). UI: the Day list renders the fraction
+   "N/M" inline with ✓ / ✗ self-mark buttons (InstanceRow aggregate branch);
+   tapping an aggregate occurrence in Week / Month / Streaks opens an
+   `AggregateModal` (fraction + "I did this" / "I didn't do this", tap-active-
+   to-clear) instead of the collective Mark-complete/missed modal. Collective
+   activities are unchanged. Verified live: 0/1 → ✓ → 1/1 → clear → 0/1, and
+   collective rows still show Complete/Missed.
+   - **Stretch (still TODO):** link a community aggregate activity to members'
      PERSONAL activities so that when a member completes it on their own
      regular calendar it also +1's the group's counter for that
      occurrence (one action, counts in both places). Decide the linkage
@@ -431,30 +451,11 @@ but-related `calendar_display` idea. When it ships, the sub-tab strip +
 section renderers should read this config instead of the current hardcoded
 order. Contained phase — pick up after the aggregate-completion follow-ups.
 
-**Public (no-login) community calendar sharing (asked for, upcoming).**
-Per-community setting: each community chooses whether its calendar is
-**publicly viewable without logging in** (anyone with the link/handle can
-view the calendar online, read-only, no account) vs. **members-only** (must
-log in AND be a member to see it). Today the calendar is gated behind
-membership (RLS on `community_owned_instances` requires `is_community_member`),
-so this needs:
-- A setting on the community, e.g. `communities.public_calendar boolean`
-  (default false) — likely surfaced in Settings → Admittance next to the
-  existing `outsider_visibility` toggles, and only offerable when
-  `visibility='public'`.
-- A **public, unauthenticated route** (e.g. `/c/<handle>` or
-  `/community/<id>/calendar`) that server-renders the community's calendar
-  read-only for anonymous visitors when `public_calendar` is on. Reuse the
-  shared FriendCalendar/GridTable renderers in read-only mode (no completion
-  controls, no add/edit) over the community's own activities.
-- A **SECURITY DEFINER read** (or a dedicated public RLS policy) returning the
-  community's owned activities + occurrences for anon users ONLY when
-  `public_calendar=true` — do NOT loosen the member-only RLS; add a separate
-  anon-safe path.
-- Consider a "copy public link" affordance in the community header when the
-  setting is on. Distinct from `outsider_visibility` (0054), which is a
-  members/activities PREVIEW for logged-in non-members in Discover — this is a
-  fully public, logged-out calendar page. Contained phase.
+**Public (no-login) community calendar sharing.** ✅ DONE (migration 0067) —
+see "Recently done". Possible follow-ups: expose it at the community's
+`/c/<handle>` (not just `/c/<id>`); add Week/Month/Year + Grid parity checks on
+the public page; and decide whether the global app chrome (bottom nav) should be
+hidden on `/c/[id]` for logged-out visitors (per user: keep it for now).
 
 **Community chat (phase 7).** Every community gets a group chat, distinct
 from the 1:1 friend DMs (`messages` table + `ChatThread`). Reuse that
