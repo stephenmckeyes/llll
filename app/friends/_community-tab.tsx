@@ -36,6 +36,7 @@ import {
   setCommunityChatSettings,
   setCommunityJoinPolicy,
   setCommunityOutsiderVisibility,
+  setCommunityPublicCalendar,
   setCommunityShowMembers,
   setCommunityVisibility,
   setMemberRole,
@@ -985,6 +986,51 @@ function CommunitySettingsSection({ detail }: { detail: CommunityDetail }) {
                 let outsiders peek at the roster and shared activities before
                 joining.
               </p>
+            </div>
+          )}
+
+          {detail.visibility === "public" && (
+            <div className="mt-1 flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+              <label className="flex items-center justify-between gap-2 text-sm">
+                <span>Public calendar page</span>
+                <input
+                  type="checkbox"
+                  checked={detail.publicCalendar}
+                  disabled={isPending}
+                  onChange={(e) =>
+                    run(setCommunityPublicCalendar(detail.id, e.target.checked))
+                  }
+                  className="h-4 w-4 accent-zinc-900 dark:accent-zinc-50"
+                />
+              </label>
+              <p className="text-xs text-zinc-500">
+                Anyone with the link can view this{" "}
+                {KIND_LABEL[detail.kind].one}&apos;s calendar without logging in
+                (read-only).
+              </p>
+              {detail.publicCalendar && (
+                <div className="flex items-center gap-2">
+                  <input
+                    readOnly
+                    value={`/c/${detail.id}`}
+                    onFocus={(e) => e.currentTarget.select()}
+                    className="min-w-0 flex-1 rounded-md border border-zinc-300 bg-zinc-50 px-2 py-1 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const url =
+                        typeof window !== "undefined"
+                          ? `${window.location.origin}/c/${detail.id}`
+                          : `/c/${detail.id}`;
+                      navigator.clipboard?.writeText(url);
+                    }}
+                    className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+                  >
+                    Copy link
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </section>

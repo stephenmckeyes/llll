@@ -90,6 +90,9 @@ export type CommunityDetail = CommunitySummary & {
   /** Public-community outsider preview flags (migration 0054). */
   outsiderShowMembers: boolean;
   outsiderShowActivities: boolean;
+  /** Whether the calendar is viewable on a public, logged-out page
+   *  (migration 0067). Only meaningful when visibility='public'. */
+  publicCalendar: boolean;
   /** Custom ranks defined for this community (migration 0051). */
   ranks: CommunityRank[];
   /** The caller's effective permissions (leadership → all true). */
@@ -188,7 +191,7 @@ export async function getCommunity(
   const { data: community } = await supabase
     .from("communities")
     .select(
-      "id, kind, name, handle, description, visibility, join_policy, created_at, calendar_display, chat_enabled, chat_who_can_speak, home_content, home_layout, home_fit_one_page, show_members, outsider_visibility"
+      "id, kind, name, handle, description, visibility, join_policy, created_at, calendar_display, chat_enabled, chat_who_can_speak, home_content, home_layout, home_fit_one_page, show_members, outsider_visibility, public_calendar"
     )
     .eq("id", communityId)
     .maybeSingle();
@@ -210,6 +213,7 @@ export async function getCommunity(
     home_fit_one_page: boolean | null;
     show_members: boolean | null;
     outsider_visibility: Record<string, unknown> | null;
+    public_calendar: boolean | null;
   };
 
   // Members — RLS returns rows only when the caller is a member. Non-
@@ -333,6 +337,7 @@ export async function getCommunity(
     showMembers: c.show_members ?? true,
     outsiderShowMembers: c.outsider_visibility?.showMembers === true,
     outsiderShowActivities: c.outsider_visibility?.showActivities === true,
+    publicCalendar: c.public_calendar ?? false,
     ranks,
     myPermissions,
     myRole: myRow?.role ?? null,
@@ -1864,6 +1869,88 @@ export async function setCommunityOutsiderVisibility(
     p_show_members: showMembers,
     p_show_activities: showActivities,
   });
+}
+
+// setCommunityPublicCalendar — leadership toggle the public (no-login)
+// calendar page. Only honored for public communities (migration 0067).
+export async function setCommunityPublicCalendar(
+  communityId: string,
+  on: boolean
+): Promise<{ error: string } | { ok: true }> {
+  return callSettingsRpc("set_community_public_calendar", {
+    p_community_id: communityId,
+    p_on: on,
+  });
+}
+
+// getPublicCommunityCalendar — anon-safe read for the public /c/<id> page.
+// Returns the community header + its own activities/occurrences (mapped to the
+// shared shapes) for a window around today, or null when not publicly shared.
+export type PublicCommunityCalendar = {
+  community: { id: string; name: string; kind: CommunityKind; handle: string | null; description: string | null };
+  activities: SharedActivity[];
+  instances: SharedInstance[];
+  todayStr: string;
+};
+export async function getPublicCommunityCalendar(
+  communityId: string
+): Promise<PublicCommunityCalendar | null> {
+  const supabase = await createClient();
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const windowFrom = shiftYmd(todayStr, -COMMUNITY_CAL_WINDOW);
+  const windowTo = shiftYmd(todayStr, COMMUNITY_CAL_WINDOW);
+  const { data } = await supabase.rpc("get_public_community_calendar", {
+    p_community_id: communityId,
+    p_from: windowFrom,
+    p_to: windowTo,
+  });
+  if (!data) return null;
+  const payload = data as {
+    community: {
+      id: string;
+      name: string;
+      kind: string;
+      handle: string | null;
+      description: string | null;
+    };
+    activities: OwnedActivityRow[];
+    instances: Array<{
+      id: string;
+      activity_id: string;
+      scheduled_for: string;
+      status: string;
+      comment: string | null;
+    }>;
+  };
+  const activities = (payload.activities ?? []).map(mapOwnedActivity);
+  const activeIds = new Set(activities.map((a) => a.activityId));
+  const instances: SharedInstance[] = (payload.instances ?? [])
+    .filter((i) => activeIds.has(i.activity_id))
+    .map((i) => ({
+      ownerId: communityId,
+      activityId: i.activity_id,
+      instanceId: i.id,
+      scheduledFor: i.scheduled_for,
+      status:
+        i.status === "completed" || i.status === "missed"
+          ? (i.status as "completed" | "missed")
+          : "pending",
+      completionCount: i.status === "completed" ? 1 : 0,
+      completionDates: [],
+      comment: i.comment,
+    }));
+  return {
+    community: {
+      id: payload.community.id,
+      name: payload.community.name,
+      kind: payload.community.kind as CommunityKind,
+      handle: payload.community.handle,
+      description: payload.community.description,
+    },
+    activities,
+    instances,
+    todayStr,
+  };
 }
 
 // setCommunityChatSettings — leadership enable the chat + set who can speak.
