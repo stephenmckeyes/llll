@@ -6,6 +6,11 @@ startup.
 
 ## Recently done
 
+- ✅ Community activity auto-resolve toggle (migrations 0060/0066): the
+  community create/edit form now exposes "Stays until marked" / "Auto-complete
+  when past" (shared ActivityFormFields `showAutoResolve`). Past-due pending
+  auto-resolve occurrences auto-complete via `auto_complete_community_past_due`
+  instead of nagging. Verified live. (See HIGH PRIORITY item 2.)
 - ✅ Community aggregate completion UI (migrations 0061/0062): the "Per-member
   (3/4)" completion type now has a full UI — Day list shows "N/M" + ✓/✗
   self-mark inline; Week/Month/Streaks taps open an AggregateModal (fraction +
@@ -134,12 +139,17 @@ calendar.
    the /notifications reminders query exclude them (no unlabeled nag).
    Grid now honors it too — a past-due auto_resolve cell renders blank
    ("not-scheduled") instead of overdue, and doesn't count toward
-   unlabeled. STILL TODO: add the same setting to community-owned
-   activities (needs community_owned_activities.auto_resolve + re-created
-   create/update RPCs with the param + a form toggle + mapping
-   auto_resolve through SharedActivity → DayInstance so the shared
-   visibleOnDay drops them; that path already reads
-   DayInstance.activity.auto_resolve). Original spec below:
+   unlabeled. ✅ DONE for COMMUNITY-OWNED activities too (migrations
+   0060/0066): the create/edit ActivityFormModal now shows a 2-way
+   "Stays until marked" / "Auto-complete when past" toggle
+   (`showAutoResolve` on the shared ActivityFormFields; it reuses the
+   completion-mode state so the hidden `autoResolve` input + the multi-day
+   auto default still work). autoResolve threads
+   community_owned_activities → SharedActivity → DayInstance, and
+   `auto_complete_community_past_due` (0066, called on bundle load)
+   auto-completes past-due pending auto_resolve occurrences so they resolve
+   instead of nagging. Verified live: create with Auto selected → edit
+   shows it selected. Original spec below:
    - *Stays until marked* (today's behavior) — an unmarked past occurrence
      becomes overdue/unlabeled and waits for a verdict.
    - *Auto-drop when its date/time passes* — the occurrence just

@@ -843,6 +843,7 @@ function ActivityFormModal({
           initialCompletionType={existing?.completionType ?? "collective"}
           showSelection={!existing}
           showCompletionMode={false}
+          showAutoResolve
         />
 
         {state && "error" in state && (

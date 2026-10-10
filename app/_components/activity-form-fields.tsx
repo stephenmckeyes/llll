@@ -131,6 +131,7 @@ export function ActivityFormFields({
   initialCompletionType = "collective",
   showSelection = false,
   showCompletionMode = true,
+  showAutoResolve = false,
 }: {
   initialValues: ActivityFormInitial;
   /** When true, render the start-date input empty regardless of the
@@ -162,6 +163,13 @@ export function ActivityFormFields({
    *  (personal). Off for community-owned activities, whose completion model
    *  is collective/aggregate, not the personal mark/auto/both axis. */
   showCompletionMode?: boolean;
+  /** Show a simple 2-way "Stays until marked" / "Auto-complete when past"
+   *  toggle (migration 0059/0060). For community-owned activities, which hide
+   *  the 3-way completion mode but still want the auto-resolve axis so a
+   *  leader can drop a run of occurrences on the calendar for scheduling
+   *  without the collective nag. Drives the same hidden autoResolve input
+   *  (effectiveMode === 'auto'), so the multi-day default still applies. */
+  showAutoResolve?: boolean;
   /** Add Activity form density (migration 0023). "compact" swaps in a
    *  stripped-down JSX that hides all section labels, drops Priority,
    *  turns the rhythm picker into inline text chips, collapses Tags to
@@ -1141,6 +1149,48 @@ export function ActivityFormFields({
               </button>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* --- Auto-resolve (community-owned, migration 0059/0060) --------- */}
+      {/* Reuses the completion-mode state (drives the hidden autoResolve
+          input) but shows only the 2-way auto axis, since community-owned
+          activities don't expose the Mark/Auto/Both mode. "Auto-complete
+          when past" lets leadership drop occurrences on the calendar for
+          scheduling without each one nagging to be marked. Multi-day events
+          still default to auto via effectiveMode. */}
+      {showAutoResolve && (
+        <div className="mt-1 flex gap-1">
+          <button
+            type="button"
+            onClick={() => {
+              setCompletionMode("mark");
+              setModeTouched(true);
+            }}
+            aria-pressed={effectiveMode !== "auto"}
+            className={`flex-1 touch-manipulation rounded-md border px-2 py-1 text-center text-xs font-medium transition-colors ${
+              effectiveMode !== "auto"
+                ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            }`}
+          >
+            Stays until marked
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setCompletionMode("auto");
+              setModeTouched(true);
+            }}
+            aria-pressed={effectiveMode === "auto"}
+            className={`flex-1 touch-manipulation rounded-md border px-2 py-1 text-center text-xs font-medium transition-colors ${
+              effectiveMode === "auto"
+                ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            }`}
+          >
+            Auto-complete when past
+          </button>
         </div>
       )}
 
