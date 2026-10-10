@@ -223,6 +223,12 @@ export function ActivityForm({
     frequencyPerUnit,
     scheduledTimes,
   });
+  // A multi-day event (a "Once" whose end date is after its start) materializes
+  // one occurrence per day across the span, so preview it as daily (bounded by
+  // the end date) — otherwise the preview shows a misleading "1 occurrence".
+  const effectivePreviewRhythm: Rhythm | null = isMultiDay
+    ? { type: "daily" }
+    : previewRhythm;
 
   // ---- Times-of-day handlers --------------------------------------------
   function updateScheduledTime(i: number, value: string) {
@@ -1108,7 +1114,7 @@ export function ActivityForm({
           calendar-preview]) shrinks the cells + padding so it doesn't
           dominate. */}
       <CalendarPreview
-        rhythm={previewRhythm}
+        rhythm={effectivePreviewRhythm}
         startDate={startDate}
         endDate={effectiveEndDate}
         activityName={name}
