@@ -371,20 +371,58 @@ function WeekGrid({
     return { date, dateStr, items };
   });
 
-  // Per-instance span connect flags (same activity present on the adjacent day).
-  const spanActIdsByDay = days.map(
-    (d) => new Set(d.items.filter(isShareSpan).map((i) => i.activityId))
-  );
-  const spanConnect = new Map<string, { left: boolean; right: boolean }>();
+  // Multi-day events → connected OVERLAY bars above the cell grid (mirrors
+  // the personal WeekView). Aggregate each span's run within the week + lanes.
+  const spanAgg = new Map<
+    string,
+    { startCol: number; endCol: number; name: string; start: string; end: string | null }
+  >();
   days.forEach((d, di) => {
     for (const inst of d.items) {
       if (!isShareSpan(inst)) continue;
-      spanConnect.set(inst.instanceId, {
-        left: di > 0 && spanActIdsByDay[di - 1].has(inst.activityId),
-        right: di < 6 && spanActIdsByDay[di + 1].has(inst.activityId),
-      });
+      const a = byId.get(inst.activityId);
+      if (!a) continue;
+      const ex = spanAgg.get(inst.activityId);
+      if (ex) {
+        ex.startCol = Math.min(ex.startCol, di);
+        ex.endCol = Math.max(ex.endCol, di);
+      } else {
+        spanAgg.set(inst.activityId, {
+          startCol: di,
+          endCol: di,
+          name: a.name,
+          start: a.startDate,
+          end: a.endDate,
+        });
+      }
     }
   });
+  const laneEnds: number[] = [];
+  const weekSpans = [...spanAgg.entries()]
+    .map(([activityId, v]) => ({ activityId, ...v }))
+    .sort((a, b) => a.startCol - b.startCol || a.endCol - b.endCol)
+    .map((s) => {
+      let lane = laneEnds.findIndex((e) => e < s.startCol);
+      if (lane === -1) {
+        lane = laneEnds.length;
+        laneEnds.push(s.endCol);
+      } else {
+        laneEnds[lane] = s.endCol;
+      }
+      return {
+        activityId: s.activityId,
+        name: s.name,
+        startCol: s.startCol,
+        endCol: s.endCol,
+        continuesLeft: s.start < days[0].dateStr,
+        continuesRight: !!s.end && s.end > days[6].dateStr,
+        lane,
+      };
+    });
+  const spanLaneCount = laneEnds.length;
+  const nonSpanByDay = days.map((d) => d.items.filter((i) => !isShareSpan(i)));
+  const WEEK_LANE_H = 18;
+  const WEEK_SPAN_TOP = 44;
 
   return (
     <div className="flex flex-col gap-3">
@@ -394,84 +432,115 @@ function WeekGrid({
         onNext={() => setRefDate(format(addDays(weekStart, 7), "yyyy-MM-dd"))}
         onToday={() => setRefDate(todayStr)}
       />
-      <SwipeNav
-        onPrev={() => setRefDate(format(addDays(weekStart, -7), "yyyy-MM-dd"))}
-        onNext={() => setRefDate(format(addDays(weekStart, 7), "yyyy-MM-dd"))}
-        className="grid grid-cols-7 gap-1"
-      >
-        {days.map((d) => (
-          <div
-            key={d.dateStr}
-            className={`flex min-h-[7rem] min-w-0 flex-col gap-1 rounded-md border p-1 ${
-              d.dateStr === todayStr
-                ? "border-zinc-900 dark:border-zinc-50"
-                : "border-zinc-200 dark:border-zinc-800"
-            }`}
-          >
-            <div className="text-center">
-              <div className="text-[9px] font-medium uppercase tracking-wide text-zinc-500">
-                {format(d.date, "EEE")}
+      <div className="relative">
+        <SwipeNav
+          onPrev={() => setRefDate(format(addDays(weekStart, -7), "yyyy-MM-dd"))}
+          onNext={() => setRefDate(format(addDays(weekStart, 7), "yyyy-MM-dd"))}
+          className="grid grid-cols-7 gap-1"
+        >
+          {days.map((d, di) => (
+            <div
+              key={d.dateStr}
+              className={`flex min-h-[7rem] min-w-0 flex-col gap-1 rounded-md border p-1 ${
+                d.dateStr === todayStr
+                  ? "border-zinc-900 dark:border-zinc-50"
+                  : "border-zinc-200 dark:border-zinc-800"
+              }`}
+            >
+              <div className="text-center">
+                <div className="text-[9px] font-medium uppercase tracking-wide text-zinc-500">
+                  {format(d.date, "EEE")}
+                </div>
+                <div
+                  className={`text-sm ${
+                    d.dateStr === todayStr
+                      ? "font-semibold"
+                      : "text-zinc-700 dark:text-zinc-300"
+                  }`}
+                >
+                  {d.date.getDate()}
+                </div>
               </div>
-              <div
-                className={`text-sm ${
-                  d.dateStr === todayStr
-                    ? "font-semibold"
-                    : "text-zinc-700 dark:text-zinc-300"
-                }`}
-              >
-                {d.date.getDate()}
-              </div>
+              {spanLaneCount > 0 && (
+                <div aria-hidden style={{ height: spanLaneCount * WEEK_LANE_H }} />
+              )}
+              {nonSpanByDay[di].length > 0 ? (
+                <ul className="flex min-w-0 flex-col gap-0.5">
+                  {nonSpanByDay[di].map((inst) => {
+                    const act = byId.get(inst.activityId);
+                    const status =
+                      inst.status === "completed"
+                        ? "completed"
+                        : inst.status === "missed"
+                          ? "missed"
+                          : "pending";
+                    return (
+                      <li key={inst.instanceId}>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onOpenActivity(inst.activityId, {
+                              scheduledFor: inst.scheduledFor,
+                              statusLabel: occurrenceStatusLabel(
+                                inst.status,
+                                inst.scheduledFor,
+                                todayStr
+                              ),
+                              comment: inst.comment,
+                            })
+                          }
+                          className="block w-full min-w-0 text-left"
+                        >
+                          <WeekBannerPill
+                            name={act?.name ?? "Activity"}
+                            firstTime={act?.scheduledTimes?.[0]}
+                            tags={act?.defaultSkillTags ?? []}
+                            status={status}
+                            tagMap={tagMap}
+                          />
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                spanLaneCount === 0 && (
+                  <div className="flex flex-1 items-center justify-center text-[9px] text-zinc-300 dark:text-zinc-700">
+                    —
+                  </div>
+                )
+              )}
             </div>
-            {d.items.length === 0 ? (
-              <div className="flex flex-1 items-center justify-center text-[9px] text-zinc-300 dark:text-zinc-700">
-                —
-              </div>
-            ) : (
-              <ul className="flex min-w-0 flex-col gap-0.5">
-                {d.items.map((inst) => {
-                  const act = byId.get(inst.activityId);
-                  const status =
-                    inst.status === "completed"
-                      ? "completed"
-                      : inst.status === "missed"
-                        ? "missed"
-                        : "pending";
-                  return (
-                    <li key={inst.instanceId}>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onOpenActivity(inst.activityId, {
-                            scheduledFor: inst.scheduledFor,
-                            statusLabel: occurrenceStatusLabel(
-                              inst.status,
-                              inst.scheduledFor,
-                              todayStr
-                            ),
-                            comment: inst.comment,
-                          })
-                        }
-                        className="block w-full min-w-0 text-left"
-                      >
-                        <WeekBannerPill
-                          name={act?.name ?? "Activity"}
-                          firstTime={act?.scheduledTimes?.[0]}
-                          tags={act?.defaultSkillTags ?? []}
-                          status={status}
-                          tagMap={tagMap}
-                          isSpan={spanConnect.has(inst.instanceId)}
-                          connectLeft={spanConnect.get(inst.instanceId)?.left}
-                          connectRight={spanConnect.get(inst.instanceId)?.right}
-                        />
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
+          ))}
+        </SwipeNav>
+
+        {/* Multi-day span bars overlaid on the cell grid — one grid item per
+            span, spanning its columns (and their gaps) → a continuous bar. */}
+        {weekSpans.length > 0 && (
+          <div
+            className="absolute inset-x-0 grid grid-cols-7 gap-1"
+            style={{ top: WEEK_SPAN_TOP, gridAutoRows: `${WEEK_LANE_H}px` }}
+          >
+            {weekSpans.map((s) => (
+              <button
+                key={s.activityId}
+                type="button"
+                title={s.name}
+                onClick={() => onOpenActivity(s.activityId, null)}
+                style={{
+                  gridColumn: `${s.startCol + 1} / span ${s.endCol - s.startCol + 1}`,
+                  gridRowStart: s.lane + 1,
+                }}
+                className={`mx-0.5 h-4 overflow-hidden truncate px-1 text-left text-[9px] font-medium leading-4 bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900 ${
+                  s.continuesLeft ? "rounded-l-none" : "rounded-l"
+                } ${s.continuesRight ? "rounded-r-none" : "rounded-r"}`}
+              >
+                {s.continuesLeft ? " " : s.name}
+              </button>
+            ))}
           </div>
-        ))}
-      </SwipeNav>
+        )}
+      </div>
     </div>
   );
 }
