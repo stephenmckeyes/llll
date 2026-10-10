@@ -22,19 +22,18 @@ startup.
 
 ## Multi-day events — follow-ups
 
-- **Seamless span bars.** ✅ DONE for MONTH (personal + community, shared
-  MonthSection/MonthBannerPill): the fix was dropping `w-full` on the span pill
-  (w-full caps width so a negative margin only shifts, never widens) so the
-  flex-stretched pill + `-ml-1`/`-mr-1` on continuing sides reaches the cell
-  edge, plus `gap-x-0` on the month grid so adjacent days' bars meet exactly →
-  0px inter-bar gaps, one continuous bar. STILL PENDING for the **Week** views
-  (personal WeekView + friend WeekGrid) and the **friend MonthGrid**: those use
-  tall/short BORDERED "card" cells with per-day separation, so the gap-x-0
-  trick would merge the cells into an unreadable wall. They need the proper
-  per-week **overlay lane** instead — bars floating ABOVE the cell grid,
-  positioned `left: startCol/7, width: n/7` (split at week edges, greedy lane
-  stacking), while the cells keep their borders. Contained rendering rework;
-  Week is a single row (no week-split) so start there.
+- **Seamless span bars.** ✅ DONE for **Month** (personal + community via
+  MonthSection/MonthBannerPill — gap-x-0 + drop `w-full` so the pill stretches
+  and −mx reaches the cell edge) and ✅ **Week** (personal WeekView + friend/
+  community WeekGrid — an **overlay lane**: a second grid-cols-7/gap grid above
+  the cells where each span is ONE grid item spanning its columns + their gaps,
+  greedy lane stacking, cells reserve lane space, squared where it continues
+  past a week edge). ONLY REMAINING: the **friend MonthGrid** (the friend
+  view's Month — community Month already uses the seamless MonthSection). It's
+  the hardest: a 6-week grid, so the Week overlay must be applied PER WEEK ROW
+  with spans split at week boundaries. Restructure MonthGrid into 6 relative
+  week-row containers (cells + a per-row span overlay), reusing the WeekGrid
+  lane logic. Read-only/secondary surface, so lower priority.
 - **Add-form schedule preview.** The standalone /new form's "Schedule preview"
   shows a multi-day event as "1 occurrence" on the start day — it previews the
   single rhythm, not the materialized span. Make the preview expand a multi-day
