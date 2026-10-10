@@ -1337,27 +1337,58 @@ async function WeekView({
     };
   });
 
-  // Span connections: a multi-day event connects to the adjacent day when
-  // that day carries the same activity. Keyed by instance id → {left,right}.
-  const spanConnect = new Map<string, { left: boolean; right: boolean }>();
-  const spanActivityIdsByDay = days.map(
-    (d) =>
-      new Set(
-        d.items
-          .filter((i) => isWeekSpan(i) && i.activities)
-          .map((i) => i.activities!.id)
-      )
-  );
+  // Multi-day events render as a connected OVERLAY bar spanning their days
+  // (above the bordered day cells); single-day items stay as per-cell pills.
+  // Aggregate each span activity's run within this week + assign lanes.
+  const spanAgg = new Map<
+    string,
+    { startCol: number; endCol: number; name: string; start: string; end: string | null }
+  >();
   days.forEach((d, di) => {
     for (const i of d.items) {
       if (!isWeekSpan(i) || !i.activities) continue;
       const aid = i.activities.id;
-      spanConnect.set(i.id, {
-        left: di > 0 && spanActivityIdsByDay[di - 1].has(aid),
-        right: di < 6 && spanActivityIdsByDay[di + 1].has(aid),
-      });
+      const ex = spanAgg.get(aid);
+      if (ex) {
+        ex.startCol = Math.min(ex.startCol, di);
+        ex.endCol = Math.max(ex.endCol, di);
+      } else {
+        spanAgg.set(aid, {
+          startCol: di,
+          endCol: di,
+          name: i.activities.name,
+          start: i.activities.start_date,
+          end: i.activities.end_date,
+        });
+      }
     }
   });
+  const laneEnds: number[] = []; // last endCol occupied, per lane
+  const weekSpans = [...spanAgg.entries()]
+    .map(([activityId, v]) => ({ activityId, ...v }))
+    .sort((a, b) => a.startCol - b.startCol || a.endCol - b.endCol)
+    .map((s) => {
+      let lane = laneEnds.findIndex((end) => end < s.startCol);
+      if (lane === -1) {
+        lane = laneEnds.length;
+        laneEnds.push(s.endCol);
+      } else {
+        laneEnds[lane] = s.endCol;
+      }
+      return {
+        activityId: s.activityId,
+        name: s.name,
+        startCol: s.startCol,
+        endCol: s.endCol,
+        continuesLeft: s.start < days[0].dateStr,
+        continuesRight: !!s.end && s.end > days[6].dateStr,
+        lane,
+      };
+    });
+  const spanLaneCount = laneEnds.length;
+  const nonSpanByDay = days.map((d) => d.items.filter((i) => !isWeekSpan(i)));
+  const WEEK_LANE_H = 18; // px per span lane (bar + gap)
+  const WEEK_SPAN_TOP = 44; // px: day name+number header before the lanes
 
   const prevDate = format(addDays(weekStart, -7), "yyyy-MM-dd");
   const nextDate = format(addDays(weekStart, 7), "yyyy-MM-dd");
@@ -1382,44 +1413,74 @@ async function WeekView({
           characters of activity name per line of the banner.
           Wrapped in SwipeNav so a horizontal swipe flips weeks (swipe
           left = next, right = previous), same targets as the arrows. */}
-      <SwipeNav clickNav className="grid grid-cols-7 gap-1">
-        {days.map((d) => (
-          <Link
-            key={d.dateStr}
-            href={`/?view=day&date=${d.dateStr}`}
-            className={`flex min-h-[7rem] min-w-0 touch-manipulation flex-col gap-1 rounded-md border p-1 transition-colors hover:bg-zinc-50 active:bg-zinc-100 dark:hover:bg-zinc-900 dark:active:bg-zinc-800 ${
-              d.isToday
-                ? "border-zinc-900 dark:border-zinc-50"
-                : "border-zinc-200 dark:border-zinc-800"
-            }`}
+      <div className="relative">
+        <SwipeNav clickNav className="grid grid-cols-7 gap-1">
+          {days.map((d, di) => (
+            <Link
+              key={d.dateStr}
+              href={`/?view=day&date=${d.dateStr}`}
+              className={`flex min-h-[7rem] min-w-0 touch-manipulation flex-col gap-1 rounded-md border p-1 transition-colors hover:bg-zinc-50 active:bg-zinc-100 dark:hover:bg-zinc-900 dark:active:bg-zinc-800 ${
+                d.isToday
+                  ? "border-zinc-900 dark:border-zinc-50"
+                  : "border-zinc-200 dark:border-zinc-800"
+              }`}
+            >
+              <div className="text-center">
+                <div className="text-[9px] font-medium uppercase tracking-wide text-zinc-500">
+                  {format(d.date, "EEE")}
+                </div>
+                <div className={`text-sm ${d.isToday ? "font-semibold" : "text-zinc-700 dark:text-zinc-300"}`}>
+                  {d.date.getDate()}
+                </div>
+              </div>
+              {/* Reserve vertical space for the span-overlay lanes so the
+                  single-day pills below don't sit under the bars. */}
+              {spanLaneCount > 0 && (
+                <div aria-hidden style={{ height: spanLaneCount * WEEK_LANE_H }} />
+              )}
+              {nonSpanByDay[di].length > 0 ? (
+                <ul className="flex min-w-0 flex-col gap-0.5">
+                  {nonSpanByDay[di].map((i) => (
+                    <WeekBanner key={i.id} item={i} tagMap={tagMap} />
+                  ))}
+                </ul>
+              ) : (
+                spanLaneCount === 0 && (
+                  <div className="flex flex-1 items-center justify-center text-[9px] text-zinc-300 dark:text-zinc-700">
+                    —
+                  </div>
+                )
+              )}
+            </Link>
+          ))}
+        </SwipeNav>
+
+        {/* Multi-day span bars overlaid on the cell grid. Same 7-col grid +
+            gap so columns align; each bar is ONE grid item spanning its
+            columns (and the gaps between them) → a continuous bar. */}
+        {weekSpans.length > 0 && (
+          <div
+            className="pointer-events-none absolute inset-x-0 grid grid-cols-7 gap-1"
+            style={{ top: WEEK_SPAN_TOP, gridAutoRows: `${WEEK_LANE_H}px` }}
           >
-            <div className="text-center">
-              <div className="text-[9px] font-medium uppercase tracking-wide text-zinc-500">
-                {format(d.date, "EEE")}
+            {weekSpans.map((s) => (
+              <div
+                key={s.activityId}
+                title={s.name}
+                style={{
+                  gridColumn: `${s.startCol + 1} / span ${s.endCol - s.startCol + 1}`,
+                  gridRowStart: s.lane + 1,
+                }}
+                className={`mx-0.5 h-4 overflow-hidden truncate px-1 text-[9px] font-medium leading-4 bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900 ${
+                  s.continuesLeft ? "rounded-l-none" : "rounded-l"
+                } ${s.continuesRight ? "rounded-r-none" : "rounded-r"}`}
+              >
+                {s.continuesLeft ? " " : s.name}
               </div>
-              <div className={`text-sm ${d.isToday ? "font-semibold" : "text-zinc-700 dark:text-zinc-300"}`}>
-                {d.date.getDate()}
-              </div>
-            </div>
-            {d.items.length === 0 ? (
-              <div className="flex flex-1 items-center justify-center text-[9px] text-zinc-300 dark:text-zinc-700">
-                —
-              </div>
-            ) : (
-              <ul className="flex min-w-0 flex-col gap-0.5">
-                {d.items.map((i) => (
-                  <WeekBanner
-                    key={i.id}
-                    item={i}
-                    tagMap={tagMap}
-                    span={spanConnect.get(i.id)}
-                  />
-                ))}
-              </ul>
-            )}
-          </Link>
-        ))}
-      </SwipeNav>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
