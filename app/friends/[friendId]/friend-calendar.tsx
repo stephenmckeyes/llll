@@ -45,7 +45,7 @@ import {
   isPastDuePending,
   unlabeledLandingDay,
 } from "@/lib/domain/frequency-period";
-import type { TagMap } from "@/lib/domain/tags";
+import { tagChipClasses, type TagMap } from "@/lib/domain/tags";
 
 import {
   buildFriendDayData,
@@ -604,45 +604,78 @@ function MonthGrid({
   const cells = Array.from({ length: 42 }, (_, i) => {
     const date = addDays(gridStart, i);
     const dateStr = format(date, "yyyy-MM-dd");
-    // Clone + sort spans first (stable by start+activity) so a bar keeps one
-    // lane across days without mutating the memoized banner objects.
-    const banners = (bannersByDate.get(dateStr) ?? []).map((b) => ({ ...b }));
-    banners.sort((a, b) => {
-      const sa = !!a.spanStart;
-      const sb = !!b.spanStart;
-      if (sa !== sb) return sa ? -1 : 1;
-      if (sa && sb) {
-        const s = (a.spanStart ?? "").localeCompare(b.spanStart ?? "");
-        if (s !== 0) return s;
-        return (a.activityId ?? "").localeCompare(b.activityId ?? "");
-      }
-      return 0;
-    });
+    const all = bannersByDate.get(dateStr) ?? [];
     return {
       date,
       dateStr,
       inMonth: date.getMonth() === monthStart.getMonth(),
-      banners,
+      // Single-day pills stay in the cell; multi-day events become overlay
+      // bars (see per-week spans below).
+      nonSpan: all.filter((b) => !b.spanStart),
+      spans: all.filter((b) => b.spanStart),
     };
   });
 
-  // Connect a span to the adjacent day in the same week row.
-  for (let row = 0; row < 6; row++) {
-    for (let col = 0; col < 7; col++) {
-      const cell = cells[row * 7 + col];
-      const prev = col > 0 ? cells[row * 7 + col - 1] : null;
-      const next = col < 6 ? cells[row * 7 + col + 1] : null;
-      for (const b of cell.banners) {
-        if (!b.spanStart || !b.activityId) continue;
-        b.connectLeft = !!prev?.banners.some(
-          (x) => x.spanStart && x.activityId === b.activityId
-        );
-        b.connectRight = !!next?.banners.some(
-          (x) => x.spanStart && x.activityId === b.activityId
-        );
+  const MONTH_LANE_H = 15; // px per span lane
+  const MONTH_SPAN_TOP = 22; // px below the day number where lanes begin
+
+  // Per-week span segments → connected overlay bars (split at week edges,
+  // greedy lane stacking), mirroring the Week overlay.
+  const weeks = Array.from({ length: 6 }, (_, w) => {
+    const weekCells = cells.slice(w * 7, w * 7 + 7);
+    const weekFirst = weekCells[0].dateStr;
+    const weekLast = weekCells[6].dateStr;
+    const agg = new Map<
+      string,
+      {
+        startCol: number;
+        endCol: number;
+        name: string;
+        tags: string[];
+        spanStart: string;
+        spanEnd: string;
       }
-    }
-  }
+    >();
+    weekCells.forEach((c, col) => {
+      for (const b of c.spans) {
+        if (!b.activityId || !b.spanStart || !b.spanEnd) continue;
+        const ex = agg.get(b.activityId);
+        if (ex) {
+          ex.startCol = Math.min(ex.startCol, col);
+          ex.endCol = Math.max(ex.endCol, col);
+        } else {
+          agg.set(b.activityId, {
+            startCol: col,
+            endCol: col,
+            name: b.name,
+            tags: b.tags,
+            spanStart: b.spanStart,
+            spanEnd: b.spanEnd,
+          });
+        }
+      }
+    });
+    const laneEnds: number[] = [];
+    const spans = [...agg.entries()]
+      .map(([activityId, v]) => ({ activityId, ...v }))
+      .sort((a, b) => a.startCol - b.startCol || a.endCol - b.endCol)
+      .map((s) => {
+        let lane = laneEnds.findIndex((e) => e < s.startCol);
+        if (lane === -1) {
+          lane = laneEnds.length;
+          laneEnds.push(s.endCol);
+        } else {
+          laneEnds[lane] = s.endCol;
+        }
+        return {
+          ...s,
+          continuesLeft: s.spanStart < weekFirst,
+          continuesRight: s.spanEnd > weekLast,
+          lane,
+        };
+      });
+    return { weekCells, spans, laneCount: laneEnds.length };
+  });
 
   return (
     <div className="flex flex-col gap-3">
@@ -661,45 +694,96 @@ function MonthGrid({
             {d}
           </div>
         ))}
-        {cells.map((c) => {
-          const visible = c.banners.slice(0, MONTH_BANNERS_PER_CELL);
-          const hidden = c.banners.slice(MONTH_BANNERS_PER_CELL);
-          const overflow = hidden.length > 0 ? summarizeOverflow(hidden) : null;
-          return (
-            <button
-              key={c.dateStr}
-              type="button"
-              onClick={() => onJumpToDay(c.dateStr)}
-              className={`flex min-h-20 flex-col gap-0.5 rounded-md border p-1 text-left transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-900 ${
-                c.dateStr === todayStr
-                  ? "border-zinc-900 dark:border-zinc-50"
-                  : "border-zinc-200 dark:border-zinc-800"
-              } ${c.inMonth ? "" : "opacity-40"}`}
-            >
-              <span
-                className={`self-start text-xs ${
-                  c.dateStr === todayStr
-                    ? "font-semibold"
-                    : "text-zinc-600 dark:text-zinc-400"
-                }`}
-              >
-                {c.date.getDate()}
-              </span>
-              {c.inMonth && c.banners.length > 0 && (
-                <div className="flex flex-col gap-0.5">
-                  {visible.map((b) => (
-                    <MonthBannerPill key={b.id} banner={b} tagMap={tagMap} />
-                  ))}
-                  {overflow && (
-                    <span className="truncate text-[9px] font-medium text-zinc-500 dark:text-zinc-400">
-                      {overflow}
+      </div>
+      {/* One relative container per week so each row can overlay its own span
+          bars above the bordered day cells. */}
+      <div className="flex flex-col gap-1">
+        {weeks.map((week, w) => (
+          <div key={w} className="relative">
+            <div className="grid grid-cols-7 gap-1">
+              {week.weekCells.map((c) => {
+                const visible = c.nonSpan.slice(0, MONTH_BANNERS_PER_CELL);
+                const hidden = c.nonSpan.slice(MONTH_BANNERS_PER_CELL);
+                const overflow =
+                  hidden.length > 0 ? summarizeOverflow(hidden) : null;
+                return (
+                  <button
+                    key={c.dateStr}
+                    type="button"
+                    onClick={() => onJumpToDay(c.dateStr)}
+                    className={`flex min-h-20 flex-col gap-0.5 rounded-md border p-1 text-left transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-900 ${
+                      c.dateStr === todayStr
+                        ? "border-zinc-900 dark:border-zinc-50"
+                        : "border-zinc-200 dark:border-zinc-800"
+                    } ${c.inMonth ? "" : "opacity-40"}`}
+                  >
+                    <span
+                      className={`self-start text-xs ${
+                        c.dateStr === todayStr
+                          ? "font-semibold"
+                          : "text-zinc-600 dark:text-zinc-400"
+                      }`}
+                    >
+                      {c.date.getDate()}
                     </span>
-                  )}
-                </div>
-              )}
-            </button>
-          );
-        })}
+                    {week.laneCount > 0 && (
+                      <div
+                        aria-hidden
+                        style={{ height: week.laneCount * MONTH_LANE_H }}
+                      />
+                    )}
+                    {c.inMonth && c.nonSpan.length > 0 && (
+                      <div className="flex flex-col gap-0.5">
+                        {visible.map((b) => (
+                          <MonthBannerPill key={b.id} banner={b} tagMap={tagMap} />
+                        ))}
+                        {overflow && (
+                          <span className="truncate text-[9px] font-medium text-zinc-500 dark:text-zinc-400">
+                            {overflow}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {week.spans.length > 0 && (
+              <div
+                className="pointer-events-none absolute inset-x-0 grid grid-cols-7 gap-1"
+                style={{ top: MONTH_SPAN_TOP, gridAutoRows: `${MONTH_LANE_H}px` }}
+              >
+                {week.spans.map((s) => {
+                  const firstTag = s.tags[0];
+                  const info = firstTag ? tagMap[firstTag] : undefined;
+                  const color = info
+                    ? tagChipClasses(info.color)
+                    : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300";
+                  return (
+                    <button
+                      key={s.activityId}
+                      type="button"
+                      title={s.name}
+                      onClick={() =>
+                        onJumpToDay(week.weekCells[s.startCol].dateStr)
+                      }
+                      style={{
+                        gridColumn: `${s.startCol + 1} / span ${s.endCol - s.startCol + 1}`,
+                        gridRowStart: s.lane + 1,
+                      }}
+                      className={`pointer-events-auto mx-0.5 h-3.5 overflow-hidden truncate px-1 text-left text-[9px] font-medium leading-[14px] ${color} ${
+                        s.continuesLeft ? "rounded-l-none" : "rounded-l-sm"
+                      } ${s.continuesRight ? "rounded-r-none" : "rounded-r-sm"}`}
+                    >
+                      {s.continuesLeft ? " " : s.name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );
