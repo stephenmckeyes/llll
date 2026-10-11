@@ -31,6 +31,7 @@ import {
   type PendingCoachApplication,
 } from "@/app/actions/coaches";
 import { useBodyScrollLock } from "@/lib/ui/body-scroll-lock";
+import { ShareRhythmsButton } from "../share-modal";
 
 import { CoachOffersSection, CoachTemplatesSection } from "./coach-plans";
 
@@ -462,12 +463,29 @@ function PartyRow({
           Chat
         </button>
         {role === "coach" && (
+          <>
+            <ShareRhythmsButton
+              friendId={party.otherUserId}
+              friendName={name}
+            />
+            <button
+              type="button"
+              onClick={() => setReviewOpen(true)}
+              className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            >
+              Review
+            </button>
+          </>
+        )}
+        {role === "client" && (
           <button
             type="button"
-            onClick={() => setReviewOpen(true)}
+            onClick={() =>
+              router.push(`/friends/coaches/${party.otherUserId}/shared`)
+            }
             className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
           >
-            Review
+            View shared
           </button>
         )}
         {reviewOpen && (

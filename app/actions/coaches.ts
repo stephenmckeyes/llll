@@ -17,6 +17,12 @@ import { generateInstances } from "@/lib/domain/rhythms";
 import {
   parseActivityTemplateForm,
 } from "@/lib/domain/activity-template-parse";
+import {
+  getSharedInstancesWithMe,
+  getSharedWithMe,
+  type SharedActivity,
+  type SharedInstance,
+} from "@/app/actions/sharing";
 import type { Rhythm } from "@/lib/validators/rhythm";
 
 export type CoachDirectoryEntry = {
@@ -724,6 +730,28 @@ export async function getMyCoachReview(
   });
   const row = ((data ?? []) as Array<{ rating: number; body: string | null }>)[0];
   return row ? { rating: row.rating, body: row.body } : null;
+}
+
+// ---------------------------------------------------------------------------
+// Share activities with a coach (migration 0076) — read side. The share action
+// itself is the existing shareActivity (activity_shares); its INSERT policy now
+// permits coaching pairs. This returns activities a specific user shared WITH
+// the caller (for the coach to review a client's routines), in a window.
+// ---------------------------------------------------------------------------
+
+export async function getSharedByUser(
+  ownerId: string,
+  from: string,
+  to: string
+): Promise<{ activities: SharedActivity[]; instances: SharedInstance[] }> {
+  const [allActs, allInst] = await Promise.all([
+    getSharedWithMe(),
+    getSharedInstancesWithMe(from, to),
+  ]);
+  return {
+    activities: allActs.filter((a) => a.ownerId === ownerId),
+    instances: allInst.filter((i) => i.ownerId === ownerId),
+  };
 }
 
 // Admin: verify / reject / re-pend a coach application.

@@ -6,6 +6,11 @@ startup.
 
 ## Recently done
 
+- ✅ Coaches marketplace — phase 3 (migration 0076): share your activities WITH
+  a coach. The `activity_shares` INSERT policy now allows coaching pairs (like
+  friends); "Your coaches" gets a Share button, and a coach reviews a client's
+  shared routines via "View shared" (read-only calendar). This completes the
+  Coaches marketplace (phases 1-5 done; only payments deferred).
 - ✅ Coaches marketplace — phase 5 (migration 0075): reviews/ratings. A client
   who worked with a coach leaves a 1-5 star review (+ text); the directory shows
   the average + a "See reviews" list. Only phase 3 (share your own activities
@@ -589,9 +594,15 @@ clients (who accept, then execute), with easy per-client tweaks.
    full live verification needs two accounts (a verified coach + a client),
    since `start_coaching` requires a verified coach and you can't coach
    yourself.
-3. **Share activities with a coach.** Reuse `activity_shares` /
-   `get_shared_with_me` so a client shares specific activities with their coach
-   (read-only, like friends) for review.
+3. **Share activities with a coach.** ✅ DONE (migration 0076). The
+   `activity_shares` INSERT policy now permits a pair joined by a friendship OR
+   an active coaching relationship, so a client shares activities with their
+   coach via the existing `shareActivity` flow. UI: the shared `ShareRhythmsButton`
+   on each coach in "Your coaches"; the coach reviews a client's shared routines
+   via a "View shared" link → `/friends/coaches/[coachId]/shared` (read-only
+   FriendCalendar over `getSharedByUser`, which filters get_shared_with_me /
+   get_shared_instances_with_me to that owner). Reads were already
+   relationship-agnostic.
 4. **Coach activity cache (templates) + send-to-client.** ✅ DONE (migration
    0074). `coach_activity_templates` (coach-owned library: name, notes, rhythm,
    times, tags) + `coach_activity_offers` (a snapshot sent to a client, status
@@ -614,7 +625,8 @@ clients (who accept, then execute), with easy per-client tweaks.
 6. **Payments.** Out of scope initially; price is display-only in phase 1.
    Booking/billing is a later, separate concern.
 
-Phase 1 is the foundation; pick up one later phase per session.
+Phases 1-5 are all shipped — the Coaches marketplace is feature-complete except
+phase 6 (payments), which is intentionally deferred.
 
 ### First-run page intros + terms/disclaimers (asked for)
 
