@@ -36,14 +36,18 @@ import {
   setCommunityChatSettings,
   setCommunityJoinPolicy,
   setCommunityOutsiderVisibility,
+  setCommunityPageLayout,
   setCommunityPublicCalendar,
   setCommunityShowMembers,
   setCommunityVisibility,
   setMemberRole,
   updateCommunityRank,
+  DEFAULT_PAGE_LAYOUT,
+  MEMBER_TABS,
   type CommunityActivityBundle,
   type CommunityChatWhoCanSpeak,
   type CommunityDetail,
+  type CommunityMemberTab,
   type CommunityPreview,
   type CommunitySummary,
   type DiscoveredCommunity,
@@ -520,15 +524,25 @@ function CommunityBody({
   const canManage = isLeadership(detail.myRole);
   const canSeeSettings = hasAnyManagementPermission(perms);
   const [view, setView] = useState<CommunityView>("home");
-  const active: CommunityView =
-    view === "settings" && !canSeeSettings ? "home" : view;
 
+  // Member tabs follow the leadership-configured order (migration 0068);
+  // Settings is never part of that config — it's appended for management
+  // viewers only.
+  const MEMBER_TAB_LABEL: Record<string, string> = {
+    home: "Home",
+    calendar: "Calendar",
+    chat: "Chat",
+  };
   const tabs = [
-    { v: "home", label: "Home" },
-    { v: "calendar", label: "Calendar" },
-    { v: "chat", label: "Chat" },
-    ...(canSeeSettings ? [{ v: "settings", label: "Settings" }] : []),
-  ] as Array<{ v: CommunityView; label: string }>;
+    ...detail.pageLayout.map((v) => ({ v: v as CommunityView, label: MEMBER_TAB_LABEL[v] })),
+    ...(canSeeSettings ? [{ v: "settings" as CommunityView, label: "Settings" }] : []),
+  ];
+
+  // Clamp the selected view to a tab that actually exists (the layout may hide
+  // the current one, or Settings may be unavailable) — fall back to the first.
+  const active: CommunityView = tabs.some((t) => t.v === view)
+    ? view
+    : (tabs[0]?.v ?? "home");
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
@@ -716,6 +730,136 @@ function CommunityHome({ detail }: { detail: CommunityDetail }) {
 
 
 // ---------------------------------------------------------------------------
+// Page layout editor (Settings) — leadership choose which member-facing sub-
+// tabs show and in what order (migration 0068). Settings isn't listed here
+// (it's always leadership-only). Saves on each change; at least one tab must
+// stay enabled (the DB enforces this too).
+// ---------------------------------------------------------------------------
+
+const PAGE_TAB_LABEL: Record<CommunityMemberTab, string> = {
+  home: "Home",
+  calendar: "Calendar",
+  chat: "Chat",
+};
+
+function PageLayoutEditor({ detail }: { detail: CommunityDetail }) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  const enabled = detail.pageLayout;
+  const disabled = MEMBER_TABS.filter((t) => !enabled.includes(t));
+  const rows: Array<{ key: CommunityMemberTab; on: boolean }> = [
+    ...enabled.map((key) => ({ key, on: true })),
+    ...disabled.map((key) => ({ key, on: false })),
+  ];
+  const isDefault =
+    enabled.length === DEFAULT_PAGE_LAYOUT.length &&
+    enabled.every((k, i) => k === DEFAULT_PAGE_LAYOUT[i]);
+
+  function save(next: CommunityMemberTab[]) {
+    setError(null);
+    startTransition(async () => {
+      const res = await setCommunityPageLayout(detail.id, next);
+      if ("error" in res) setError(res.error);
+      else router.refresh();
+    });
+  }
+
+  function toggle(key: CommunityMemberTab, on: boolean) {
+    if (on) {
+      // disable — keep at least one tab
+      if (enabled.length <= 1) return;
+      save(enabled.filter((k) => k !== key));
+    } else {
+      save([...enabled, key]);
+    }
+  }
+
+  function move(key: CommunityMemberTab, dir: -1 | 1) {
+    const i = enabled.indexOf(key);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= enabled.length) return;
+    const next = [...enabled];
+    [next[i], next[j]] = [next[j], next[i]];
+    save(next);
+  }
+
+  const iconBtn =
+    "rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:hover:bg-zinc-900";
+
+  return (
+    <section className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <h4 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+          Page layout
+        </h4>
+        {!isDefault && (
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={() => save([...DEFAULT_PAGE_LAYOUT])}
+            className="text-xs font-medium text-zinc-500 hover:underline disabled:opacity-50"
+          >
+            Reset
+          </button>
+        )}
+      </div>
+      <ul className="flex flex-col gap-1.5">
+        {rows.map(({ key, on }) => {
+          const pos = enabled.indexOf(key);
+          return (
+            <li
+              key={key}
+              className="flex items-center justify-between gap-2 rounded-md border border-zinc-200 px-3 py-1.5 dark:border-zinc-800"
+            >
+              <label className="flex min-w-0 items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={on}
+                  disabled={isPending || (on && enabled.length <= 1)}
+                  onChange={() => toggle(key, on)}
+                />
+                <span className={on ? "" : "text-zinc-400"}>
+                  {PAGE_TAB_LABEL[key]}
+                </span>
+              </label>
+              {on && (
+                <div className="flex shrink-0 gap-1">
+                  <button
+                    type="button"
+                    aria-label={`Move ${PAGE_TAB_LABEL[key]} up`}
+                    disabled={isPending || pos <= 0}
+                    onClick={() => move(key, -1)}
+                    className={iconBtn}
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Move ${PAGE_TAB_LABEL[key]} down`}
+                    disabled={isPending || pos >= enabled.length - 1}
+                    onClick={() => move(key, 1)}
+                    className={iconBtn}
+                  >
+                    ↓
+                  </button>
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {error && (
+        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+          {error}
+        </p>
+      )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Settings (Phase 4) — leadership-only. A collapsible area with member
 // management, admittance, and chat settings. Expandable later (custom
 // ranks, discovery/outsider-visibility, etc.).
@@ -869,6 +1013,9 @@ function CommunitySettingsSection({ detail }: { detail: CommunityDetail }) {
 
       {/* Ranks */}
       {perms.can_edit_settings && <RanksEditor detail={detail} />}
+
+      {/* Page layout — which member tabs show + their order */}
+      {perms.can_edit_settings && <PageLayoutEditor detail={detail} />}
 
       {perms.can_edit_settings && (
         <>

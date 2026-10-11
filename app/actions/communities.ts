@@ -59,6 +59,30 @@ export type CommunitySummary = {
   memberCount: number;
 };
 
+/** The member-facing sub-tabs leadership can show/hide/reorder (migration
+ *  0068). Settings is excluded — it's always leadership-only, appended by the
+ *  client. Keep in sync with set_community_page_layout's allowed keys. */
+export const MEMBER_TABS = ["home", "calendar", "chat"] as const;
+export type CommunityMemberTab = (typeof MEMBER_TABS)[number];
+export const DEFAULT_PAGE_LAYOUT: CommunityMemberTab[] = ["home", "calendar", "chat"];
+
+/** Coerce a stored page_layout (jsonb, possibly null/garbage) into a valid,
+ *  de-duped list of known member tabs. Falls back to the default order when
+ *  empty or unusable so the shell always renders at least the base tabs. */
+export function normalizePageLayout(raw: unknown): CommunityMemberTab[] {
+  if (!Array.isArray(raw)) return [...DEFAULT_PAGE_LAYOUT];
+  const seen = new Set<CommunityMemberTab>();
+  for (const v of raw) {
+    if (
+      typeof v === "string" &&
+      (MEMBER_TABS as readonly string[]).includes(v)
+    ) {
+      seen.add(v as CommunityMemberTab);
+    }
+  }
+  return seen.size > 0 ? [...seen] : [...DEFAULT_PAGE_LAYOUT];
+}
+
 export type CommunityMember = {
   userId: string;
   /** Fixed role or a custom "rank:<id>" (migration 0051). */
@@ -93,6 +117,11 @@ export type CommunityDetail = CommunitySummary & {
   /** Whether the calendar is viewable on a public, logged-out page
    *  (migration 0067). Only meaningful when visibility='public'. */
   publicCalendar: boolean;
+  /** Leadership-configured order of the member-facing sub-tabs (migration
+   *  0068). Always a valid, de-duped subset of MEMBER_TABS with ≥1 entry;
+   *  falls back to DEFAULT_PAGE_LAYOUT when unset. Settings is never part of
+   *  this (it's appended client-side for management viewers). */
+  pageLayout: CommunityMemberTab[];
   /** Custom ranks defined for this community (migration 0051). */
   ranks: CommunityRank[];
   /** The caller's effective permissions (leadership → all true). */
@@ -191,7 +220,7 @@ export async function getCommunity(
   const { data: community } = await supabase
     .from("communities")
     .select(
-      "id, kind, name, handle, description, visibility, join_policy, created_at, calendar_display, chat_enabled, chat_who_can_speak, home_content, home_layout, home_fit_one_page, show_members, outsider_visibility, public_calendar"
+      "id, kind, name, handle, description, visibility, join_policy, created_at, calendar_display, chat_enabled, chat_who_can_speak, home_content, home_layout, home_fit_one_page, show_members, outsider_visibility, public_calendar, page_layout"
     )
     .eq("id", communityId)
     .maybeSingle();
@@ -214,6 +243,7 @@ export async function getCommunity(
     show_members: boolean | null;
     outsider_visibility: Record<string, unknown> | null;
     public_calendar: boolean | null;
+    page_layout: unknown;
   };
 
   // Members — RLS returns rows only when the caller is a member. Non-
@@ -338,6 +368,7 @@ export async function getCommunity(
     outsiderShowMembers: c.outsider_visibility?.showMembers === true,
     outsiderShowActivities: c.outsider_visibility?.showActivities === true,
     publicCalendar: c.public_calendar ?? false,
+    pageLayout: normalizePageLayout(c.page_layout),
     ranks,
     myPermissions,
     myRole: myRow?.role ?? null,
@@ -1868,6 +1899,18 @@ export async function setCommunityOutsiderVisibility(
     p_community_id: communityId,
     p_show_members: showMembers,
     p_show_activities: showActivities,
+  });
+}
+
+// setCommunityPageLayout — leadership set which member-facing sub-tabs show
+// and in what order (migration 0068). Pass null to reset to the default order.
+export async function setCommunityPageLayout(
+  communityId: string,
+  layout: CommunityMemberTab[] | null
+): Promise<{ error: string } | { ok: true }> {
+  return callSettingsRpc("set_community_page_layout", {
+    p_community_id: communityId,
+    p_layout: layout,
   });
 }
 

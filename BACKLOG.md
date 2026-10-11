@@ -6,6 +6,11 @@ startup.
 
 ## Recently done
 
+- ✅ Leadership-configurable community page layout — phase 1 (migration 0068):
+  Settings → "Page layout" lets leadership show/hide/reorder the member tabs
+  (Home / Calendar / Chat); the shell tab strip reads `communities.page_layout`
+  instead of the hardcoded order. Settings stays leadership-only. (See the
+  "Leadership-configurable community page display" entry for remaining phases.)
 - ✅ Community activity auto-resolve toggle (migrations 0060/0066): the
   community create/edit form now exposes "Stays until marked" / "Auto-complete
   when past" (shared ActivityFormFields `showAutoResolve`). Past-due pending
@@ -449,17 +454,21 @@ occurrence) and **ranks-gated management** (adding/editing gated by
   community's own + archived activities so the Status/Tag/Rhythm grouping and
   All/Active/Archived filter work.
 
-**Leadership-configurable community page display (asked for, upcoming).**
-The user wants leadership to control what a community surfaces / how its
-page is laid out — which sections show and in what order (Home, Calendar,
-Total, Streaks, Chat, members, activity feed, …), and likely per-section
-visibility for outsiders vs members. Think of it as a per-community layout
-config (e.g. `communities.page_layout jsonb` or a `community_page_sections`
-table) that gates + orders the tabs/sections the member and non-member views
-render. Builds on the existing `outsider_visibility` (0054) and the removed-
-but-related `calendar_display` idea. When it ships, the sub-tab strip +
-section renderers should read this config instead of the current hardcoded
-order. Contained phase — pick up after the aggregate-completion follow-ups.
+**Leadership-configurable community page display (asked for).**
+✅ PHASE 1 DONE (migration 0068): leadership can show/hide/reorder the
+member-facing sub-tabs (Home / Calendar / Chat) via Settings → "Page layout".
+Stored as `communities.page_layout jsonb` (ordered array of tab keys; NULL =
+default home→calendar→chat). `set_community_page_layout` (can_edit_settings,
+validates known keys / no dupes / ≥1) + `setCommunityPageLayout`; the shell's
+tab strip now reads `detail.pageLayout` (normalized via `normalizePageLayout`,
+`MEMBER_TABS`/`DEFAULT_PAGE_LAYOUT`) instead of the hardcoded order, and the
+selected view clamps to an available tab. Settings stays leadership-only and
+is NOT part of the config.
+- STILL TODO: more sections (Total / Streaks as their own tabs; members +
+  activity-feed widgets); per-section **outsider vs member** visibility (ties
+  into `outsider_visibility` 0054); and letting the public `/c/<id>` page and
+  the Discover preview honor the layout. Current phase only covers the three
+  member tabs' show/hide/order for logged-in members.
 
 **Public (no-login) community calendar sharing.** ✅ DONE (migration 0067) —
 see "Recently done". Possible follow-ups: expose it at the community's
