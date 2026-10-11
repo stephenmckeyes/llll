@@ -152,10 +152,12 @@ calendar.
      same-dated community occurrence (one-way personal→community; zero latency on
      the completion path). The AggregateModal has "+ Add to my calendar" /
      "✓ On your calendar — remove"; the bundle carries `linkedAggregateIds`.
-     STILL TODO: a Day-view affordance to link (the Day list shows inline ✓/✗
-     and never opens the modal, so linking is currently only reachable from
-     Week/Month/Streaks taps); reverse sync (community mark → personal) if
-     wanted.
+     Reachable from every view: tapping an aggregate row's body in the Day list
+     ALSO opens the AggregateModal (verified), so linking works from Day as well
+     as Week/Month/Streaks. Verified live end-to-end: linked Team Pushups →
+     completed today on the personal calendar → the community aggregate for that
+     day bumped 0/1 → 1/1 via the trigger. STILL TODO (optional): reverse sync
+     (community mark → personal) if wanted.
 
 2. **Stays-until-marked vs. auto-drop-when-past.** ✅ DONE for the PERSONAL
    calendar (migration 0059: `activities.auto_resolve`). Toggle in both
