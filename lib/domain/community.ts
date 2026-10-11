@@ -54,6 +54,36 @@ export function isLeadership(role: string | null | undefined): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Page layout (migration 0068). The member-facing sub-tabs leadership can
+// show/hide/reorder. Settings is excluded — it's always leadership-only,
+// appended by the client. Keep in sync with set_community_page_layout's
+// allowed keys. (Lives here, not in the "use server" actions file, because
+// that file may only export async functions.)
+// ---------------------------------------------------------------------------
+
+export const MEMBER_TABS = ["home", "calendar", "chat"] as const;
+export type CommunityMemberTab = (typeof MEMBER_TABS)[number];
+export const DEFAULT_PAGE_LAYOUT: CommunityMemberTab[] = [
+  "home",
+  "calendar",
+  "chat",
+];
+
+/** Coerce a stored page_layout (jsonb, possibly null/garbage) into a valid,
+ *  de-duped list of known member tabs. Falls back to the default order when
+ *  empty or unusable so the shell always renders at least the base tabs. */
+export function normalizePageLayout(raw: unknown): CommunityMemberTab[] {
+  if (!Array.isArray(raw)) return [...DEFAULT_PAGE_LAYOUT];
+  const seen = new Set<CommunityMemberTab>();
+  for (const v of raw) {
+    if (typeof v === "string" && (MEMBER_TABS as readonly string[]).includes(v)) {
+      seen.add(v as CommunityMemberTab);
+    }
+  }
+  return seen.size > 0 ? [...seen] : [...DEFAULT_PAGE_LAYOUT];
+}
+
+// ---------------------------------------------------------------------------
 // Ranks + permissions (migration 0051). A member's community_members.role is
 // one of the fixed roles above OR "rank:<uuid>" pointing at a community_ranks
 // row that carries the permission bitmap below.
