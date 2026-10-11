@@ -1,62 +1,40 @@
 "use client";
 
 // ---------------------------------------------------------------------------
-// CoachesTab — the Coaches surface body (phase 1, migration 0072).
-//
-//   * "Find a Coach" directory of verified coaches.
-//   * "Become a coach" / "Your coach profile" application form + status.
+// CoachesTab — the main Coaches surface body.
+//   * First-run intro.
 //   * Admin review queue (verify / reject) for pending applications.
-//
-// Coach↔client chat, activity sharing, and the coach activity cache are later
-// phases (noted inline).
+//   * Plans from your coaches (offers inbox).
+//   * Your coaches / Your clients (chat, review, share, view shared).
+//   * Your coaching plans (template library) for coaches.
+//   * Links out to the dedicated "Find a Coach" + "Become a coach" pages.
 // ---------------------------------------------------------------------------
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import {
-  applyAsCoach,
   endCoaching,
-  getCoachReviews,
   getMyCoachReview,
   setCoachStatus,
-  startCoaching,
   submitCoachReview,
-  type CoachDirectoryEntry,
   type CoachOffer,
-  type CoachReview,
   type CoachTemplate,
   type CoachingParty,
   type MyCoachProfile,
   type PendingCoachApplication,
 } from "@/app/actions/coaches";
 import { useBodyScrollLock } from "@/lib/ui/body-scroll-lock";
-import { ShareRhythmsButton } from "../share-modal";
-import { FirstRunPopup, TermsModal } from "@/app/_components/agreement-prompts";
-import {
-  COACHES_INTRO,
-  COACH_CONDUCT_TERMS,
-  COACHING_CLIENT_DISCLAIMER,
-  needsAck,
-} from "@/lib/domain/agreements";
+import { FirstRunPopup } from "@/app/_components/agreement-prompts";
+import { COACHES_INTRO, needsAck } from "@/lib/domain/agreements";
+import { PendingLink } from "@/app/_components/pending-link";
 
+import { ShareRhythmsButton } from "../share-modal";
+import { CoachStatusBadge, priceLabel } from "./coach-ui";
 import { CoachOffersSection, CoachTemplatesSection } from "./coach-plans";
 
-function priceLabel(amount: number | null, unit: "day" | "week" | null): string {
-  if (amount == null || unit == null) return "Price on request";
-  const n = Number(amount);
-  const money = Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`;
-  return `${money} / ${unit}`;
-}
-
-function initials(name: string | null, username: string | null): string {
-  const base = (name ?? username ?? "?").trim();
-  const parts = base.split(/\s+/).slice(0, 2);
-  return parts.map((p) => p[0]?.toUpperCase() ?? "").join("") || "?";
-}
-
 export function CoachesTab({
-  directory,
+  directoryCount,
   myProfile,
   isAdmin,
   pending,
@@ -66,7 +44,7 @@ export function CoachesTab({
   templates,
   acks,
 }: {
-  directory: CoachDirectoryEntry[];
+  directoryCount: number;
   myProfile: MyCoachProfile | null;
   isAdmin: boolean;
   pending: PendingCoachApplication[];
@@ -76,44 +54,7 @@ export function CoachesTab({
   templates: CoachTemplate[];
   acks: Record<string, number>;
 }) {
-  const router = useRouter();
-  const [applyOpen, setApplyOpen] = useState(false);
-  const myCoachIds = new Set(
-    myCoaches.filter((c) => c.status === "active").map((c) => c.otherUserId)
-  );
   const todayStr = new Date().toISOString().slice(0, 10);
-
-  // Terms gating (migration 0077). Accept once, then the gated action proceeds.
-  const [coachTermsAccepted, setCoachTermsAccepted] = useState(
-    !needsAck(acks, COACH_CONDUCT_TERMS)
-  );
-  const [clientDisclaimerAccepted, setClientDisclaimerAccepted] = useState(
-    !needsAck(acks, COACHING_CLIENT_DISCLAIMER)
-  );
-  const [showCoachTerms, setShowCoachTerms] = useState(false);
-  // Coach id to engage after the client disclaimer is accepted.
-  const [pendingEngage, setPendingEngage] = useState<string | null>(null);
-
-  function openApply() {
-    if (!coachTermsAccepted) setShowCoachTerms(true);
-    else setApplyOpen(true);
-  }
-
-  // Engage a coach (gate behind the client disclaimer on first use).
-  function engage(coachId: string) {
-    if (!clientDisclaimerAccepted) {
-      setPendingEngage(coachId);
-      return;
-    }
-    doEngage(coachId);
-  }
-  const [, startEngage] = useTransition();
-  function doEngage(coachId: string) {
-    startEngage(async () => {
-      const res = await startCoaching(coachId);
-      if (!("error" in res)) router.push(`/friends/coaches/${coachId}/chat`);
-    });
-  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto pb-6">
@@ -122,40 +63,35 @@ export function CoachesTab({
         seen={!needsAck(acks, COACHES_INTRO)}
       />
 
-      {showCoachTerms && (
-        <TermsModal
-          agreement={COACH_CONDUCT_TERMS}
-          onCancel={() => setShowCoachTerms(false)}
-          onAccept={() => {
-            setShowCoachTerms(false);
-            setCoachTermsAccepted(true);
-            setApplyOpen(true);
-          }}
-        />
-      )}
-
-      {pendingEngage && (
-        <TermsModal
-          agreement={COACHING_CLIENT_DISCLAIMER}
-          onCancel={() => setPendingEngage(null)}
-          onAccept={() => {
-            const id = pendingEngage;
-            setPendingEngage(null);
-            setClientDisclaimerAccepted(true);
-            if (id) doEngage(id);
-          }}
-        />
-      )}
+      {/* Primary nav out to the dedicated pages. */}
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <PendingLink
+          href="/friends/coaches/find"
+          className="flex flex-1 items-center justify-between rounded-md border border-zinc-300 px-4 py-3 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+        >
+          <span>Find a Coach</span>
+          <span className="text-xs text-zinc-500">{directoryCount} listed →</span>
+        </PendingLink>
+        <PendingLink
+          href="/friends/coaches/apply"
+          className="flex flex-1 items-center justify-between rounded-md border border-zinc-300 px-4 py-3 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+        >
+          <span>{myProfile ? "Your coach profile" : "Become a coach"}</span>
+          {myProfile ? (
+            <CoachStatusBadge status={myProfile.status} />
+          ) : (
+            <span className="text-xs text-zinc-500">→</span>
+          )}
+        </PendingLink>
+      </div>
 
       {/* Admin review queue */}
-      {isAdmin && (
-        <AdminReviewQueue pending={pending} />
-      )}
+      {isAdmin && <AdminReviewQueue pending={pending} />}
 
       {/* Plans offered to me by my coaches (client side) */}
       <CoachOffersSection offers={offers} />
 
-      {/* Your coaches — current + past relationships with a chat link each. */}
+      {/* Your coaches */}
       <section className="flex flex-col gap-2">
         <h2 className="text-lg font-semibold tracking-tight">Your coaches</h2>
         {myCoaches.length === 0 ? (
@@ -171,7 +107,7 @@ export function CoachesTab({
         )}
       </section>
 
-      {/* Your clients — shown to coaches who have engaged clients. */}
+      {/* Your clients */}
       {myClients.length > 0 && (
         <section className="flex flex-col gap-2">
           <h2 className="text-lg font-semibold tracking-tight">Your clients</h2>
@@ -192,202 +128,92 @@ export function CoachesTab({
           todayStr={todayStr}
         />
       )}
+    </div>
+  );
+}
 
-      {/* Find a Coach */}
-      <section className="flex flex-col gap-3">
-        <h2 className="text-lg font-semibold tracking-tight">Find a Coach</h2>
-        {directory.length === 0 ? (
-          <p className="rounded-md border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700">
-            No coaches listed yet. Verified coaches will show up here.
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {directory.map((c) => (
-              <CoachCard
-                key={c.userId}
-                coach={c}
-                engaged={myCoachIds.has(c.userId)}
-                onMessage={() => engage(c.userId)}
-              />
-            ))}
-          </ul>
+function PartyRow({
+  party,
+  role,
+}: {
+  party: CoachingParty;
+  /** "coach" = the other person coaches me; "client" = I coach them. */
+  role: "coach" | "client";
+}) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const name =
+    party.displayName ?? (party.username ? `@${party.username}` : "Someone");
+
+  return (
+    <li className="flex items-center justify-between gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium">{name}</p>
+        <p className="text-xs text-zinc-500">
+          {party.status === "ended" ? "Past" : "Active"}
+          {role === "client" ? " · your client" : " · your coach"}
+        </p>
+      </div>
+      <div className="flex shrink-0 flex-wrap justify-end gap-1">
+        <button
+          type="button"
+          onClick={() => router.push(`/friends/coaches/${party.otherUserId}/chat`)}
+          className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+        >
+          Chat
+        </button>
+        {role === "coach" && (
+          <>
+            <ShareRhythmsButton friendId={party.otherUserId} friendName={name} />
+            <button
+              type="button"
+              onClick={() => setReviewOpen(true)}
+              className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            >
+              Review
+            </button>
+          </>
         )}
-      </section>
-
-      {/* Become a coach */}
-      <section className="flex flex-col gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-800">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-lg font-semibold tracking-tight">
-            {myProfile ? "Your coach profile" : "Become a coach"}
-          </h2>
-          {myProfile && <CoachStatusBadge status={myProfile.status} />}
-        </div>
-        {!applyOpen ? (
+        {role === "client" && (
           <button
             type="button"
-            onClick={myProfile ? () => setApplyOpen(true) : openApply}
-            className="self-start rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            onClick={() =>
+              router.push(`/friends/coaches/${party.otherUserId}/shared`)
+            }
+            className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
           >
-            {myProfile ? "Edit application" : "Apply to be a coach"}
+            View shared
           </button>
-        ) : (
-          <ApplyForm
-            initial={myProfile}
-            onDone={() => setApplyOpen(false)}
+        )}
+        {reviewOpen && (
+          <ReviewModal
+            coachUserId={party.otherUserId}
+            coachName={name}
+            onClose={() => setReviewOpen(false)}
+            onSaved={() => {
+              setReviewOpen(false);
+              router.refresh();
+            }}
           />
         )}
-        {myProfile?.status === "pending" && !applyOpen && (
-          <p className="text-xs text-zinc-500">
-            Your application is awaiting review.
-          </p>
-        )}
-        {myProfile?.status === "rejected" && !applyOpen && (
-          <p className="text-xs text-zinc-500">
-            Your application wasn’t approved. You can edit and resubmit.
-          </p>
-        )}
-      </section>
-    </div>
-  );
-}
-
-function CoachStatusBadge({
-  status,
-}: {
-  status: "pending" | "verified" | "rejected";
-}) {
-  const cls =
-    status === "verified"
-      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
-      : status === "rejected"
-        ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
-        : "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300";
-  const label =
-    status === "verified"
-      ? "Verified"
-      : status === "rejected"
-        ? "Not approved"
-        : "Pending review";
-  return (
-    <span className={`rounded-md px-2 py-0.5 text-xs font-semibold ${cls}`}>
-      {label}
-    </span>
-  );
-}
-
-function CoachCard({
-  coach,
-  engaged,
-  onMessage,
-}: {
-  coach: CoachDirectoryEntry;
-  engaged: boolean;
-  /** Engage + open the chat — gated behind the client disclaimer by the parent. */
-  onMessage: () => void;
-}) {
-  const name = coach.displayName ?? (coach.username ? `@${coach.username}` : "Coach");
-
-  return (
-    <li className="flex items-start gap-3 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
-      {coach.photoUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={coach.photoUrl}
-          alt=""
-          className="h-14 w-14 shrink-0 rounded-full object-cover"
-        />
-      ) : (
-        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-sm font-semibold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-          {initials(coach.displayName, coach.username)}
-        </div>
-      )}
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline justify-between gap-2">
-          <p className="truncate text-sm font-semibold">{name}</p>
-          <span className="shrink-0 text-xs font-medium text-zinc-600 dark:text-zinc-400">
-            {priceLabel(coach.priceAmount, coach.priceUnit)}
-          </span>
-        </div>
-        <p className="mt-0.5 text-xs text-amber-600 dark:text-amber-400">
-          {coach.ratingCount > 0
-            ? `★ ${coach.ratingAvg} (${coach.ratingCount})`
-            : "No reviews yet"}
-        </p>
-        {coach.bio && (
-          <p className="mt-1 whitespace-pre-wrap break-words text-xs text-zinc-600 dark:text-zinc-400">
-            {coach.bio}
-          </p>
-        )}
-        <div className="mt-2 flex items-center gap-2">
+        {party.status === "active" && (
           <button
             type="button"
-            onClick={onMessage}
-            className="rounded-md bg-zinc-900 px-3 py-1 text-xs font-medium text-white hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
+            disabled={isPending}
+            onClick={() =>
+              startTransition(async () => {
+                const res = await endCoaching(party.otherUserId);
+                if (!("error" in res)) router.refresh();
+              })
+            }
+            className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
           >
-            {engaged ? "Message" : "Message coach"}
+            End
           </button>
-          {coach.ratingCount > 0 && <ReviewsExpander coach={coach} />}
-        </div>
+        )}
       </div>
     </li>
-  );
-}
-
-function ReviewsExpander({ coach }: { coach: CoachDirectoryEntry }) {
-  const [open, setOpen] = useState(false);
-  const [reviews, setReviews] = useState<CoachReview[] | null>(null);
-  const [isPending, startTransition] = useTransition();
-
-  function toggle() {
-    if (open) {
-      setOpen(false);
-      return;
-    }
-    setOpen(true);
-    if (reviews === null) {
-      startTransition(async () => {
-        setReviews(await getCoachReviews(coach.userId));
-      });
-    }
-  }
-
-  return (
-    <div className="w-full">
-      <button
-        type="button"
-        onClick={toggle}
-        className="rounded-md border border-zinc-300 px-3 py-1 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-      >
-        {open ? "Hide reviews" : `See reviews (${coach.ratingCount})`}
-      </button>
-      {open && (
-        <ul className="mt-2 flex w-full flex-col gap-1.5">
-          {isPending && reviews === null ? (
-            <li className="text-xs text-zinc-500">Loading…</li>
-          ) : (
-            (reviews ?? []).map((r, i) => (
-              <li
-                key={i}
-                className="rounded-md bg-zinc-50 p-2 text-xs dark:bg-zinc-900"
-              >
-                <p className="font-medium text-amber-600 dark:text-amber-400">
-                  {"★".repeat(r.rating)}
-                  {"☆".repeat(5 - r.rating)}{" "}
-                  <span className="font-normal text-zinc-500">
-                    {r.reviewerName}
-                  </span>
-                </p>
-                {r.body && (
-                  <p className="mt-0.5 whitespace-pre-wrap break-words text-zinc-600 dark:text-zinc-400">
-                    {r.body}
-                  </p>
-                )}
-              </li>
-            ))
-          )}
-        </ul>
-      )}
-    </div>
   );
 }
 
@@ -408,7 +234,6 @@ function ReviewModal({
   const [rating, setRating] = useState(5);
   const [body, setBody] = useState("");
 
-  // Prefill an existing review.
   useEffect(() => {
     let active = true;
     getMyCoachReview(coachUserId).then((r) => {
@@ -494,206 +319,7 @@ function ReviewModal({
   );
 }
 
-function PartyRow({
-  party,
-  role,
-}: {
-  party: CoachingParty;
-  /** "coach" = the other person coaches me; "client" = I coach them. */
-  role: "coach" | "client";
-}) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-  const [reviewOpen, setReviewOpen] = useState(false);
-  const name =
-    party.displayName ?? (party.username ? `@${party.username}` : "Someone");
-
-  return (
-    <li className="flex items-center justify-between gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
-      <div className="min-w-0">
-        <p className="truncate text-sm font-medium">{name}</p>
-        <p className="text-xs text-zinc-500">
-          {party.status === "ended" ? "Past" : "Active"}
-          {role === "client" ? " · your client" : " · your coach"}
-        </p>
-      </div>
-      <div className="flex shrink-0 gap-1">
-        <button
-          type="button"
-          onClick={() => router.push(`/friends/coaches/${party.otherUserId}/chat`)}
-          className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-        >
-          Chat
-        </button>
-        {role === "coach" && (
-          <>
-            <ShareRhythmsButton
-              friendId={party.otherUserId}
-              friendName={name}
-            />
-            <button
-              type="button"
-              onClick={() => setReviewOpen(true)}
-              className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-            >
-              Review
-            </button>
-          </>
-        )}
-        {role === "client" && (
-          <button
-            type="button"
-            onClick={() =>
-              router.push(`/friends/coaches/${party.otherUserId}/shared`)
-            }
-            className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-          >
-            View shared
-          </button>
-        )}
-        {reviewOpen && (
-          <ReviewModal
-            coachUserId={party.otherUserId}
-            coachName={name}
-            onClose={() => setReviewOpen(false)}
-            onSaved={() => {
-              setReviewOpen(false);
-              router.refresh();
-            }}
-          />
-        )}
-        {party.status === "active" && (
-          <button
-            type="button"
-            disabled={isPending}
-            onClick={() =>
-              startTransition(async () => {
-                const res = await endCoaching(party.otherUserId);
-                if (!("error" in res)) router.refresh();
-              })
-            }
-            className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
-          >
-            End
-          </button>
-        )}
-      </div>
-    </li>
-  );
-}
-
-function ApplyForm({
-  initial,
-  onDone,
-}: {
-  initial: MyCoachProfile | null;
-  onDone: () => void;
-}) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-  const [bio, setBio] = useState(initial?.bio ?? "");
-  const [photoUrl, setPhotoUrl] = useState(initial?.photoUrl ?? "");
-  const [price, setPrice] = useState(
-    initial?.priceAmount != null ? String(initial.priceAmount) : ""
-  );
-  const [unit, setUnit] = useState<"day" | "week">(initial?.priceUnit ?? "week");
-
-  const inputCls =
-    "w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900";
-
-  function submit() {
-    setError(null);
-    const amount = price.trim() === "" ? null : Number(price);
-    if (amount != null && (!Number.isFinite(amount) || amount < 0)) {
-      setError("Enter a valid price, or leave it blank.");
-      return;
-    }
-    startTransition(async () => {
-      const res = await applyAsCoach({
-        bio,
-        photoUrl,
-        priceAmount: amount,
-        priceUnit: amount != null ? unit : null,
-      });
-      if ("error" in res) setError(res.error);
-      else {
-        onDone();
-        router.refresh();
-      }
-    });
-  }
-
-  return (
-    <div className="flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
-      <textarea
-        value={bio}
-        onChange={(e) => setBio(e.target.value)}
-        rows={3}
-        placeholder="Bio — your coaching background, specialties, approach"
-        className={inputCls}
-      />
-      <input
-        type="url"
-        value={photoUrl}
-        onChange={(e) => setPhotoUrl(e.target.value)}
-        placeholder="Photo URL"
-        className={inputCls}
-      />
-      <div className="flex gap-2">
-        <input
-          type="number"
-          min={0}
-          step="0.01"
-          value={price}
-          onChange={(e) => setPrice(e.target.value)}
-          placeholder="Price"
-          className={inputCls}
-        />
-        <select
-          value={unit}
-          onChange={(e) => setUnit(e.target.value as "day" | "week")}
-          className="rounded-md border border-zinc-300 bg-white px-2 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-        >
-          <option value="day">per day</option>
-          <option value="week">per week</option>
-        </select>
-      </div>
-      {error && (
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
-          {error}
-        </p>
-      )}
-      <div className="flex justify-end gap-2">
-        <button
-          type="button"
-          onClick={onDone}
-          className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          onClick={submit}
-          disabled={isPending}
-          className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
-        >
-          {isPending ? "Submitting…" : "Submit application"}
-        </button>
-      </div>
-      <p className="text-[11px] leading-tight text-zinc-500 dark:text-zinc-400">
-        Submitting sends your profile for admin review. You’ll appear in the
-        directory once verified.
-      </p>
-    </div>
-  );
-}
-
-function AdminReviewQueue({
-  pending,
-}: {
-  pending: PendingCoachApplication[];
-}) {
+function AdminReviewQueue({ pending }: { pending: PendingCoachApplication[] }) {
   return (
     <section className="flex flex-col gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/30">
       <h2 className="text-sm font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">
@@ -731,18 +357,16 @@ function AdminReviewRow({ app }: { app: PendingCoachApplication }) {
 
   return (
     <li className="flex flex-col gap-2 rounded-md border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold">{name}</p>
-          <p className="text-xs text-zinc-500">
-            {priceLabel(app.priceAmount, app.priceUnit)}
+      <div className="min-w-0">
+        <p className="truncate text-sm font-semibold">{name}</p>
+        <p className="text-xs text-zinc-500">
+          {priceLabel(app.priceAmount, app.priceUnit)}
+        </p>
+        {app.bio && (
+          <p className="mt-1 whitespace-pre-wrap break-words text-xs text-zinc-600 dark:text-zinc-400">
+            {app.bio}
           </p>
-          {app.bio && (
-            <p className="mt-1 whitespace-pre-wrap break-words text-xs text-zinc-600 dark:text-zinc-400">
-              {app.bio}
-            </p>
-          )}
-        </div>
+        )}
       </div>
       {error && (
         <p role="alert" className="text-xs text-red-600 dark:text-red-400">

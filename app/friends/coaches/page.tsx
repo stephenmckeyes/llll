@@ -43,7 +43,7 @@ export default async function CoachesTabPage() {
   return (
     <CommunityShell active="coaches">
       <CoachesTab
-        directory={directory}
+        directoryCount={directory.length}
         myProfile={myProfile}
         isAdmin={isAdmin}
         pending={pending}
