@@ -84,7 +84,11 @@ export function DateNavigator({
         {label}
       </p>
 
-      <div className="flex items-center gap-2">
+      {/* Wrap on narrow screens so nothing (date input, Today, the
+          Timeline/Filters chips) gets pushed off the right edge on a phone —
+          the native date input is wide, so a no-wrap row overflowed and the
+          controls "disappeared" in Week view. */}
+      <div className="flex flex-wrap items-center gap-2">
         <Link
           href={hrefFor(view, prevDate)}
           aria-label="Previous"

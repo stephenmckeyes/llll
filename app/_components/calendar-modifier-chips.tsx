@@ -11,7 +11,7 @@
 // Timeline). Grid has its own tag filter and no Timeline concept.
 // ---------------------------------------------------------------------------
 
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
 
 import { setTimelinePref } from "@/app/actions/timeline-pref";
@@ -78,19 +78,30 @@ export function CalendarModifierChips({
   activeHiddenTags: string[];
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [pending, startTransition] = useTransition();
 
-  // Timeline is a sticky user preference (server-side cookie), so a
-  // toggle here persists across ALL calendar navigation — switching
-  // to Month view and then drilling back into a specific day keeps
-  // Timeline on. Cookie is the single source of truth; page.tsx
-  // reads it on every request and threads timelineOn into the view.
-  //
-  // On toggle: write cookie, then router.refresh() to re-render the
-  // current URL with the new preference. No URL manipulation needed.
+  // Timeline is a sticky user preference (server-side cookie). BUT page.tsx
+  // resolves `timelineOn = urlTimeline || cookie`, and the view switcher
+  // threads `&timeline=1` into its links while on — so once that param is in
+  // the URL, flipping only the cookie can't turn Timeline off (the URL param
+  // wins). So the toggle must sync BOTH: write the cookie AND set/clear the
+  // `timeline` query param (normalizing the legacy `view=timeline`). This is
+  // what fixes the intermittent "Timeline won't turn off" bug.
   const onToggle = () => {
+    const next = !timelineOn;
     startTransition(async () => {
-      await setTimelinePref(!timelineOn);
+      await setTimelinePref(next);
+      const params = new URLSearchParams(searchParams?.toString() ?? "");
+      if (next) {
+        params.set("timeline", "1");
+      } else {
+        params.delete("timeline");
+        if (params.get("view") === "timeline") params.set("view", "day");
+      }
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname);
       router.refresh();
     });
   };
