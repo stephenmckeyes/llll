@@ -8,10 +8,16 @@
 // coach activity cache, and review writing arrive in later phases.
 // ---------------------------------------------------------------------------
 
+import { addDays } from "date-fns";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
+import { generateInstances } from "@/lib/domain/rhythms";
+import {
+  parseActivityTemplateForm,
+} from "@/lib/domain/activity-template-parse";
+import type { Rhythm } from "@/lib/validators/rhythm";
 
 export type CoachDirectoryEntry = {
   userId: string;
@@ -288,6 +294,369 @@ export async function getCoachingCounterparty(otherUserId: string): Promise<
     status: row.status === "ended" ? "ended" : "active",
     iAmCoach: row.i_am_coach,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Coach activity cache: templates + offers (migration 0074).
+// ---------------------------------------------------------------------------
+
+const OFFER_HORIZON_DAYS = 400;
+
+export type CoachTemplate = {
+  id: string;
+  name: string;
+  notes: string | null;
+  rhythm: Rhythm;
+  scheduledTimes: string[];
+  scheduledEndTimes: string[];
+  defaultSkillTags: string[];
+};
+
+export type CoachOffer = {
+  id: string;
+  coachUserId: string;
+  coachName: string;
+  name: string;
+  notes: string | null;
+  rhythm: Rhythm;
+  scheduledTimes: string[];
+  startDate: string;
+  status: "pending" | "accepted" | "declined";
+  createdAt: string;
+};
+
+export type CoachTemplateFormState =
+  | { error: string }
+  | { ok: true }
+  | null;
+
+// The caller's (coach's) non-archived templates.
+export async function getMyCoachTemplates(): Promise<CoachTemplate[]> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+  const { data } = await supabase
+    .from("coach_activity_templates")
+    .select(
+      "id, name, notes, rhythm, scheduled_times, scheduled_end_times, default_skill_tags"
+    )
+    .eq("coach_user_id", user.id)
+    .is("archived_at", null)
+    .order("name");
+  return ((data ?? []) as Array<{
+    id: string;
+    name: string;
+    notes: string | null;
+    rhythm: Rhythm;
+    scheduled_times: string[] | null;
+    scheduled_end_times: string[] | null;
+    default_skill_tags: string[] | null;
+  }>).map((r) => ({
+    id: r.id,
+    name: r.name,
+    notes: r.notes,
+    rhythm: r.rhythm,
+    scheduledTimes: r.scheduled_times ?? [],
+    scheduledEndTimes: r.scheduled_end_times ?? [],
+    defaultSkillTags: r.default_skill_tags ?? [],
+  }));
+}
+
+export async function createCoachTemplateFormAction(
+  _prev: CoachTemplateFormState,
+  formData: FormData
+): Promise<CoachTemplateFormState> {
+  const parsed = parseActivityTemplateForm(formData);
+  if ("error" in parsed) return { error: parsed.error };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase.from("coach_activity_templates").insert({
+    coach_user_id: user.id,
+    name: parsed.name,
+    notes: parsed.notes,
+    rhythm: parsed.rhythm,
+    scheduled_times: parsed.scheduledTimes,
+    scheduled_end_times: parsed.scheduledEndTimes,
+    default_skill_tags: parsed.tags,
+  });
+  if (error) return { error: error.message };
+  revalidatePath("/friends/coaches");
+  return { ok: true };
+}
+
+export async function updateCoachTemplateFormAction(
+  templateId: string,
+  _prev: CoachTemplateFormState,
+  formData: FormData
+): Promise<CoachTemplateFormState> {
+  const parsed = parseActivityTemplateForm(formData);
+  if ("error" in parsed) return { error: parsed.error };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase
+    .from("coach_activity_templates")
+    .update({
+      name: parsed.name,
+      notes: parsed.notes,
+      rhythm: parsed.rhythm,
+      scheduled_times: parsed.scheduledTimes,
+      scheduled_end_times: parsed.scheduledEndTimes,
+      default_skill_tags: parsed.tags,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", templateId)
+    .eq("coach_user_id", user.id);
+  if (error) return { error: error.message };
+  revalidatePath("/friends/coaches");
+  return { ok: true };
+}
+
+export async function archiveCoachTemplate(
+  templateId: string
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  const { error } = await supabase
+    .from("coach_activity_templates")
+    .update({ archived_at: new Date().toISOString() })
+    .eq("id", templateId)
+    .eq("coach_user_id", user.id);
+  if (error) return { error: error.message };
+  revalidatePath("/friends/coaches");
+  return { ok: true };
+}
+
+// Duplicate a template (for a per-client tweak). Returns the new id.
+export async function duplicateCoachTemplate(
+  templateId: string
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  const { data: t } = await supabase
+    .from("coach_activity_templates")
+    .select("name, notes, rhythm, scheduled_times, scheduled_end_times, default_skill_tags")
+    .eq("id", templateId)
+    .eq("coach_user_id", user.id)
+    .maybeSingle();
+  if (!t) return { error: "Template not found." };
+  const row = t as {
+    name: string;
+    notes: string | null;
+    rhythm: Rhythm;
+    scheduled_times: string[] | null;
+    scheduled_end_times: string[] | null;
+    default_skill_tags: string[] | null;
+  };
+  const { error } = await supabase.from("coach_activity_templates").insert({
+    coach_user_id: user.id,
+    name: `${row.name} (copy)`,
+    notes: row.notes,
+    rhythm: row.rhythm,
+    scheduled_times: row.scheduled_times ?? [],
+    scheduled_end_times: row.scheduled_end_times ?? [],
+    default_skill_tags: row.default_skill_tags ?? [],
+  });
+  if (error) return { error: error.message };
+  revalidatePath("/friends/coaches");
+  return { ok: true };
+}
+
+// Coach sends a template to a client as an offer (RLS enforces the active
+// coaching relationship). Snapshots the template fields + a start date.
+export async function sendCoachOffer(input: {
+  templateId: string;
+  clientUserId: string;
+  startDate: string;
+}): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: t } = await supabase
+    .from("coach_activity_templates")
+    .select("name, notes, rhythm, scheduled_times, scheduled_end_times, default_skill_tags")
+    .eq("id", input.templateId)
+    .eq("coach_user_id", user.id)
+    .maybeSingle();
+  if (!t) return { error: "Template not found." };
+  const row = t as {
+    name: string;
+    notes: string | null;
+    rhythm: Rhythm;
+    scheduled_times: string[] | null;
+    scheduled_end_times: string[] | null;
+    default_skill_tags: string[] | null;
+  };
+
+  const { error } = await supabase.from("coach_activity_offers").insert({
+    coach_user_id: user.id,
+    client_user_id: input.clientUserId,
+    name: row.name,
+    notes: row.notes,
+    rhythm: row.rhythm,
+    scheduled_times: row.scheduled_times ?? [],
+    scheduled_end_times: row.scheduled_end_times ?? [],
+    default_skill_tags: row.default_skill_tags ?? [],
+    start_date: input.startDate,
+  });
+  if (error) return { error: error.message };
+  revalidatePath("/friends/coaches");
+  return { ok: true };
+}
+
+// The caller's incoming offers (as client).
+export async function getMyCoachOffers(
+  status: "pending" | "accepted" | "declined" | "all" = "pending"
+): Promise<CoachOffer[]> {
+  const supabase = await createClient();
+  const { data } = await supabase.rpc("get_my_coach_offers", { p_status: status });
+  return ((data ?? []) as Array<{
+    id: string;
+    coach_user_id: string;
+    coach_name: string | null;
+    coach_username: string | null;
+    name: string;
+    notes: string | null;
+    rhythm: Rhythm;
+    scheduled_times: string[] | null;
+    start_date: string;
+    status: string;
+    created_at: string;
+  }>).map((r) => ({
+    id: r.id,
+    coachUserId: r.coach_user_id,
+    coachName:
+      r.coach_name ?? (r.coach_username ? `@${r.coach_username}` : "Your coach"),
+    name: r.name,
+    notes: r.notes,
+    rhythm: r.rhythm,
+    scheduledTimes: r.scheduled_times ?? [],
+    startDate: r.start_date,
+    status:
+      r.status === "accepted" || r.status === "declined" ? r.status : "pending",
+    createdAt: r.created_at,
+  }));
+}
+
+// Client accepts an offer → materialize a personal activity on their calendar
+// and mark the offer accepted.
+export async function acceptCoachOffer(
+  offerId: string
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  // Read the offer (client RLS allows own rows).
+  const { data: o } = await supabase
+    .from("coach_activity_offers")
+    .select(
+      "id, client_user_id, name, notes, rhythm, scheduled_times, scheduled_end_times, default_skill_tags, start_date, status"
+    )
+    .eq("id", offerId)
+    .maybeSingle();
+  if (!o) return { error: "Offer not found." };
+  const offer = o as {
+    client_user_id: string;
+    name: string;
+    notes: string | null;
+    rhythm: Rhythm;
+    scheduled_times: string[] | null;
+    scheduled_end_times: string[] | null;
+    default_skill_tags: string[] | null;
+    start_date: string;
+    status: string;
+  };
+  if (offer.client_user_id !== user.id) return { error: "Not your offer." };
+  if (offer.status !== "pending") return { error: "Offer already handled." };
+
+  const tags = offer.default_skill_tags ?? [];
+  const { data: activity, error: aerr } = await supabase
+    .from("activities")
+    .insert({
+      user_id: user.id,
+      name: offer.name,
+      notes: offer.notes,
+      rhythm: offer.rhythm,
+      start_date: offer.start_date,
+      default_skill_tags: tags,
+      scheduled_times: offer.scheduled_times ?? [],
+      scheduled_end_times: offer.scheduled_end_times ?? [],
+    })
+    .select("id")
+    .single();
+  if (aerr || !activity) {
+    return { error: aerr?.message ?? "Could not add to your calendar." };
+  }
+
+  const horizon = addDays(new Date(`${offer.start_date}T00:00:00`), OFFER_HORIZON_DAYS)
+    .toISOString()
+    .slice(0, 10);
+  const instances = generateInstances(offer.rhythm, {
+    from: offer.start_date,
+    to: horizon,
+  });
+  if (instances.length > 0) {
+    await supabase.from("activity_instances").insert(
+      instances.map((i) => ({
+        activity_id: activity.id as string,
+        scheduled_for: i.scheduledFor,
+        status: "pending" as const,
+        tags,
+      }))
+    );
+  }
+
+  await supabase
+    .from("coach_activity_offers")
+    .update({ status: "accepted", responded_at: new Date().toISOString() })
+    .eq("id", offerId)
+    .eq("client_user_id", user.id);
+
+  revalidatePath("/friends/coaches");
+  revalidatePath("/");
+  return { ok: true };
+}
+
+export async function declineCoachOffer(
+  offerId: string
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  const { error } = await supabase
+    .from("coach_activity_offers")
+    .update({ status: "declined", responded_at: new Date().toISOString() })
+    .eq("id", offerId)
+    .eq("client_user_id", user.id)
+    .eq("status", "pending");
+  if (error) return { error: error.message };
+  revalidatePath("/friends/coaches");
+  return { ok: true };
 }
 
 // Admin: verify / reject / re-pend a coach application.

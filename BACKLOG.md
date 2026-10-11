@@ -6,6 +6,12 @@ startup.
 
 ## Recently done
 
+- ✅ Coaches marketplace — phase 4 (migration 0074): the coach activity cache.
+  Coaches keep a library of activity templates and send them to clients as
+  offers; the client accepts → it materializes on their calendar. Templates:
+  create/edit (shared ActivityFormFields) / duplicate / archive / send; clients
+  get a "Plans from your coaches" inbox with Add-to-my-calendar / Decline. (Note:
+  phase 3 "share your activities with a coach" is still pending.)
 - ✅ Coaches marketplace — phase 2 (migration 0073): coach↔client chat.
   `coaching_relationships` + start/end + my-coaches/my-clients RPCs; the
   `messages` policy now permits coaching pairs (not just friends); "Message
@@ -582,19 +588,48 @@ clients (who accept, then execute), with easy per-client tweaks.
 3. **Share activities with a coach.** Reuse `activity_shares` /
    `get_shared_with_me` so a client shares specific activities with their coach
    (read-only, like friends) for review.
-4. **Coach activity cache (templates) + send-to-client.** A coach keeps a
-   library of activity templates (`coach_activity_templates`: name, rhythm,
-   scheduled_times, tags, notes…). A coach sends a template to a client →
-   creates a pending "offer" the client accepts, which materializes a personal
-   activity on their calendar (reuse the create/materialize path). Editing a
-   template before sending lets a coach tweak a near-duplicate per client, and
-   the cache enables mass-distribution of basic plans.
+4. **Coach activity cache (templates) + send-to-client.** ✅ DONE (migration
+   0074). `coach_activity_templates` (coach-owned library: name, notes, rhythm,
+   times, tags) + `coach_activity_offers` (a snapshot sent to a client, status
+   pending/accepted/declined, with a start_date). Offer INSERT is RLS-gated to
+   the coach of an ACTIVE coaching relationship; the client updates status.
+   `get_my_coach_offers` RPC for the client's inbox. Actions in coaches.ts:
+   template CRUD (create/update via the shared ActivityFormFields +
+   `parseActivityTemplateForm` in lib/domain), archive, **duplicate** (for
+   per-client tweaks), `sendCoachOffer`, `acceptCoachOffer` (materializes a
+   personal activity on the client's calendar via generateInstances) /
+   `declineCoachOffer`. UI (coach-plans.tsx): "Your coaching plans" library
+   (New/Edit/Duplicate/Archive/Send) for coaches, and "Plans from your coaches"
+   (Add to my calendar / Decline) for clients. NOTE: full live test needs a
+   verified coach + an active client (two accounts).
 5. **Reviews/ratings.** Let a client who has/had a coaching relationship post a
    `coach_reviews` row (1-5 + body); surface avg + list on the coach card.
 6. **Payments.** Out of scope initially; price is display-only in phase 1.
    Booking/billing is a later, separate concern.
 
 Phase 1 is the foundation; pick up one later phase per session.
+
+### First-run page intros + terms/disclaimers (asked for)
+
+Two related needs:
+- **First-time pop-ups per page/tab.** When a user opens a page/tab for the
+  first time, show a brief intro popup explaining what it is / how to use it.
+  Needs a per-user record of which intros have been seen (e.g.
+  `profiles.seen_intros text[]` or a `user_seen_intros` table keyed by a stable
+  intro id), a reusable `<FirstRunPopup introId=...>` that checks+marks seen,
+  and copy per surface. Dismissible; "don't show again" is implicit (seen =
+  dismissed). Consider a Settings toggle to replay intros.
+- **Terms of agreement + disclaimers.** For Coaches and most Community
+  features, gate first use behind an accept-the-terms step (so people can't
+  abuse leadership/coach positions without acknowledging rules + liability
+  disclaimers). Needs versioned terms (a `terms` doc + `user_terms_acceptance`
+  (user_id, terms_key, version, accepted_at)) and a blocking modal on first
+  entry to that surface (Coaches apply, creating/joining a community, becoming
+  leadership, etc.) that records acceptance. Re-prompt when the version bumps.
+  Coaches specifically: a coach must accept a coaching-conduct agreement before
+  applying; clients see a disclaimer (coaching is not professional/medical
+  advice unless stated) before engaging. Contained phase; build after the core
+  Coaches phases.
 
 ### AI-assistant pairing
 

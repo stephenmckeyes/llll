@@ -20,10 +20,14 @@ import {
   setCoachStatus,
   startCoaching,
   type CoachDirectoryEntry,
+  type CoachOffer,
+  type CoachTemplate,
   type CoachingParty,
   type MyCoachProfile,
   type PendingCoachApplication,
 } from "@/app/actions/coaches";
+
+import { CoachOffersSection, CoachTemplatesSection } from "./coach-plans";
 
 function priceLabel(amount: number | null, unit: "day" | "week" | null): string {
   if (amount == null || unit == null) return "Price on request";
@@ -45,6 +49,8 @@ export function CoachesTab({
   pending,
   myCoaches,
   myClients,
+  offers,
+  templates,
 }: {
   directory: CoachDirectoryEntry[];
   myProfile: MyCoachProfile | null;
@@ -52,11 +58,14 @@ export function CoachesTab({
   pending: PendingCoachApplication[];
   myCoaches: CoachingParty[];
   myClients: CoachingParty[];
+  offers: CoachOffer[];
+  templates: CoachTemplate[];
 }) {
   const [applyOpen, setApplyOpen] = useState(false);
   const myCoachIds = new Set(
     myCoaches.filter((c) => c.status === "active").map((c) => c.otherUserId)
   );
+  const todayStr = new Date().toISOString().slice(0, 10);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto pb-6">
@@ -64,6 +73,9 @@ export function CoachesTab({
       {isAdmin && (
         <AdminReviewQueue pending={pending} />
       )}
+
+      {/* Plans offered to me by my coaches (client side) */}
+      <CoachOffersSection offers={offers} />
 
       {/* Your coaches — current + past relationships with a chat link each. */}
       <section className="flex flex-col gap-2">
@@ -91,6 +103,16 @@ export function CoachesTab({
             ))}
           </ul>
         </section>
+      )}
+
+      {/* Coach plan library — only for coaches (people who've applied). */}
+      {myProfile && (
+        <CoachTemplatesSection
+          templates={templates}
+          clients={myClients}
+          tagMap={{}}
+          todayStr={todayStr}
+        />
       )}
 
       {/* Find a Coach */}

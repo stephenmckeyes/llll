@@ -11,7 +11,9 @@ import { requireOnboardedUser } from "@/lib/auth/require-onboarded-user";
 import {
   getCoachDirectory,
   getMyClients,
+  getMyCoachOffers,
   getMyCoachProfile,
+  getMyCoachTemplates,
   getMyCoaches,
   getPendingCoachApplications,
   isCurrentUserAdmin,
@@ -24,14 +26,17 @@ export default async function CoachesTabPage() {
   await requireOnboardedUser();
 
   const isAdmin = await isCurrentUserAdmin();
-  const [directory, myProfile, pending, myCoaches, myClients] =
+  const [directory, myProfile, pending, myCoaches, myClients, offers] =
     await Promise.all([
       getCoachDirectory(),
       getMyCoachProfile(),
       isAdmin ? getPendingCoachApplications() : Promise.resolve([]),
       getMyCoaches(),
       getMyClients(),
+      getMyCoachOffers("pending"),
     ]);
+  // Only coaches (applicants) have a template library.
+  const templates = myProfile ? await getMyCoachTemplates() : [];
 
   return (
     <CommunityShell active="coaches">
@@ -42,6 +47,8 @@ export default async function CoachesTabPage() {
         pending={pending}
         myCoaches={myCoaches}
         myClients={myClients}
+        offers={offers}
+        templates={templates}
       />
     </CommunityShell>
   );
