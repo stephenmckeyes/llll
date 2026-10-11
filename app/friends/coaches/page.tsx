@@ -1,32 +1,41 @@
 // ---------------------------------------------------------------------------
-// /friends/coaches — Coaches tab (placeholder).
+// /friends/coaches — Coaches tab (phase 1, migration 0072).
 //
-// Coaches will be a professional-help marketplace: certified coaches list
-// themselves (eventually paid; early coaches likely free to seed the
-// platform) and members seek professional guidance toward their goals —
-// fitness or otherwise. Intentionally blank for now; the full community
-// machinery (a 'coach' community kind + discovery + booking) lands later.
+// Members browse a "Find a Coach" directory of verified coaches (photo, bio,
+// price, rating) and can apply to become a coach themselves. A platform admin
+// reviews pending applications here. Coach↔client chat, activity sharing, the
+// coach activity cache, and reviews land in later phases.
 // ---------------------------------------------------------------------------
 
 import { requireOnboardedUser } from "@/lib/auth/require-onboarded-user";
+import {
+  getCoachDirectory,
+  getMyCoachProfile,
+  getPendingCoachApplications,
+  isCurrentUserAdmin,
+} from "@/app/actions/coaches";
 
 import { CommunityShell } from "../_community-shell";
+import { CoachesTab } from "./coaches-tab";
 
 export default async function CoachesTabPage() {
   await requireOnboardedUser();
 
+  const isAdmin = await isCurrentUserAdmin();
+  const [directory, myProfile, pending] = await Promise.all([
+    getCoachDirectory(),
+    getMyCoachProfile(),
+    isAdmin ? getPendingCoachApplications() : Promise.resolve([]),
+  ]);
+
   return (
     <CommunityShell active="coaches">
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 text-center">
-        <h2 className="text-lg font-semibold tracking-tight">
-          Coaches are coming soon
-        </h2>
-        <p className="max-w-md text-sm text-zinc-500 dark:text-zinc-400">
-          A place to find professional coaches — for fitness or any other goal
-          — and get expert help accomplishing your mission. Certified coaches
-          will be able to list themselves here.
-        </p>
-      </div>
+      <CoachesTab
+        directory={directory}
+        myProfile={myProfile}
+        isAdmin={isAdmin}
+        pending={pending}
+      />
     </CommunityShell>
   );
 }

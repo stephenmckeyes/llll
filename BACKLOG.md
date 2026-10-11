@@ -6,6 +6,11 @@ startup.
 
 ## Recently done
 
+- ✅ Coaches marketplace — phase 1 (migration 0072): apply to be a coach →
+  admin verify/reject → public "Find a Coach" directory (photo, bio, price/day
+  or /week, rating). `profiles.is_admin` gates verification. Coaches tab now
+  live (directory + apply form + admin queue); chat / activity sharing / coach
+  template cache / reviews are later phases. (See "Coaches" plan section.)
 - ✅ Community page layout phase 2 (migration 0071): leadership can add **Total
   View** and **Streaks** as their own show/hide/reorderable top-level community
   tabs. Non-disruptive (opt-in; default order + the Calendar tab's internal
@@ -534,6 +539,48 @@ machinery where practical.
   read-only. Disabling chat hides the surface.
 - **Notifications:** new messages can notify members (respect a future
   per-user mute) — ties into phase 6.
+
+### Coaches (professional coaching marketplace)
+
+Asked for. A paid professional-coaching marketplace living on the Coaches
+sub-tab of the Community surface. To be listed, a user applies and is verified
+by a platform admin (for now, just the owner). Members browse "Find a Coach",
+chat with current/past coaches, and share specific activities with them.
+Coaches keep a reusable "cache" of activity templates they can mass-send to
+clients (who accept, then execute), with easy per-client tweaks.
+
+**Phasing:**
+1. **Profiles + apply/verify + directory.** ✅ DONE (migration 0072).
+   `profiles.is_admin`; `coach_profiles` (bio, photo_url, price_amount,
+   price_unit day|week, status pending|verified|rejected); `coach_reviews`
+   (rating 1-5 + body; write UI later). RPCs: `apply_as_coach`,
+   `set_coach_status` (admin), `get_coach_directory` (verified, public),
+   `get_pending_coach_applications` (admin), + `getMyCoachProfile`/
+   `isCurrentUserAdmin`. Coaches tab (`app/friends/coaches/`): "Find a Coach"
+   directory (photo/bio/price/rating), apply/edit form with status badge, and
+   an admin verify/reject queue. NOTE: admin is gated on `profiles.is_admin` —
+   set yourself admin once:
+   `UPDATE public.profiles SET is_admin = true WHERE id = '<your-user-id>';`
+2. **Coach↔client chat.** Reuse the 1:1 `messages` machinery (ChatThread) so a
+   member and a coach can DM. Surface current/past coach threads in "Your
+   coaches". A coaching relationship record (coach_user_id, client_user_id,
+   status active|ended, started_at) anchors "current vs past".
+3. **Share activities with a coach.** Reuse `activity_shares` /
+   `get_shared_with_me` so a client shares specific activities with their coach
+   (read-only, like friends) for review.
+4. **Coach activity cache (templates) + send-to-client.** A coach keeps a
+   library of activity templates (`coach_activity_templates`: name, rhythm,
+   scheduled_times, tags, notes…). A coach sends a template to a client →
+   creates a pending "offer" the client accepts, which materializes a personal
+   activity on their calendar (reuse the create/materialize path). Editing a
+   template before sending lets a coach tweak a near-duplicate per client, and
+   the cache enables mass-distribution of basic plans.
+5. **Reviews/ratings.** Let a client who has/had a coaching relationship post a
+   `coach_reviews` row (1-5 + body); surface avg + list on the coach card.
+6. **Payments.** Out of scope initially; price is display-only in phase 1.
+   Booking/billing is a later, separate concern.
+
+Phase 1 is the foundation; pick up one later phase per session.
 
 ### AI-assistant pairing
 
