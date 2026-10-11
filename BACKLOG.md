@@ -6,6 +6,10 @@ startup.
 
 ## Recently done
 
+- ✅ Community page layout phase 2 (migration 0071): leadership can add **Total
+  View** and **Streaks** as their own show/hide/reorderable top-level community
+  tabs. Non-disruptive (opt-in; default order + the Calendar tab's internal
+  switcher unchanged). A dedicated tab renders the view with the switcher hidden.
 - ✅ Link community aggregate activity → personal calendar (migration 0070):
   "+ Add to my calendar" on an aggregate activity creates a linked personal copy;
   completing/missing/reverting it on the personal calendar mirrors onto the
@@ -487,11 +491,17 @@ tab strip now reads `detail.pageLayout` (normalized via `normalizePageLayout`,
 `MEMBER_TABS`/`DEFAULT_PAGE_LAYOUT`) instead of the hardcoded order, and the
 selected view clamps to an available tab. Settings stays leadership-only and
 is NOT part of the config.
-- STILL TODO: more sections (Total / Streaks as their own tabs; members +
-  activity-feed widgets); per-section **outsider vs member** visibility (ties
-  into `outsider_visibility` 0054); and letting the public `/c/<id>` page and
-  the Discover preview honor the layout. Current phase only covers the three
-  member tabs' show/hide/order for logged-in members.
+- ✅ PHASE 2 (Total/Streaks tabs) DONE (migration 0071): "total" and "streaks"
+  are now valid member tabs leadership can show/hide/reorder. Non-disruptive —
+  DEFAULT_PAGE_LAYOUT is unchanged (home/calendar/chat), so Total/Streaks are
+  opt-in; the Calendar tab keeps its own Total/Calendar/Streaks switcher. When a
+  community adds a Total or Streaks top-level tab, it renders
+  `CommunityOwnedCalendar` with a `forcedView` ("total"/"grid") and the internal
+  switcher hidden. `set_community_page_layout`'s allowed keys expanded to
+  include total/streaks (0071).
+- STILL TODO: members + activity-feed as configurable sections; per-section
+  **outsider vs member** visibility (ties into `outsider_visibility` 0054); and
+  letting the public `/c/<id>` page and the Discover preview honor the layout.
 
 **Public (no-login) community calendar sharing.** ✅ DONE (migration 0067) —
 see "Recently done". Possible follow-ups: expose it at the community's

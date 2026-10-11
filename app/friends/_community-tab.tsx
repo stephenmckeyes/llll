@@ -511,7 +511,13 @@ function DiscoverModal({
 // Community body — sub-tab navigation: Home / Calendar / Chat / Settings.
 // ---------------------------------------------------------------------------
 
-type CommunityView = "home" | "calendar" | "chat" | "settings";
+type CommunityView =
+  | "home"
+  | "calendar"
+  | "total"
+  | "streaks"
+  | "chat"
+  | "settings";
 
 function CommunityBody({
   detail,
@@ -531,6 +537,8 @@ function CommunityBody({
   const MEMBER_TAB_LABEL: Record<string, string> = {
     home: "Home",
     calendar: "Calendar",
+    total: "Total View",
+    streaks: "Streaks",
     chat: "Chat",
   };
   const tabs = [
@@ -564,9 +572,22 @@ function CommunityBody({
       </nav>
 
       {active === "home" && <CommunityHome detail={detail} />}
-      {active === "calendar" &&
+      {(active === "calendar" || active === "total" || active === "streaks") &&
         (bundle ? (
-          <CommunityOwnedCalendar detail={detail} bundle={bundle} />
+          <CommunityOwnedCalendar
+            detail={detail}
+            bundle={bundle}
+            // A dedicated Total/Streaks top-level tab (migration 0071) forces
+            // that view and hides the internal switcher; the Calendar tab keeps
+            // the switcher (forcedView undefined).
+            forcedView={
+              active === "total"
+                ? "total"
+                : active === "streaks"
+                  ? "grid"
+                  : undefined
+            }
+          />
         ) : (
           <p className="rounded-md border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700">
             Loading&hellip;
@@ -739,6 +760,8 @@ function CommunityHome({ detail }: { detail: CommunityDetail }) {
 const PAGE_TAB_LABEL: Record<CommunityMemberTab, string> = {
   home: "Home",
   calendar: "Calendar",
+  total: "Total View",
+  streaks: "Streaks",
   chat: "Chat",
 };
 

@@ -49,13 +49,19 @@ type CalView = "total" | "calendar" | "grid";
 export function CommunityOwnedCalendar({
   detail,
   bundle,
+  forcedView,
 }: {
   detail: CommunityDetail;
   bundle: CommunityActivityBundle;
+  /** When set (from a dedicated Total/Streaks/Calendar top-level tab, migration
+   *  0071), the view is locked to this and the internal Total/Calendar/Streaks
+   *  switcher is hidden. Unset = the self-contained Calendar tab with its own
+   *  switcher (default). */
+  forcedView?: CalView;
 }) {
   const router = useRouter();
   const canManage = detail.myPermissions.can_add_activities;
-  const [view, setView] = useState<CalView>("calendar");
+  const [view, setView] = useState<CalView>(forcedView ?? "calendar");
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<SharedActivity | null>(null);
   const [showArchived, setShowArchived] = useState(false);
@@ -203,7 +209,9 @@ export function CommunityOwnedCalendar({
           {/* Total View / Calendar / Streaks switcher pinned at the BOTTOM.
               flex-row-reverse renders the array right-to-left, so this order
               shows "Total View · Calendar · Streaks" left-to-right, matching
-              the personal dashboard's section tabs. */}
+              the personal dashboard's section tabs. Hidden when the view is
+              forced by a dedicated top-level tab (migration 0071). */}
+          {!forcedView && (
           <nav className="flex shrink-0 flex-row-reverse gap-1 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-800">
             {(
               [
@@ -226,6 +234,7 @@ export function CommunityOwnedCalendar({
               </button>
             ))}
           </nav>
+          )}
         </>
       }
 

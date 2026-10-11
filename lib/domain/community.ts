@@ -61,8 +61,17 @@ export function isLeadership(role: string | null | undefined): boolean {
 // that file may only export async functions.)
 // ---------------------------------------------------------------------------
 
-export const MEMBER_TABS = ["home", "calendar", "chat"] as const;
+export const MEMBER_TABS = [
+  "home",
+  "calendar",
+  "total",
+  "streaks",
+  "chat",
+] as const;
 export type CommunityMemberTab = (typeof MEMBER_TABS)[number];
+// Default order is unchanged from phase 1 — Total/Streaks are opt-in, so
+// existing communities keep Home / Calendar / Chat (the Calendar tab still has
+// its own Total/Calendar/Streaks switcher).
 export const DEFAULT_PAGE_LAYOUT: CommunityMemberTab[] = [
   "home",
   "calendar",
