@@ -758,6 +758,10 @@ export type CommunityActivityBundle = {
     string,
     { marked: number; total: number; myStatus: "completed" | "missed" | null }
   >;
+  /** community_owned_activities ids the caller has linked to their own
+   *  calendar (migration 0070). Used to show "On your calendar" vs
+   *  "Add to my calendar" on aggregate activities. */
+  linkedAggregateIds: string[];
 };
 
 export type AggregateStatus = {
@@ -829,6 +833,26 @@ export async function getCommunityActivityBundle(
     };
   }
 
+  // Which of this community's aggregate activities the caller has already
+  // linked to their personal calendar (migration 0070).
+  const ownedIds = owned.activities.map((a) => a.activityId);
+  let linkedAggregateIds: string[] = [];
+  if (ownedIds.length > 0) {
+    const { data: linkRows } = await supabase
+      .from("activities")
+      .select("linked_community_activity_id")
+      .eq("user_id", user.id)
+      .is("archived_at", null)
+      .in("linked_community_activity_id", ownedIds);
+    linkedAggregateIds = [
+      ...new Set(
+        ((linkRows ?? []) as Array<{ linked_community_activity_id: string | null }>)
+          .map((r) => r.linked_community_activity_id)
+          .filter((v): v is string => !!v)
+      ),
+    ];
+  }
+
   const usageByName = computeTagUsage(
     (actTagRes.data ?? []) as Array<{ default_skill_tags: string[] | null }>
   );
@@ -844,6 +868,7 @@ export async function getCommunityActivityBundle(
     tagMap,
     todayStr,
     aggregateByInstance,
+    linkedAggregateIds,
   };
 }
 
@@ -1602,6 +1627,139 @@ export async function setCommunityMemberStatus(
   });
   if (error) return { error: error.message };
   revalidateCommunityPaths();
+  return { ok: true };
+}
+
+// linkCommunityAggregateActivity — add a community AGGREGATE activity to the
+// caller's personal calendar as a linked copy (migration 0070). Completing the
+// personal occurrences then mirrors onto the member's aggregate status (via the
+// propagate_linked_aggregate trigger), so one action counts in both places.
+export async function linkCommunityAggregateActivity(
+  communityActivityId: string
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  // Read the community activity (RLS lets members see it). Must be aggregate.
+  const { data: caRow } = await supabase
+    .from("community_owned_activities")
+    .select(
+      "id, name, notes, rhythm, scheduled_times, scheduled_end_times, default_skill_tags, start_date, end_date, completion_type, archived_at"
+    )
+    .eq("id", communityActivityId)
+    .maybeSingle();
+  const ca = caRow as
+    | {
+        id: string;
+        name: string;
+        notes: string | null;
+        rhythm: Rhythm;
+        scheduled_times: string[] | null;
+        scheduled_end_times: string[] | null;
+        default_skill_tags: string[] | null;
+        start_date: string;
+        end_date: string | null;
+        completion_type: string | null;
+        archived_at: string | null;
+      }
+    | null;
+  if (!ca || ca.archived_at) return { error: "Activity not found." };
+  if (ca.completion_type !== "aggregate") {
+    return { error: "Only per-member activities can be linked." };
+  }
+
+  // Already linked? Make it a no-op success so the button is idempotent.
+  const { data: existing } = await supabase
+    .from("activities")
+    .select("id")
+    .eq("user_id", user.id)
+    .is("archived_at", null)
+    .eq("linked_community_activity_id", communityActivityId)
+    .maybeSingle();
+  if (existing) return { ok: true };
+
+  const rhythmParsed = rhythmSchema.safeParse(ca.rhythm);
+  if (!rhythmParsed.success) return { error: "Activity has an invalid rhythm." };
+  const rhythm = rhythmParsed.data;
+
+  // Start from today (or the community start, whichever is later) so we don't
+  // backfill a long past the member never participated in.
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const startDate = ca.start_date > todayStr ? ca.start_date : todayStr;
+  const tags = ca.default_skill_tags ?? [];
+
+  const { data: activity, error: aerr } = await supabase
+    .from("activities")
+    .insert({
+      user_id: user.id,
+      name: ca.name,
+      notes: ca.notes,
+      rhythm,
+      start_date: startDate,
+      end_date: ca.end_date,
+      default_skill_tags: tags,
+      scheduled_times: ca.scheduled_times ?? [],
+      scheduled_end_times: ca.scheduled_end_times ?? [],
+      linked_community_activity_id: communityActivityId,
+    })
+    .select("id")
+    .single();
+  if (aerr || !activity) {
+    return { error: aerr?.message ?? "Could not add to your calendar." };
+  }
+
+  // Materialize occurrences from start to the horizon (capped by end) so the
+  // dates line up with the community occurrences the trigger mirrors onto.
+  const horizon = shiftYmd(todayStr, COMMUNITY_OWNED_HORIZON_DAYS);
+  const to = ca.end_date && ca.end_date < horizon ? ca.end_date : horizon;
+  if (startDate <= to) {
+    const isSpan =
+      rhythm.type === "single" && !!ca.end_date && ca.end_date > startDate;
+    const instances = isSpan
+      ? generateInstances({ type: "daily" }, { from: startDate, to })
+      : generateInstances(rhythm, { from: startDate, to });
+    if (instances.length > 0) {
+      await supabase.from("activity_instances").insert(
+        instances.map((i) => ({
+          activity_id: activity.id as string,
+          scheduled_for: i.scheduledFor,
+          status: "pending" as const,
+          tags,
+        }))
+      );
+    }
+  }
+
+  revalidateCommunityPaths();
+  revalidatePath("/");
+  return { ok: true };
+}
+
+// unlinkCommunityAggregateActivity — remove the caller's linked personal copy
+// of a community aggregate activity (archives it; does not touch the community
+// activity or past aggregate marks).
+export async function unlinkCommunityAggregateActivity(
+  communityActivityId: string
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase
+    .from("activities")
+    .update({ archived_at: new Date().toISOString() })
+    .eq("user_id", user.id)
+    .is("archived_at", null)
+    .eq("linked_community_activity_id", communityActivityId);
+  if (error) return { error: error.message };
+
+  revalidateCommunityPaths();
+  revalidatePath("/");
   return { ok: true };
 }
 

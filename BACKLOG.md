@@ -6,6 +6,12 @@ startup.
 
 ## Recently done
 
+- ✅ Link community aggregate activity → personal calendar (migration 0070):
+  "+ Add to my calendar" on an aggregate activity creates a linked personal copy;
+  completing/missing/reverting it on the personal calendar mirrors onto the
+  member's group aggregate status (same date) via a SECURITY DEFINER trigger, so
+  the group's N/M updates from one action. (See HIGH PRIORITY → aggregate
+  completion → Stretch.)
 - ✅ Fix ICS calendar feed (migration 0069): the calendar-sync UI +
   `profiles.ics_token` (0025) were live but `/api/calendar/<token>.ics` 404'd
   because the `get_instances_by_ics_token` RPC wasn't present in the live DB.
@@ -135,12 +141,21 @@ calendar.
    to-clear) instead of the collective Mark-complete/missed modal. Collective
    activities are unchanged. Verified live: 0/1 → ✓ → 1/1 → clear → 0/1, and
    collective rows still show Complete/Missed.
-   - **Stretch (still TODO):** link a community aggregate activity to members'
-     PERSONAL activities so that when a member completes it on their own
-     regular calendar it also +1's the group's counter for that
-     occurrence (one action, counts in both places). Decide the linkage
-     (auto-create a personal copy that references the community occurrence,
-     or let a member "link" an existing personal activity).
+   - **Stretch — ✅ DONE (migration 0070).** Chose the auto-create-a-linked-
+     copy approach: `activities.linked_community_activity_id` back-references the
+     community aggregate activity. `linkCommunityAggregateActivity` adds it to
+     the member's own calendar (copies name/rhythm/times/dates/tags, materializes
+     matching-dated instances); `unlinkCommunityAggregateActivity` archives the
+     copy. A SECURITY DEFINER trigger `propagate_linked_aggregate` on
+     activity_instances status changes mirrors the owner's completed/missed/
+     reverted status onto their `community_owned_instance_members` row for the
+     same-dated community occurrence (one-way personal→community; zero latency on
+     the completion path). The AggregateModal has "+ Add to my calendar" /
+     "✓ On your calendar — remove"; the bundle carries `linkedAggregateIds`.
+     STILL TODO: a Day-view affordance to link (the Day list shows inline ✓/✗
+     and never opens the modal, so linking is currently only reachable from
+     Week/Month/Streaks taps); reverse sync (community mark → personal) if
+     wanted.
 
 2. **Stays-until-marked vs. auto-drop-when-past.** ✅ DONE for the PERSONAL
    calendar (migration 0059: `activities.auto_resolve`). Toggle in both

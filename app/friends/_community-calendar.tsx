@@ -20,9 +20,11 @@ import {
   deleteCommunityCalendarActivity,
   getCommunityMonthBanners,
   getCommunityYearCounts,
+  linkCommunityAggregateActivity,
   restoreCommunityCalendarActivity,
   setCommunityInstanceStatus,
   setCommunityMemberStatus,
+  unlinkCommunityAggregateActivity,
   updateCommunityActivityFormAction,
   type AggregateStatus,
   type CommunityActivityBundle,
@@ -246,9 +248,11 @@ export function CommunityOwnedCalendar({
       {picked && picked.completionType === "aggregate" && (
         <AggregateModal
           instanceId={picked.instanceId}
+          activityId={picked.activityId}
           name={picked.name}
           scheduledFor={picked.scheduledFor}
           info={bundle.aggregateByInstance[picked.instanceId]}
+          isLinked={bundle.linkedAggregateIds.includes(picked.activityId)}
           onClose={() => setPicked(null)}
           onChanged={() => {
             setPicked(null);
@@ -646,18 +650,24 @@ function CompletionModal({
 
 function AggregateModal({
   instanceId,
+  activityId,
   name,
   scheduledFor,
   info,
+  isLinked,
   onClose,
   onChanged,
 }: {
   instanceId: string;
+  activityId: string;
   name: string;
   scheduledFor: string;
   /** Current progress for this occurrence (from the bundle); may be undefined
    *  for occurrences outside the loaded aggregate window. */
   info: AggregateStatus | undefined;
+  /** Whether the caller already has this activity linked to their own calendar
+   *  (migration 0070). */
+  isLinked: boolean;
   onClose: () => void;
   onChanged: () => void;
 }) {
@@ -671,6 +681,17 @@ function AggregateModal({
     setError(null);
     startTransition(async () => {
       const res = await setCommunityMemberStatus(instanceId, next);
+      if (res && "error" in res) setError(res.error);
+      else onChanged();
+    });
+  }
+
+  function toggleLink() {
+    setError(null);
+    startTransition(async () => {
+      const res = isLinked
+        ? await unlinkCommunityAggregateActivity(activityId)
+        : await linkCommunityAggregateActivity(activityId);
       if (res && "error" in res) setError(res.error);
       else onChanged();
     });
@@ -730,6 +751,28 @@ function AggregateModal({
           >
             {myStatus === "missed" ? "✗ I didn't do this (tap to clear)" : "I didn't do this"}
           </button>
+        </div>
+
+        {/* Link to personal calendar (migration 0070): completing it on your
+            own calendar also counts toward this group's fraction. */}
+        <div className="mt-1 flex flex-col gap-1 border-t border-zinc-200 pt-3 dark:border-zinc-800">
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={toggleLink}
+            className={`${btn} ${
+              isLinked
+                ? "border border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                : "border border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            }`}
+          >
+            {isLinked ? "✓ On your calendar — remove" : "+ Add to my calendar"}
+          </button>
+          <p className="text-[11px] leading-tight text-zinc-500 dark:text-zinc-400">
+            {isLinked
+              ? "Completing it on your calendar also counts here."
+              : "Adds it to your calendar; completing it there counts toward this group too."}
+          </p>
         </div>
 
         {error && (
