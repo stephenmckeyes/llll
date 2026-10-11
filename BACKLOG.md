@@ -6,6 +6,12 @@ startup.
 
 ## Recently done
 
+- ✅ Fix ICS calendar feed (migration 0069): the calendar-sync UI +
+  `profiles.ics_token` (0025) were live but `/api/calendar/<token>.ics` 404'd
+  because the `get_instances_by_ics_token` RPC wasn't present in the live DB.
+  0069 re-creates it (idempotent) + reloads the PostgREST schema cache. (ICS
+  export + the 12h/24h time-format toggle were both already fully built — the
+  backlog was just stale; entries updated.)
 - ✅ Leadership-configurable community page layout — phase 1 (migration 0068):
   Settings → "Page layout" lets leadership show/hide/reorder the member tabs
   (Home / Calendar / Chat); the shell tab strip reads `communities.page_layout`
@@ -585,17 +591,12 @@ All variants would read from the same underlying
 keep the current Heatmap as the default and add `?viz=chain` /
 `?viz=river` URL params (the sub-tab pattern already in place).
 
-### Time format toggle (12h vs 24h)
-Today the app formats times via the browser's locale
-(`Date#toLocaleTimeString`), so a US user sees "8:00 AM" and a
-German user sees "08:00." A user override:
-
-- Add `profiles.time_format text` with values `'auto' | '12h' | '24h'`,
-  default `'auto'`.
-- Centralize all time rendering through a single helper
-  (`lib/ui/format-time.ts`) so a one-line change cascades.
-- Setting lives on the settings page (which itself doesn't exist yet —
-  ships with onboarding).
+### Time format toggle (12h vs 24h) ✅ DONE
+Shipped: `profiles.time_format` ('auto'|'12h'|'24h'), the `lib/ui/format-time.ts`
++ `format-time-client.ts` helpers and a `useTimeFormat` hook, a TimeFormatPicker
+on /settings/appearance, and time rendering routed through the helper
+(instance-row, day-list, timeline-week, rhythm-summary, conflicts-list). No
+further work needed here.
 
 ## Banner-style calendar rendering (year view still pending)
 
@@ -713,8 +714,19 @@ next. Still to do:
 
 ## Calendar export — subscribe to Mission from iPhone/Android/Google/Outlook
 
-(Asked for: "Eventually, let's add functionality to link our calendar
-with other calendars.") Plan:
+✅ DONE (migration 0025, fixed by 0069): per-user read-only ICS feed at
+`/api/calendar/<token>.ics` (random rotatable `profiles.ics_token`, NOT the user
+id), served by `app/api/calendar/[token]/route.ts` via the anon-safe SECURITY
+DEFINER `get_instances_by_ics_token` RPC (−30..+180 day window), built by
+`lib/domain/ics.ts`, with a "Calendar sync" section on /settings/appearance
+(enable / copy http+webcal URL / rotate / disable), actions in
+`app/actions/appearance.ts`. NOTE: the feed was returning 404 because the 0025
+RPC wasn't present in the live DB (the `ics_token` column was) — migration 0069
+re-creates the RPC + reloads the PostgREST schema cache. Apply 0069, then verify
+the feed returns a VCALENDAR. Two-way sync (OAuth) remains out of scope.
+Remaining nicety: one VEVENT per scheduled time for multi-time activities
+(currently only the first time is used — see Multi-time reminders). Original
+plan below for reference:
 
 - Expose a per-user **read-only ICS feed** at
   `/api/calendar/:userToken.ics`. The token is a random per-user secret
