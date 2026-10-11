@@ -6,6 +6,12 @@ startup.
 
 ## Recently done
 
+- ✅ Coaches marketplace — phase 2 (migration 0073): coach↔client chat.
+  `coaching_relationships` + start/end + my-coaches/my-clients RPCs; the
+  `messages` policy now permits coaching pairs (not just friends); "Message
+  coach" on directory cards, "Your coaches"/"Your clients" lists, and a
+  `/friends/coaches/[coachId]/chat` route reusing ChatThread. (Phase 1 apply→
+  verify→directory verified live; phase-2 chat needs two accounts to verify.)
 - ✅ Coaches marketplace — phase 1 (migration 0072): apply to be a coach →
   admin verify/reject → public "Find a Coach" directory (photo, bio, price/day
   or /week, rating). `profiles.is_admin` gates verification. Coaches tab now
@@ -561,10 +567,18 @@ clients (who accept, then execute), with easy per-client tweaks.
    an admin verify/reject queue. NOTE: admin is gated on `profiles.is_admin` —
    set yourself admin once:
    `UPDATE public.profiles SET is_admin = true WHERE id = '<your-user-id>';`
-2. **Coach↔client chat.** Reuse the 1:1 `messages` machinery (ChatThread) so a
-   member and a coach can DM. Surface current/past coach threads in "Your
-   coaches". A coaching relationship record (coach_user_id, client_user_id,
-   status active|ended, started_at) anchors "current vs past".
+2. **Coach↔client chat.** ✅ DONE (migration 0073). `coaching_relationships`
+   (coach_user_id, client_user_id, status active|ended) + `start_coaching` /
+   `end_coaching` / `get_my_coaches` / `get_my_clients` /
+   `get_coaching_counterparty` RPCs. The `messages` INSERT policy now allows a
+   pair joined by EITHER an accepted friendship OR an active coaching
+   relationship, so coach↔client DMs work without friendship. UI: "Message
+   coach" on each directory card (engages, idempotent, then opens the chat),
+   "Your coaches" + "Your clients" lists (Chat / End), and a dedicated
+   `/friends/coaches/[coachId]/chat` route reusing the shared ChatThread. NOTE:
+   full live verification needs two accounts (a verified coach + a client),
+   since `start_coaching` requires a verified coach and you can't coach
+   yourself.
 3. **Share activities with a coach.** Reuse `activity_shares` /
    `get_shared_with_me` so a client shares specific activities with their coach
    (read-only, like friends) for review.

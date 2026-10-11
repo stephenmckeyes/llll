@@ -16,8 +16,11 @@ import { useRouter } from "next/navigation";
 
 import {
   applyAsCoach,
+  endCoaching,
   setCoachStatus,
+  startCoaching,
   type CoachDirectoryEntry,
+  type CoachingParty,
   type MyCoachProfile,
   type PendingCoachApplication,
 } from "@/app/actions/coaches";
@@ -40,19 +43,54 @@ export function CoachesTab({
   myProfile,
   isAdmin,
   pending,
+  myCoaches,
+  myClients,
 }: {
   directory: CoachDirectoryEntry[];
   myProfile: MyCoachProfile | null;
   isAdmin: boolean;
   pending: PendingCoachApplication[];
+  myCoaches: CoachingParty[];
+  myClients: CoachingParty[];
 }) {
   const [applyOpen, setApplyOpen] = useState(false);
+  const myCoachIds = new Set(
+    myCoaches.filter((c) => c.status === "active").map((c) => c.otherUserId)
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto pb-6">
       {/* Admin review queue */}
       {isAdmin && (
         <AdminReviewQueue pending={pending} />
+      )}
+
+      {/* Your coaches — current + past relationships with a chat link each. */}
+      <section className="flex flex-col gap-2">
+        <h2 className="text-lg font-semibold tracking-tight">Your coaches</h2>
+        {myCoaches.length === 0 ? (
+          <p className="rounded-md border border-dashed border-zinc-300 p-4 text-center text-xs text-zinc-500 dark:border-zinc-700">
+            Chats with your current and past coaches will appear here.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {myCoaches.map((c) => (
+              <PartyRow key={c.otherUserId} party={c} role="coach" />
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {/* Your clients — shown to coaches who have engaged clients. */}
+      {myClients.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <h2 className="text-lg font-semibold tracking-tight">Your clients</h2>
+          <ul className="flex flex-col gap-2">
+            {myClients.map((c) => (
+              <PartyRow key={c.otherUserId} party={c} role="client" />
+            ))}
+          </ul>
+        </section>
       )}
 
       {/* Find a Coach */}
@@ -65,18 +103,14 @@ export function CoachesTab({
         ) : (
           <ul className="flex flex-col gap-2">
             {directory.map((c) => (
-              <CoachCard key={c.userId} coach={c} />
+              <CoachCard
+                key={c.userId}
+                coach={c}
+                engaged={myCoachIds.has(c.userId)}
+              />
             ))}
           </ul>
         )}
-      </section>
-
-      {/* Your chats with coaches — placeholder for phase 2 (reuse friend DM). */}
-      <section className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold tracking-tight">Your coaches</h2>
-        <p className="rounded-md border border-dashed border-zinc-300 p-4 text-center text-xs text-zinc-500 dark:border-zinc-700">
-          Chats with your current and past coaches will appear here.
-        </p>
       </section>
 
       {/* Become a coach */}
@@ -140,8 +174,27 @@ function CoachStatusBadge({
   );
 }
 
-function CoachCard({ coach }: { coach: CoachDirectoryEntry }) {
+function CoachCard({
+  coach,
+  engaged,
+}: {
+  coach: CoachDirectoryEntry;
+  engaged: boolean;
+}) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
   const name = coach.displayName ?? (coach.username ? `@${coach.username}` : "Coach");
+
+  function message() {
+    startTransition(async () => {
+      // Engaging is idempotent (reactivates if ended); then open the chat.
+      const res = await startCoaching(coach.userId);
+      if (!("error" in res)) {
+        router.push(`/friends/coaches/${coach.userId}/chat`);
+      }
+    });
+  }
+
   return (
     <li className="flex items-start gap-3 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
       {coach.photoUrl ? (
@@ -172,6 +225,64 @@ function CoachCard({ coach }: { coach: CoachDirectoryEntry }) {
           <p className="mt-1 whitespace-pre-wrap break-words text-xs text-zinc-600 dark:text-zinc-400">
             {coach.bio}
           </p>
+        )}
+        <button
+          type="button"
+          onClick={message}
+          disabled={isPending}
+          className="mt-2 rounded-md bg-zinc-900 px-3 py-1 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
+        >
+          {engaged ? "Message" : "Message coach"}
+        </button>
+      </div>
+    </li>
+  );
+}
+
+function PartyRow({
+  party,
+  role,
+}: {
+  party: CoachingParty;
+  /** "coach" = the other person coaches me; "client" = I coach them. */
+  role: "coach" | "client";
+}) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const name =
+    party.displayName ?? (party.username ? `@${party.username}` : "Someone");
+
+  return (
+    <li className="flex items-center justify-between gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium">{name}</p>
+        <p className="text-xs text-zinc-500">
+          {party.status === "ended" ? "Past" : "Active"}
+          {role === "client" ? " · your client" : " · your coach"}
+        </p>
+      </div>
+      <div className="flex shrink-0 gap-1">
+        <button
+          type="button"
+          onClick={() => router.push(`/friends/coaches/${party.otherUserId}/chat`)}
+          className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+        >
+          Chat
+        </button>
+        {party.status === "active" && (
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={() =>
+              startTransition(async () => {
+                const res = await endCoaching(party.otherUserId);
+                if (!("error" in res)) router.refresh();
+              })
+            }
+            className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
+          >
+            End
+          </button>
         )}
       </div>
     </li>

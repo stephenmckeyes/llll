@@ -174,6 +174,122 @@ export async function applyAsCoach(input: {
   return { ok: true, status: String(data ?? "pending") };
 }
 
+// ---------------------------------------------------------------------------
+// Coaching relationships + chat (migration 0073).
+// ---------------------------------------------------------------------------
+
+export type CoachingParty = {
+  otherUserId: string;
+  displayName: string | null;
+  username: string | null;
+  photoUrl: string | null;
+  status: "active" | "ended";
+  startedAt: string;
+};
+
+function partyName(p: { displayName: string | null; username: string | null }) {
+  return p.displayName ?? (p.username ? `@${p.username}` : "Someone");
+}
+
+// Engage a verified coach (as the client). Reactivates an ended relationship.
+export async function startCoaching(
+  coachUserId: string
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  const { error } = await supabase.rpc("start_coaching", {
+    p_coach_user_id: coachUserId,
+  });
+  if (error) return { error: error.message };
+  revalidatePath("/friends/coaches");
+  return { ok: true };
+}
+
+// End an active coaching relationship (either participant).
+export async function endCoaching(
+  otherUserId: string
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  const { error } = await supabase.rpc("end_coaching", {
+    p_other_user_id: otherUserId,
+  });
+  if (error) return { error: error.message };
+  revalidatePath("/friends/coaches");
+  return { ok: true };
+}
+
+// The caller's coaches (where they're the client).
+export async function getMyCoaches(): Promise<CoachingParty[]> {
+  const supabase = await createClient();
+  const { data } = await supabase.rpc("get_my_coaches");
+  return ((data ?? []) as Array<{
+    other_user_id: string;
+    display_name: string | null;
+    username: string | null;
+    photo_url: string | null;
+    status: string;
+    started_at: string;
+  }>).map((r) => ({
+    otherUserId: r.other_user_id,
+    displayName: r.display_name,
+    username: r.username,
+    photoUrl: r.photo_url,
+    status: r.status === "ended" ? "ended" : "active",
+    startedAt: r.started_at,
+  }));
+}
+
+// The caller's clients (where they're the coach).
+export async function getMyClients(): Promise<CoachingParty[]> {
+  const supabase = await createClient();
+  const { data } = await supabase.rpc("get_my_clients");
+  return ((data ?? []) as Array<{
+    other_user_id: string;
+    display_name: string | null;
+    username: string | null;
+    status: string;
+    started_at: string;
+  }>).map((r) => ({
+    otherUserId: r.other_user_id,
+    displayName: r.display_name,
+    username: r.username,
+    photoUrl: null,
+    status: r.status === "ended" ? "ended" : "active",
+    startedAt: r.started_at,
+  }));
+}
+
+// The other participant of a coaching chat (guards the coach-chat page). Returns
+// null if no relationship exists in either direction.
+export async function getCoachingCounterparty(otherUserId: string): Promise<
+  | { name: string; status: "active" | "ended"; iAmCoach: boolean }
+  | null
+> {
+  const supabase = await createClient();
+  const { data } = await supabase.rpc("get_coaching_counterparty", {
+    p_other_user_id: otherUserId,
+  });
+  const row = ((data ?? []) as Array<{
+    display_name: string | null;
+    username: string | null;
+    status: string;
+    i_am_coach: boolean;
+  }>)[0];
+  if (!row) return null;
+  return {
+    name: partyName({ displayName: row.display_name, username: row.username }),
+    status: row.status === "ended" ? "ended" : "active",
+    iAmCoach: row.i_am_coach,
+  };
+}
+
 // Admin: verify / reject / re-pend a coach application.
 export async function setCoachStatus(
   userId: string,

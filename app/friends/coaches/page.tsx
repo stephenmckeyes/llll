@@ -10,7 +10,9 @@
 import { requireOnboardedUser } from "@/lib/auth/require-onboarded-user";
 import {
   getCoachDirectory,
+  getMyClients,
   getMyCoachProfile,
+  getMyCoaches,
   getPendingCoachApplications,
   isCurrentUserAdmin,
 } from "@/app/actions/coaches";
@@ -22,11 +24,14 @@ export default async function CoachesTabPage() {
   await requireOnboardedUser();
 
   const isAdmin = await isCurrentUserAdmin();
-  const [directory, myProfile, pending] = await Promise.all([
-    getCoachDirectory(),
-    getMyCoachProfile(),
-    isAdmin ? getPendingCoachApplications() : Promise.resolve([]),
-  ]);
+  const [directory, myProfile, pending, myCoaches, myClients] =
+    await Promise.all([
+      getCoachDirectory(),
+      getMyCoachProfile(),
+      isAdmin ? getPendingCoachApplications() : Promise.resolve([]),
+      getMyCoaches(),
+      getMyClients(),
+    ]);
 
   return (
     <CommunityShell active="coaches">
@@ -35,6 +40,8 @@ export default async function CoachesTabPage() {
         myProfile={myProfile}
         isAdmin={isAdmin}
         pending={pending}
+        myCoaches={myCoaches}
+        myClients={myClients}
       />
     </CommunityShell>
   );
