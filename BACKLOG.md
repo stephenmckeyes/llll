@@ -6,6 +6,12 @@ startup.
 
 ## Recently done
 
+- ✅ First-run intros + terms/disclaimers foundation (migration 0077):
+  `user_acknowledgments` store + `getAcknowledgments`/`acknowledge`, agreement
+  content in `lib/domain/agreements.ts`, and reusable `FirstRunPopup` +
+  `TermsModal`. Wired into Coaches: tab intro, coach-conduct agreement gating
+  Apply, client disclaimer gating engaging a coach. Community gating is a
+  drop-in follow-up.
 - ✅ Coaches marketplace — phase 3 (migration 0076): share your activities WITH
   a coach. The `activity_shares` INSERT policy now allows coaching pairs (like
   friends); "Your coaches" gets a Share button, and a coach reviews a client's
@@ -629,6 +635,18 @@ Phases 1-5 are all shipped — the Coaches marketplace is feature-complete excep
 phase 6 (payments), which is intentionally deferred.
 
 ### First-run page intros + terms/disclaimers (asked for)
+
+✅ FOUNDATION + COACHES DONE (migration 0077). A single `user_acknowledgments`
+table (user_id, ack_key, version) backs both, read via `getAcknowledgments` and
+written via `acknowledge`. `lib/domain/agreements.ts` holds each intro/terms
+(stable key + required version + copy) and a `needsAck(acks, agreement)` helper;
+`app/_components/agreement-prompts.tsx` has `FirstRunPopup` (dismissible intro)
+and `TermsModal` (blocking accept). Wired into Coaches: a first-run intro on the
+tab, a coach-conduct agreement gating "Apply to be a coach" (first time), and a
+client disclaimer gating engaging a coach (first time). STILL TODO: apply the
+same to Community surfaces — creating/joining a community, becoming leadership —
+by dropping `FirstRunPopup`/`TermsModal` + new agreement entries in; and an
+optional Settings "replay intros" toggle. Original notes:
 
 Two related needs:
 - **First-time pop-ups per page/tab.** When a user opens a page/tab for the

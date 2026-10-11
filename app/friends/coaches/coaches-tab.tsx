@@ -32,6 +32,13 @@ import {
 } from "@/app/actions/coaches";
 import { useBodyScrollLock } from "@/lib/ui/body-scroll-lock";
 import { ShareRhythmsButton } from "../share-modal";
+import { FirstRunPopup, TermsModal } from "@/app/_components/agreement-prompts";
+import {
+  COACHES_INTRO,
+  COACH_CONDUCT_TERMS,
+  COACHING_CLIENT_DISCLAIMER,
+  needsAck,
+} from "@/lib/domain/agreements";
 
 import { CoachOffersSection, CoachTemplatesSection } from "./coach-plans";
 
@@ -57,6 +64,7 @@ export function CoachesTab({
   myClients,
   offers,
   templates,
+  acks,
 }: {
   directory: CoachDirectoryEntry[];
   myProfile: MyCoachProfile | null;
@@ -66,15 +74,79 @@ export function CoachesTab({
   myClients: CoachingParty[];
   offers: CoachOffer[];
   templates: CoachTemplate[];
+  acks: Record<string, number>;
 }) {
+  const router = useRouter();
   const [applyOpen, setApplyOpen] = useState(false);
   const myCoachIds = new Set(
     myCoaches.filter((c) => c.status === "active").map((c) => c.otherUserId)
   );
   const todayStr = new Date().toISOString().slice(0, 10);
 
+  // Terms gating (migration 0077). Accept once, then the gated action proceeds.
+  const [coachTermsAccepted, setCoachTermsAccepted] = useState(
+    !needsAck(acks, COACH_CONDUCT_TERMS)
+  );
+  const [clientDisclaimerAccepted, setClientDisclaimerAccepted] = useState(
+    !needsAck(acks, COACHING_CLIENT_DISCLAIMER)
+  );
+  const [showCoachTerms, setShowCoachTerms] = useState(false);
+  // Coach id to engage after the client disclaimer is accepted.
+  const [pendingEngage, setPendingEngage] = useState<string | null>(null);
+
+  function openApply() {
+    if (!coachTermsAccepted) setShowCoachTerms(true);
+    else setApplyOpen(true);
+  }
+
+  // Engage a coach (gate behind the client disclaimer on first use).
+  function engage(coachId: string) {
+    if (!clientDisclaimerAccepted) {
+      setPendingEngage(coachId);
+      return;
+    }
+    doEngage(coachId);
+  }
+  const [, startEngage] = useTransition();
+  function doEngage(coachId: string) {
+    startEngage(async () => {
+      const res = await startCoaching(coachId);
+      if (!("error" in res)) router.push(`/friends/coaches/${coachId}/chat`);
+    });
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto pb-6">
+      <FirstRunPopup
+        agreement={COACHES_INTRO}
+        seen={!needsAck(acks, COACHES_INTRO)}
+      />
+
+      {showCoachTerms && (
+        <TermsModal
+          agreement={COACH_CONDUCT_TERMS}
+          onCancel={() => setShowCoachTerms(false)}
+          onAccept={() => {
+            setShowCoachTerms(false);
+            setCoachTermsAccepted(true);
+            setApplyOpen(true);
+          }}
+        />
+      )}
+
+      {pendingEngage && (
+        <TermsModal
+          agreement={COACHING_CLIENT_DISCLAIMER}
+          onCancel={() => setPendingEngage(null)}
+          onAccept={() => {
+            const id = pendingEngage;
+            setPendingEngage(null);
+            setClientDisclaimerAccepted(true);
+            if (id) doEngage(id);
+          }}
+        />
+      )}
+
       {/* Admin review queue */}
       {isAdmin && (
         <AdminReviewQueue pending={pending} />
@@ -135,6 +207,7 @@ export function CoachesTab({
                 key={c.userId}
                 coach={c}
                 engaged={myCoachIds.has(c.userId)}
+                onMessage={() => engage(c.userId)}
               />
             ))}
           </ul>
@@ -152,7 +225,7 @@ export function CoachesTab({
         {!applyOpen ? (
           <button
             type="button"
-            onClick={() => setApplyOpen(true)}
+            onClick={myProfile ? () => setApplyOpen(true) : openApply}
             className="self-start rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
           >
             {myProfile ? "Edit application" : "Apply to be a coach"}
@@ -205,23 +278,14 @@ function CoachStatusBadge({
 function CoachCard({
   coach,
   engaged,
+  onMessage,
 }: {
   coach: CoachDirectoryEntry;
   engaged: boolean;
+  /** Engage + open the chat — gated behind the client disclaimer by the parent. */
+  onMessage: () => void;
 }) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
   const name = coach.displayName ?? (coach.username ? `@${coach.username}` : "Coach");
-
-  function message() {
-    startTransition(async () => {
-      // Engaging is idempotent (reactivates if ended); then open the chat.
-      const res = await startCoaching(coach.userId);
-      if (!("error" in res)) {
-        router.push(`/friends/coaches/${coach.userId}/chat`);
-      }
-    });
-  }
 
   return (
     <li className="flex items-start gap-3 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
@@ -257,9 +321,8 @@ function CoachCard({
         <div className="mt-2 flex items-center gap-2">
           <button
             type="button"
-            onClick={message}
-            disabled={isPending}
-            className="rounded-md bg-zinc-900 px-3 py-1 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
+            onClick={onMessage}
+            className="rounded-md bg-zinc-900 px-3 py-1 text-xs font-medium text-white hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
           >
             {engaged ? "Message" : "Message coach"}
           </button>
