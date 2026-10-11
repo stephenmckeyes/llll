@@ -11,21 +11,26 @@
 // phases (noted inline).
 // ---------------------------------------------------------------------------
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import {
   applyAsCoach,
   endCoaching,
+  getCoachReviews,
+  getMyCoachReview,
   setCoachStatus,
   startCoaching,
+  submitCoachReview,
   type CoachDirectoryEntry,
   type CoachOffer,
+  type CoachReview,
   type CoachTemplate,
   type CoachingParty,
   type MyCoachProfile,
   type PendingCoachApplication,
 } from "@/app/actions/coaches";
+import { useBodyScrollLock } from "@/lib/ui/body-scroll-lock";
 
 import { CoachOffersSection, CoachTemplatesSection } from "./coach-plans";
 
@@ -248,16 +253,180 @@ function CoachCard({
             {coach.bio}
           </p>
         )}
-        <button
-          type="button"
-          onClick={message}
-          disabled={isPending}
-          className="mt-2 rounded-md bg-zinc-900 px-3 py-1 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
-        >
-          {engaged ? "Message" : "Message coach"}
-        </button>
+        <div className="mt-2 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={message}
+            disabled={isPending}
+            className="rounded-md bg-zinc-900 px-3 py-1 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
+          >
+            {engaged ? "Message" : "Message coach"}
+          </button>
+          {coach.ratingCount > 0 && <ReviewsExpander coach={coach} />}
+        </div>
       </div>
     </li>
+  );
+}
+
+function ReviewsExpander({ coach }: { coach: CoachDirectoryEntry }) {
+  const [open, setOpen] = useState(false);
+  const [reviews, setReviews] = useState<CoachReview[] | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  function toggle() {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    setOpen(true);
+    if (reviews === null) {
+      startTransition(async () => {
+        setReviews(await getCoachReviews(coach.userId));
+      });
+    }
+  }
+
+  return (
+    <div className="w-full">
+      <button
+        type="button"
+        onClick={toggle}
+        className="rounded-md border border-zinc-300 px-3 py-1 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+      >
+        {open ? "Hide reviews" : `See reviews (${coach.ratingCount})`}
+      </button>
+      {open && (
+        <ul className="mt-2 flex w-full flex-col gap-1.5">
+          {isPending && reviews === null ? (
+            <li className="text-xs text-zinc-500">Loading…</li>
+          ) : (
+            (reviews ?? []).map((r, i) => (
+              <li
+                key={i}
+                className="rounded-md bg-zinc-50 p-2 text-xs dark:bg-zinc-900"
+              >
+                <p className="font-medium text-amber-600 dark:text-amber-400">
+                  {"★".repeat(r.rating)}
+                  {"☆".repeat(5 - r.rating)}{" "}
+                  <span className="font-normal text-zinc-500">
+                    {r.reviewerName}
+                  </span>
+                </p>
+                {r.body && (
+                  <p className="mt-0.5 whitespace-pre-wrap break-words text-zinc-600 dark:text-zinc-400">
+                    {r.body}
+                  </p>
+                )}
+              </li>
+            ))
+          )}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function ReviewModal({
+  coachUserId,
+  coachName,
+  onClose,
+  onSaved,
+}: {
+  coachUserId: string;
+  coachName: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  useBodyScrollLock();
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [rating, setRating] = useState(5);
+  const [body, setBody] = useState("");
+
+  // Prefill an existing review.
+  useEffect(() => {
+    let active = true;
+    getMyCoachReview(coachUserId).then((r) => {
+      if (active && r) {
+        setRating(r.rating);
+        setBody(r.body ?? "");
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [coachUserId]);
+
+  function submit() {
+    setError(null);
+    startTransition(async () => {
+      const res = await submitCoachReview(coachUserId, rating, body);
+      if ("error" in res) setError(res.error);
+      else onSaved();
+    });
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 sm:items-center"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="flex w-full max-w-sm flex-col gap-3 rounded-t-2xl bg-white p-5 shadow-xl dark:bg-zinc-950 sm:rounded-2xl"
+      >
+        <h2 className="text-lg font-semibold tracking-tight">
+          Review {coachName}
+        </h2>
+        <div className="flex gap-1">
+          {[1, 2, 3, 4, 5].map((n) => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => setRating(n)}
+              aria-label={`${n} star${n > 1 ? "s" : ""}`}
+              className={`text-2xl ${
+                n <= rating ? "text-amber-500" : "text-zinc-300 dark:text-zinc-600"
+              }`}
+            >
+              ★
+            </button>
+          ))}
+        </div>
+        <textarea
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          rows={3}
+          placeholder="How was your experience? (optional)"
+          className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+        />
+        {error && (
+          <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+            {error}
+          </p>
+        )}
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={isPending}
+            className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
+          >
+            {isPending ? "Saving…" : "Submit review"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -271,6 +440,7 @@ function PartyRow({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [reviewOpen, setReviewOpen] = useState(false);
   const name =
     party.displayName ?? (party.username ? `@${party.username}` : "Someone");
 
@@ -291,6 +461,26 @@ function PartyRow({
         >
           Chat
         </button>
+        {role === "coach" && (
+          <button
+            type="button"
+            onClick={() => setReviewOpen(true)}
+            className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+          >
+            Review
+          </button>
+        )}
+        {reviewOpen && (
+          <ReviewModal
+            coachUserId={party.otherUserId}
+            coachName={name}
+            onClose={() => setReviewOpen(false)}
+            onSaved={() => {
+              setReviewOpen(false);
+              router.refresh();
+            }}
+          />
+        )}
         {party.status === "active" && (
           <button
             type="button"

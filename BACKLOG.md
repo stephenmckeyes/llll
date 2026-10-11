@@ -6,6 +6,10 @@ startup.
 
 ## Recently done
 
+- ✅ Coaches marketplace — phase 5 (migration 0075): reviews/ratings. A client
+  who worked with a coach leaves a 1-5 star review (+ text); the directory shows
+  the average + a "See reviews" list. Only phase 3 (share your own activities
+  with a coach) remains of the Coaches plan.
 - ✅ Coaches marketplace — phase 4 (migration 0074): the coach activity cache.
   Coaches keep a library of activity templates and send them to clients as
   offers; the client accepts → it materializes on their calendar. Templates:
@@ -602,8 +606,11 @@ clients (who accept, then execute), with easy per-client tweaks.
    (New/Edit/Duplicate/Archive/Send) for coaches, and "Plans from your coaches"
    (Add to my calendar / Decline) for clients. NOTE: full live test needs a
    verified coach + an active client (two accounts).
-5. **Reviews/ratings.** Let a client who has/had a coaching relationship post a
-   `coach_reviews` row (1-5 + body); surface avg + list on the coach card.
+5. **Reviews/ratings.** ✅ DONE (migration 0075). `submit_coach_review` (upsert;
+   requires a coaching relationship, can't self-review), `get_coach_reviews`
+   (public), `get_my_coach_review` (prefill). UI: a "Review" button on each coach
+   in "Your coaches" (star picker + text, prefilled), and a "See reviews (N)"
+   expander on directory cards (avg + count already shown from 0072).
 6. **Payments.** Out of scope initially; price is display-only in phase 1.
    Booking/billing is a later, separate concern.
 

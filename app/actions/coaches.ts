@@ -659,6 +659,73 @@ export async function declineCoachOffer(
   return { ok: true };
 }
 
+// ---------------------------------------------------------------------------
+// Reviews (migration 0075).
+// ---------------------------------------------------------------------------
+
+export type CoachReview = {
+  reviewerName: string;
+  rating: number;
+  body: string | null;
+  createdAt: string;
+};
+
+// Submit (or update) the caller's review of a coach they've worked with.
+export async function submitCoachReview(
+  coachUserId: string,
+  rating: number,
+  body: string
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  const { error } = await supabase.rpc("submit_coach_review", {
+    p_coach_user_id: coachUserId,
+    p_rating: rating,
+    p_body: body,
+  });
+  if (error) return { error: error.message };
+  revalidatePath("/friends/coaches");
+  return { ok: true };
+}
+
+// A coach's reviews (public).
+export async function getCoachReviews(
+  coachUserId: string
+): Promise<CoachReview[]> {
+  const supabase = await createClient();
+  const { data } = await supabase.rpc("get_coach_reviews", {
+    p_coach_user_id: coachUserId,
+  });
+  return ((data ?? []) as Array<{
+    reviewer_name: string | null;
+    reviewer_username: string | null;
+    rating: number;
+    body: string | null;
+    created_at: string;
+  }>).map((r) => ({
+    reviewerName:
+      r.reviewer_name ?? (r.reviewer_username ? `@${r.reviewer_username}` : "A client"),
+    rating: r.rating,
+    body: r.body,
+    createdAt: r.created_at,
+  }));
+}
+
+// The caller's own review of a coach (prefill), or null.
+export async function getMyCoachReview(
+  coachUserId: string
+): Promise<{ rating: number; body: string | null } | null> {
+  const supabase = await createClient();
+  const { data } = await supabase.rpc("get_my_coach_review", {
+    p_coach_user_id: coachUserId,
+  });
+  const row = ((data ?? []) as Array<{ rating: number; body: string | null }>)[0];
+  return row ? { rating: row.rating, body: row.body } : null;
+}
+
 // Admin: verify / reject / re-pend a coach application.
 export async function setCoachStatus(
   userId: string,
