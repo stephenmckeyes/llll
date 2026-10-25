@@ -203,6 +203,8 @@ export function GridTable({
 
   // ---- Click-to-sort state ----------------------------------------------
   const [sort, setSort] = useState<SortState>(null);
+  // ---- Group-by-tag (opt-in; default off keeps the flat list) -----------
+  const [groupByTag, setGroupByTag] = useState(false);
   // Right-click context menu — coordinates + which column requested it.
   // Closed by clicking outside (window-level listener inside the menu
   // component itself).
@@ -343,6 +345,22 @@ export function GridTable({
 
   return (
     <>
+      {rows.length > 0 && (
+        <div className="mb-1 flex justify-end">
+          <button
+            type="button"
+            onClick={() => setGroupByTag((v) => !v)}
+            aria-pressed={groupByTag}
+            className={`rounded-md border px-2 py-1 text-xs font-medium transition-colors ${
+              groupByTag
+                ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                : "border-zinc-300 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
+            }`}
+          >
+            Group by tag
+          </button>
+        </div>
+      )}
       {rows.length === 0 ? (
         <p className="rounded-md border border-dashed border-zinc-200 p-6 text-center text-sm text-zinc-500 dark:border-zinc-800">
           No rhythmic activities match the current view. Adjust the tag
@@ -351,6 +369,7 @@ export function GridTable({
       ) : mode === "week" ? (
         <WeekTable
           rows={orderedRows}
+          groupByTag={groupByTag}
           dateCols={dateCols}
           todayStr={todayStr}
           off={off}
@@ -365,6 +384,7 @@ export function GridTable({
       ) : mode === "month" ? (
         <MonthTable
           rows={orderedRows}
+          groupByTag={groupByTag}
           dateCols={dateCols}
           todayStr={todayStr}
           off={off}
@@ -379,6 +399,7 @@ export function GridTable({
       ) : (
         <TotalTable
           rows={orderedRows}
+          groupByTag={groupByTag}
           dateCols={dateCols}
           todayStr={todayStr}
           off={off}
@@ -485,11 +506,65 @@ function useRowOffSet(userId: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Tag grouping — optional. Each table renders a flat list of GridItems: a
+// group-header row before each tag bucket, then that bucket's activity rows.
+// Grouping is by PRIMARY tag (first tag), alphabetical, with a "No tag" bucket
+// last; within a bucket the incoming row order is preserved (so column sorts
+// still apply inside each group). All three tables have 4 columns, so a header
+// spans colSpan=4 uniformly.
+// ---------------------------------------------------------------------------
+
+type GridItem =
+  | { kind: "header"; label: string; count: number }
+  | { kind: "row"; row: GridRow };
+
+const NO_TAG_LABEL = "No tag";
+
+function buildGridItems(rows: GridRow[], groupByTag: boolean): GridItem[] {
+  if (!groupByTag) return rows.map((row) => ({ kind: "row" as const, row }));
+
+  const buckets = new Map<string, GridRow[]>();
+  for (const row of rows) {
+    const key = row.activity.tags[0] ?? NO_TAG_LABEL;
+    const arr = buckets.get(key);
+    if (arr) arr.push(row);
+    else buckets.set(key, [row]);
+  }
+  const keys = Array.from(buckets.keys()).sort((a, b) => {
+    // "No tag" always sinks to the bottom.
+    if (a === NO_TAG_LABEL) return 1;
+    if (b === NO_TAG_LABEL) return -1;
+    return a.localeCompare(b);
+  });
+  const items: GridItem[] = [];
+  for (const k of keys) {
+    const group = buckets.get(k) ?? [];
+    items.push({ kind: "header", label: k, count: group.length });
+    for (const row of group) items.push({ kind: "row", row });
+  }
+  return items;
+}
+
+function TagGroupHeaderRow({ label, count }: { label: string; count: number }) {
+  return (
+    <tr>
+      <td
+        colSpan={4}
+        className="border-b border-zinc-200 bg-zinc-50 px-2 py-1 text-left text-[10px] font-semibold uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400"
+      >
+        {label} ({count})
+      </td>
+    </tr>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // WeekTable — single row of 7 cells, capped so the whole row is one line.
 // ---------------------------------------------------------------------------
 
 function WeekTable({
   rows,
+  groupByTag,
   dateCols,
   todayStr,
   off,
@@ -502,6 +577,7 @@ function WeekTable({
   statsAccuracy,
 }: {
   rows: GridRow[];
+  groupByTag: boolean;
   dateCols: DateCol[];
   todayStr: string;
   off: ReadonlySet<string>;
@@ -572,7 +648,17 @@ function WeekTable({
         </tr>
       </thead>
       <tbody>
-        {rows.map((row) => {
+        {buildGridItems(rows, groupByTag).map((it) => {
+          if (it.kind === "header") {
+            return (
+              <TagGroupHeaderRow
+                key={`h-${it.label}`}
+                label={it.label}
+                count={it.count}
+              />
+            );
+          }
+          const row = it.row;
           const isOff = off.has(row.activity.id);
           return (
             <tr
@@ -627,6 +713,7 @@ function WeekTable({
 
 function MonthTable({
   rows,
+  groupByTag,
   dateCols,
   todayStr,
   off,
@@ -639,6 +726,7 @@ function MonthTable({
   statsAccuracy,
 }: {
   rows: GridRow[];
+  groupByTag: boolean;
   dateCols: DateCol[];
   todayStr: string;
   off: ReadonlySet<string>;
@@ -703,7 +791,17 @@ function MonthTable({
         </tr>
       </thead>
       <tbody>
-        {rows.map((row) => {
+        {buildGridItems(rows, groupByTag).map((it) => {
+          if (it.kind === "header") {
+            return (
+              <TagGroupHeaderRow
+                key={`h-${it.label}`}
+                label={it.label}
+                count={it.count}
+              />
+            );
+          }
+          const row = it.row;
           const isOff = off.has(row.activity.id);
           return (
             <tr
@@ -777,6 +875,7 @@ function MonthTable({
 
 function TotalTable({
   rows,
+  groupByTag,
   dateCols,
   todayStr,
   off,
@@ -789,6 +888,7 @@ function TotalTable({
   statsAccuracy,
 }: {
   rows: GridRow[];
+  groupByTag: boolean;
   dateCols: DateCol[];
   todayStr: string;
   off: ReadonlySet<string>;
@@ -852,7 +952,17 @@ function TotalTable({
         </tr>
       </thead>
       <tbody>
-        {rows.map((row) => {
+        {buildGridItems(rows, groupByTag).map((it) => {
+          if (it.kind === "header") {
+            return (
+              <TagGroupHeaderRow
+                key={`h-${it.label}`}
+                label={it.label}
+                count={it.count}
+              />
+            );
+          }
+          const row = it.row;
           const isOff = off.has(row.activity.id);
           return (
             <tr

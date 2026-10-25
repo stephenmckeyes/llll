@@ -864,11 +864,13 @@ filter, and a per-view "Unlabeled (N)" jump chip. Custom range
 re-uses the Total heatmap layout and shifts by window-width on prev/
 next. Still to do:
 
-- **Group rows by activity tag** — currently flat alphabetical. The
-  grid should group rows by primary tag with a small tag header per
-  group, so the user doesn't stare at a wall of unrelated activities
-  side by side. Likely also: collapse/expand per group, and a
-  "no-tag" bucket at the bottom.
+- **Group rows by activity tag** — ✅ DONE (opt-in). A "Group by tag" toggle in
+  the grid (default off → unchanged flat list) inserts a tag-group header row
+  before each primary-tag bucket (alphabetical, "No tag" bucket last); shared
+  `buildGridItems` + `TagGroupHeaderRow` across Week/Month/Total tables (all 4
+  columns, header spans colSpan=4). Verified live (community Streaks grid shows
+  "NO TAG (2)" when toggled) + algorithm unit-checked. STILL TODO (optional):
+  collapse/expand per group; persist the toggle.
 - **Color cells by activity tag** (a soft tint, additive on top of
   the status color).
 - **Quick-complete from grid cell** — clicking an overdue/scheduled
