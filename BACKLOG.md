@@ -894,9 +894,11 @@ DEFINER `get_instances_by_ics_token` RPC (−30..+180 day window), built by
 RPC wasn't present in the live DB (the `ics_token` column was) — migration 0069
 re-creates the RPC + reloads the PostgREST schema cache. Apply 0069, then verify
 the feed returns a VCALENDAR. Two-way sync (OAuth) remains out of scope.
-Remaining nicety: one VEVENT per scheduled time for multi-time activities
-(currently only the first time is used — see Multi-time reminders). Original
-plan below for reference:
+✅ Multi-time nicety DONE: the feed now emits one VEVENT per scheduled time
+(a twice-a-day activity shows twice), each with a per-time UID suffix
+(`instance-<id>-HHMM@mission`) so calendars dedupe each occurrence; no times →
+a single all-day event. `IcsInstance.scheduledTimes: string[]` + fan-out in
+`buildCalendar`. Original plan below for reference:
 
 - Expose a per-user **read-only ICS feed** at
   `/api/calendar/:userToken.ics`. The token is a random per-user secret

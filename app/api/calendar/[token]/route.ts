@@ -89,11 +89,10 @@ export async function GET(
     return {
       instanceId: r.instance_id,
       scheduledFor: r.scheduled_for,
-      // Use the primary scheduled time from the parent activity. Multi-
-      // time activities → we'd need one VEVENT per time; for v1 the
-      // primary time is enough. (Multi-time reminders tracked in
-      // BACKLOG.)
-      scheduledTime: r.scheduled_times[0] ?? null,
+      // One VEVENT per scheduled time (a twice-a-day activity shows twice);
+      // empty → an all-day event. buildCalendar handles the fan-out + per-time
+      // UIDs.
+      scheduledTimes: r.scheduled_times ?? [],
       name: r.override_name ?? r.activity_name,
       notes: r.override_notes ?? r.activity_notes,
       status: st,

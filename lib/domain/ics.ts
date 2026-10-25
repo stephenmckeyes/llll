@@ -16,8 +16,9 @@ export type IcsInstance = {
   instanceId: string;
   /** Scheduled date, YYYY-MM-DD. */
   scheduledFor: string;
-  /** Optional wall-clock start time, HH:MM. Missing → all-day event. */
-  scheduledTime: string | null;
+  /** Wall-clock start times, HH:MM. One VEVENT is emitted per time; an empty
+   *  list → a single all-day event. */
+  scheduledTimes: string[];
   /** Human-readable name (respects per-instance overrides). */
   name: string;
   /** Optional description body (respects per-instance overrides). */
@@ -147,38 +148,55 @@ export function buildCalendar(
 
   const events: string[] = [];
   for (const inst of instances) {
-    const uid = `instance-${inst.instanceId}@mission`;
     const dtstamp = toUtcStamp(inst.updatedAt);
     const summary = escapeText(inst.name);
     const description = inst.notes ? escapeText(inst.notes) : "";
     const status = STATUS_MAP[inst.status];
 
-    const evt: string[] = ["BEGIN:VEVENT", `UID:${uid}`, `DTSTAMP:${now}`];
-    if (inst.scheduledTime) {
-      const stamp = localDateTimeToUtcStamp(
-        inst.scheduledFor,
-        inst.scheduledTime,
-        timezone
-      );
-      evt.push(`DTSTART:${stamp}`);
-      // Default 30-minute duration — Mission doesn't model end times, but
-      // most calendar apps render zero-length events as a thin bar users
-      // struggle to tap. Half-hour default is unobtrusive and clearly
-      // "roughly this long".
-      evt.push(`DURATION:PT30M`);
-    } else {
-      // All-day event: VALUE=DATE.
-      evt.push(`DTSTART;VALUE=DATE:${ymdCompact(inst.scheduledFor)}`);
-    }
-    evt.push(fold(`SUMMARY:${summary}`));
-    if (description) evt.push(fold(`DESCRIPTION:${description}`));
-    evt.push(`STATUS:${status}`);
-    // Bumps whenever the row changes so subscribers detect edits.
-    evt.push(`LAST-MODIFIED:${dtstamp}`);
-    evt.push("TRANSP:OPAQUE");
-    evt.push("END:VEVENT");
+    // One VEVENT per scheduled time (so a twice-a-day activity shows twice);
+    // no times → a single all-day event. Each timed event gets a per-time UID
+    // suffix so calendars dedupe each occurrence independently on resync.
+    const times = inst.scheduledTimes.filter((t) => /^\d{2}:\d{2}$/.test(t));
+    const slots: Array<{ uid: string; time: string | null }> =
+      times.length > 0
+        ? times.map((t) => ({
+            uid: `instance-${inst.instanceId}-${t.replace(":", "")}@mission`,
+            time: t,
+          }))
+        : [{ uid: `instance-${inst.instanceId}@mission`, time: null }];
 
-    events.push(evt.join("\r\n"));
+    for (const slot of slots) {
+      const evt: string[] = [
+        "BEGIN:VEVENT",
+        `UID:${slot.uid}`,
+        `DTSTAMP:${now}`,
+      ];
+      if (slot.time) {
+        const stamp = localDateTimeToUtcStamp(
+          inst.scheduledFor,
+          slot.time,
+          timezone
+        );
+        evt.push(`DTSTART:${stamp}`);
+        // Default 30-minute duration — Mission doesn't model end times, but
+        // most calendar apps render zero-length events as a thin bar users
+        // struggle to tap. Half-hour default is unobtrusive and clearly
+        // "roughly this long".
+        evt.push(`DURATION:PT30M`);
+      } else {
+        // All-day event: VALUE=DATE.
+        evt.push(`DTSTART;VALUE=DATE:${ymdCompact(inst.scheduledFor)}`);
+      }
+      evt.push(fold(`SUMMARY:${summary}`));
+      if (description) evt.push(fold(`DESCRIPTION:${description}`));
+      evt.push(`STATUS:${status}`);
+      // Bumps whenever the row changes so subscribers detect edits.
+      evt.push(`LAST-MODIFIED:${dtstamp}`);
+      evt.push("TRANSP:OPAQUE");
+      evt.push("END:VEVENT");
+
+      events.push(evt.join("\r\n"));
+    }
   }
 
   const footer = ["END:VCALENDAR"];
