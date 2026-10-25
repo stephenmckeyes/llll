@@ -70,6 +70,8 @@ import {
   type CommunityVisibility,
 } from "@/lib/domain/community";
 import { useBodyScrollLock } from "@/lib/ui/body-scroll-lock";
+import { TermsModal } from "@/app/_components/agreement-prompts";
+import { COMMUNITY_CONDUCT_TERMS, needsAck } from "@/lib/domain/agreements";
 
 import { CommunityChat } from "./_community-chat";
 import { CommunityOwnedCalendar } from "./_community-calendar";
@@ -107,6 +109,7 @@ export function CommunityTab({
   communities,
   detail,
   bundle,
+  acks = {},
 }: {
   kind: CommunityKind;
   communities: CommunitySummary[];
@@ -114,11 +117,23 @@ export function CommunityTab({
   /** Shared-activities data for the selected community (null until one is
    *  selected / loaded). */
   bundle: CommunityActivityBundle | null;
+  /** The caller's acknowledgments, for gating create behind the community
+   *  conduct agreement (migration 0077). */
+  acks?: Record<string, number>;
 }) {
   const router = useRouter();
   const params = useSearchParams();
   const [creating, setCreating] = useState(false);
   const [discovering, setDiscovering] = useState(false);
+  // Gate the first community creation behind the conduct agreement.
+  const [conductAccepted, setConductAccepted] = useState(
+    !needsAck(acks, COMMUNITY_CONDUCT_TERMS)
+  );
+  const [showConduct, setShowConduct] = useState(false);
+  function openCreate() {
+    if (!conductAccepted) setShowConduct(true);
+    else setCreating(true);
+  }
 
   const activeId = params.get("id");
 
@@ -169,7 +184,7 @@ export function CommunityTab({
             </button>
             <button
               type="button"
-              onClick={() => setCreating(true)}
+              onClick={openCreate}
               className="inline-flex items-center rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
             >
               + New
@@ -183,6 +198,17 @@ export function CommunityTab({
           <CreateCommunityModal
             kind={kind}
             onClose={() => setCreating(false)}
+          />
+        )}
+        {showConduct && (
+          <TermsModal
+            agreement={COMMUNITY_CONDUCT_TERMS}
+            onCancel={() => setShowConduct(false)}
+            onAccept={() => {
+              setShowConduct(false);
+              setConductAccepted(true);
+              setCreating(true);
+            }}
           />
         )}
         {discovering && (
@@ -219,7 +245,7 @@ export function CommunityTab({
         </button>
         <button
           type="button"
-          onClick={() => setCreating(true)}
+          onClick={openCreate}
           className="inline-flex shrink-0 items-center rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
         >
           + New
@@ -238,6 +264,17 @@ export function CommunityTab({
         <CreateCommunityModal
           kind={kind}
           onClose={() => setCreating(false)}
+        />
+      )}
+      {showConduct && (
+        <TermsModal
+          agreement={COMMUNITY_CONDUCT_TERMS}
+          onCancel={() => setShowConduct(false)}
+          onAccept={() => {
+            setShowConduct(false);
+            setConductAccepted(true);
+            setCreating(true);
+          }}
         />
       )}
       {discovering && (

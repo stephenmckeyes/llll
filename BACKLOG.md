@@ -650,9 +650,10 @@ written via `acknowledge`. `lib/domain/agreements.ts` holds each intro/terms
 `app/_components/agreement-prompts.tsx` has `FirstRunPopup` (dismissible intro)
 and `TermsModal` (blocking accept). Wired into Coaches: a first-run intro on the
 tab, a coach-conduct agreement gating "Apply to be a coach" (first time), and a
-client disclaimer gating engaging a coach (first time). STILL TODO: apply the
-same to Community surfaces — creating/joining a community, becoming leadership —
-by dropping `FirstRunPopup`/`TermsModal` + new agreement entries in; and an
+client disclaimer gating engaging a coach (first time). ✅ Community CREATE now
+gated too: a `COMMUNITY_CONDUCT_TERMS` agreement blocks the "+ New" community
+flow on first use (CommunityTab takes `acks`, threaded from the groups/clubs
+pages). STILL TODO: gate JOINING a community + becoming leadership; and an
 optional Settings "replay intros" toggle. Original notes:
 
 Two related needs:

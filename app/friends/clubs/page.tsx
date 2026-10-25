@@ -9,6 +9,7 @@ import {
   getCommunityActivityBundle,
   listMyCommunities,
 } from "@/app/actions/communities";
+import { getAcknowledgments } from "@/app/actions/agreements";
 import { requireOnboardedUser } from "@/lib/auth/require-onboarded-user";
 
 import { CommunityShell } from "../_community-shell";
@@ -29,12 +30,13 @@ export default async function ClubsTabPage({
     id && communities.some((c) => c.id === id)
       ? id
       : (communities[0]?.id ?? null);
-  const [detail, bundle] = effectiveId
+  const [detail, bundle, acks] = effectiveId
     ? await Promise.all([
         getCommunity(effectiveId),
         getCommunityActivityBundle(effectiveId),
+        getAcknowledgments(),
       ])
-    : [null, null];
+    : [null, null, await getAcknowledgments()];
 
   return (
     <CommunityShell active="clubs">
@@ -43,6 +45,7 @@ export default async function ClubsTabPage({
         communities={communities}
         detail={detail}
         bundle={bundle}
+        acks={acks}
       />
     </CommunityShell>
   );

@@ -52,6 +52,18 @@ export const COACH_CONDUCT_TERMS: Agreement = {
   acceptLabel: "I agree",
 };
 
+export const COMMUNITY_CONDUCT_TERMS: Agreement = {
+  key: "terms:community_conduct",
+  version: 1,
+  title: "Community guidelines",
+  body: [
+    "Communities you create or lead are yours to run, but membership is a position of trust. Treat members fairly, be clear about rules, and don't use leadership tools (ranks, kicks, settings) to harass, exclude unfairly, or mislead people.",
+    "Keep shared activities and chat respectful. Don't post content that's abusive, deceptive, or that you don't have the right to share.",
+    "Mission is a platform, not a party to your community. You're responsible for how you run it; Mission may remove communities or members for abuse.",
+  ],
+  acceptLabel: "I agree",
+};
+
 export const COACHING_CLIENT_DISCLAIMER: Agreement = {
   key: "terms:coaching_client",
   version: 1,
