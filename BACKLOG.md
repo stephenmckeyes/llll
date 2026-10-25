@@ -509,9 +509,11 @@ occurrence) and **ranks-gated management** (adding/editing gated by
   instances, reminders unbuilt). "Pick Dates" (selection) also skipped.
 - STILL TODO: inline completion in the Day list (currently tap-opens-modal,
   not inline Complete/Missed buttons like the dashboard) — NEXT; Year-view
-  name banners; per-viewer streak/stats in the community Grid (currently
-  streakMode "none"). Also decide whether to fully delete the now-dead
-  member-share/copy/auto-add backend.
+  name banners. ✅ per-viewer streak/stats in the community Grid DONE: the bundle
+  now carries `viewerStreak` (the viewer's global streak mode/goal/stats prefs),
+  threaded into the community Streaks FriendGrid so it computes streaks over the
+  community's collective completion history (was streakMode "none"). Also decide
+  whether to fully delete the now-dead member-share/copy/auto-add backend.
 - ✅ The community Calendar tab now has the full personal-style view
   switcher: **Total View / Calendar / Streaks** (Streaks = the grid; renamed
   from "Grid" to match the personal terminology). Total reuses the friend

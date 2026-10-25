@@ -37,6 +37,7 @@ import type { SharedActivity, SharedInstance } from "@/app/actions/sharing";
 import { generateInstances } from "@/lib/domain/rhythms";
 import { rhythmSchema, type Rhythm } from "@/lib/validators/rhythm";
 import { buildTagMap, computeTagUsage, type TagMap } from "@/lib/domain/tags";
+import { isStreakMode, type StreakMode } from "@/lib/domain/streak";
 
 /** How much of the community calendar members see (leadership-set). */
 export type CommunityCalendarDisplay = "full" | "light";
@@ -762,6 +763,14 @@ export type CommunityActivityBundle = {
    *  calendar (migration 0070). Used to show "On your calendar" vs
    *  "Add to my calendar" on aggregate activities. */
   linkedAggregateIds: string[];
+  /** The viewer's global streak preference, applied to the community Streaks
+   *  grid (over the community's collective completion history). */
+  viewerStreak: {
+    mode: StreakMode;
+    goal: number | null;
+    showStats: boolean;
+    statsAccuracy: boolean;
+  };
 };
 
 export type AggregateStatus = {
@@ -788,10 +797,32 @@ export async function getCommunityActivityBundle(
       .from("activities")
       .select("default_skill_tags")
       .is("archived_at", null),
-    supabase.from("profiles").select("timezone").eq("id", user.id).maybeSingle(),
+    supabase
+      .from("profiles")
+      .select(
+        "timezone, streak_mode, streak_stats, streak_stats_accuracy, streak_goal"
+      )
+      .eq("id", user.id)
+      .maybeSingle(),
   ]);
 
-  const tz = (profRes.data as { timezone?: string } | null)?.timezone ?? "UTC";
+  const prof = (profRes.data ?? {}) as {
+    timezone?: string;
+    streak_mode?: string;
+    streak_stats?: boolean;
+    streak_stats_accuracy?: boolean;
+    streak_goal?: number | null;
+  };
+  const tz = prof.timezone ?? "UTC";
+  // The viewer's global streak preference, applied to the community Streaks
+  // grid (the community has no per-activity streak modes). Mirrors the friend
+  // view, computed over the community's collective completion history.
+  const viewerStreak = {
+    mode: isStreakMode(prof.streak_mode) ? prof.streak_mode : ("none" as const),
+    goal: prof.streak_goal ?? null,
+    showStats: prof.streak_stats ?? true,
+    statsAccuracy: prof.streak_stats_accuracy ?? true,
+  };
   const todayStr = todayInTimeZone(tz);
   const windowFrom = shiftYmd(todayStr, -COMMUNITY_CAL_WINDOW);
   const windowTo = shiftYmd(todayStr, COMMUNITY_CAL_WINDOW);
@@ -869,6 +900,7 @@ export async function getCommunityActivityBundle(
     todayStr,
     aggregateByInstance,
     linkedAggregateIds,
+    viewerStreak,
   };
 }
 

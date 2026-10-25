@@ -198,10 +198,10 @@ export function CommunityOwnedCalendar({
                 todayStr={bundle.todayStr}
                 tagMap={bundle.tagMap}
                 onOpenActivity={onOpen}
-                streakMode="none"
-                streakGoal={null}
-                showStats={false}
-                statsAccuracy={false}
+                streakMode={bundle.viewerStreak.mode}
+                streakGoal={bundle.viewerStreak.goal}
+                showStats={bundle.viewerStreak.showStats}
+                statsAccuracy={bundle.viewerStreak.statsAccuracy}
               />
             </div>
           )}
