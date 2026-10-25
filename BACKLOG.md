@@ -597,6 +597,10 @@ clients (who accept, then execute), with easy per-client tweaks.
    an admin verify/reject queue. NOTE: admin is gated on `profiles.is_admin` —
    set yourself admin once:
    `UPDATE public.profiles SET is_admin = true WHERE id = '<your-user-id>';`
+   ✅ Coach applications now ALSO surface on /notifications + the nav badge for
+   admins (CoachApplicationsNotifications + getPendingCoachApplications added to
+   notifications page + NotificationsBadge; the RPC returns [] for non-admins so
+   it's a no-op for everyone else).
 2. **Coach↔client chat.** ✅ DONE (migration 0073). `coaching_relationships`
    (coach_user_id, client_user_id, status active|ended) + `start_coaching` /
    `end_coaching` / `get_my_coaches` / `get_my_clients` /

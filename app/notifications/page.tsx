@@ -16,6 +16,7 @@ import {
   getMyRequestOutcomes,
 } from "@/app/actions/communities";
 import { getUnacknowledgedConflictsForDate } from "@/app/actions/conflicts";
+import { getPendingCoachApplications } from "@/app/actions/coaches";
 import { getSocialOverview, type SocialEntry } from "@/app/actions/friends";
 import { getUnreadCounts } from "@/app/actions/messages";
 import { getSharedInstancesWithMe, getSharedWithMe } from "@/app/actions/sharing";
@@ -33,6 +34,7 @@ import { buildFriendActivityNotifications } from "./friend-activity";
 import { CommunityAutoAdd } from "./community-auto-add";
 import { CommunityInvites } from "./community-invites";
 import { CommunityJoinRequests } from "./community-join-requests";
+import { CoachApplicationsNotifications } from "./coach-applications";
 import { CommunityRequestOutcomes } from "./community-request-outcomes";
 import { ConflictsList } from "./conflicts-list";
 import { FriendActivityNotifications } from "./friend-activity-notifications";
@@ -92,6 +94,7 @@ export default async function NotificationsPage() {
     joinRequests,
     requestOutcomes,
     autoAddEvents,
+    coachApplications,
   ] = await Promise.all([
     getSocialOverview(),
     getSharedWithMe(),
@@ -103,6 +106,8 @@ export default async function NotificationsPage() {
     getIncomingJoinRequests(),
     getMyRequestOutcomes(),
     getMyAutoAddEvents(),
+    // Admin-gated — [] for non-admins.
+    getPendingCoachApplications(),
   ]);
   const incoming = entries.filter(
     (e) => e.status === "pending" && e.direction === "incoming"
@@ -250,6 +255,9 @@ export default async function NotificationsPage() {
 
       {/* 1a. Community invites (to you) */}
       <CommunityInvites invites={invites} />
+
+      {/* 1a. Coach applications (admin-only review queue) */}
+      <CoachApplicationsNotifications pending={coachApplications} />
 
       {/* 1a. Community join requests (to communities you lead) */}
       <CommunityJoinRequests requests={joinRequests} />
