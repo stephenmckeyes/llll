@@ -369,3 +369,80 @@ export async function getSharedWithMe(): Promise<SharedActivity[]> {
     createdAt: r.created_at,
   }));
 }
+
+// ---------------------------------------------------------------------------
+// Daily-total sharing (migration 0079) — share your per-day completion count
+// (#/#) with a friend WITHOUT revealing the activities themselves.
+// ---------------------------------------------------------------------------
+
+export type FriendDailyTotal = { day: string; completed: number; total: number };
+
+// Whether the caller currently shares their daily total with this friend.
+export async function getDailyTotalShareState(
+  friendId: string
+): Promise<boolean> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return false;
+  const { data } = await supabase
+    .from("daily_total_shares")
+    .select("owner_id")
+    .eq("owner_id", user.id)
+    .eq("shared_with_id", friendId)
+    .maybeSingle();
+  return !!data;
+}
+
+// Turn daily-total sharing with a friend on or off.
+export async function setDailyTotalShare(
+  friendId: string,
+  on: boolean
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  if (on) {
+    const { error } = await supabase
+      .from("daily_total_shares")
+      .insert({ owner_id: user.id, shared_with_id: friendId });
+    // 23505 = already shared → treat as success.
+    if (error && error.code !== "23505") return { error: error.message };
+  } else {
+    const { error } = await supabase
+      .from("daily_total_shares")
+      .delete()
+      .eq("owner_id", user.id)
+      .eq("shared_with_id", friendId);
+    if (error) return { error: error.message };
+  }
+  revalidatePath("/friends");
+  revalidatePath(`/friends/${friendId}`);
+  return { ok: true };
+}
+
+// A friend's per-day completion totals, if they've shared their total with the
+// caller (aggregate counts only — no activity details). Empty if not shared.
+export async function getFriendDailyTotals(
+  friendId: string,
+  from: string,
+  to: string
+): Promise<FriendDailyTotal[]> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+  const { data } = await supabase.rpc("get_friend_daily_totals", {
+    p_owner_id: friendId,
+    p_from: from,
+    p_to: to,
+  });
+  return ((data ?? []) as Array<{ day: string; completed: number; total: number }>).map(
+    (r) => ({ day: r.day, completed: r.completed, total: r.total })
+  );
+}

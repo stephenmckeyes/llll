@@ -10,6 +10,7 @@ import { redirect } from "next/navigation";
 
 import { getSocialOverview } from "@/app/actions/friends";
 import {
+  getFriendDailyTotals,
   getSharedInstancesWithMe,
   getSharedWithMe,
 } from "@/app/actions/sharing";
@@ -21,6 +22,7 @@ import { buildTagMap, computeTagUsage } from "@/lib/domain/tags";
 import { PendingLink } from "@/app/_components/pending-link";
 
 import { FriendView, type WatchMap } from "./friend-view";
+import { FriendDailyTotals } from "./daily-totals";
 
 function todayInTimeZone(tz: string): string {
   try {
@@ -119,6 +121,14 @@ export default async function FriendViewPage({
   const shares = allShares.filter((s) => s.ownerId === friendId);
   const instances = allInstances.filter((i) => i.ownerId === friendId);
 
+  // Daily total (#/#) this friend shared with me — aggregate counts, no
+  // activity detail (migration 0079). Empty if they haven't shared it.
+  const dailyTotals = await getFriendDailyTotals(
+    friendId,
+    addDaysToYmd(todayStr, -35),
+    todayStr
+  );
+
   const watchMap: WatchMap = {};
   for (const w of watches) {
     watchMap[w.activityId] = {
@@ -150,6 +160,12 @@ export default async function FriendViewPage({
         <h1 className="text-3xl font-semibold tracking-tight">{friendName}</h1>
         <p className="text-sm text-zinc-500">Shared with you · view &amp; copy only</p>
       </header>
+
+      <FriendDailyTotals
+        totals={dailyTotals}
+        todayStr={todayStr}
+        friendName={friendName}
+      />
 
       <FriendView
         friendId={friendId}

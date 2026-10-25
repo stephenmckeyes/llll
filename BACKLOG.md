@@ -6,6 +6,13 @@ startup.
 
 ## Recently done
 
+- ✅ Share daily completion total with friends (migration 0079): a per-friend
+  "Share my daily total" toggle (in the Share modal) lets a friend see your #/#
+  completed each day WITHOUT the activities themselves (individual activities
+  still require per-activity sharing). `daily_total_shares` table +
+  `get_friend_daily_totals` aggregate-only SECURITY DEFINER read; the friend
+  profile page shows a "Daily total" section (today's N/M + a recent-days strip)
+  when they've shared it. Reads degrade to empty/off if 0079 isn't applied.
 - ✅ First-run intros + terms/disclaimers foundation (migration 0077):
   `user_acknowledgments` store + `getAcknowledgments`/`acknowledge`, agreement
   content in `lib/domain/agreements.ts`, and reusable `FirstRunPopup` +

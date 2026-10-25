@@ -19,7 +19,9 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 
 import {
+  getDailyTotalShareState,
   getShareState,
+  setDailyTotalShare,
   setShareProgress,
   shareActivity,
   unshareActivity,
@@ -79,6 +81,9 @@ function ShareModal({
   const [, startTransition] = useTransition();
   const [groupBy, setGroupBy] = useState<GroupBy>("tag");
   const [search, setSearch] = useState("");
+  // Daily-total sharing (migration 0079): share the #/# completion count per
+  // day without revealing the activities. null = still loading.
+  const [shareTotal, setShareTotal] = useState<boolean | null>(null);
 
   useBodyScrollLock();
 
@@ -106,6 +111,30 @@ function ShareModal({
       active = false;
     };
   }, [friendId]);
+
+  // Load the daily-total share state on open.
+  useEffect(() => {
+    let active = true;
+    getDailyTotalShareState(friendId).then((on) => {
+      if (active) setShareTotal(on);
+    });
+    return () => {
+      active = false;
+    };
+  }, [friendId]);
+
+  function toggleDailyTotal() {
+    const next = !shareTotal;
+    setShareTotal(next);
+    setError(null);
+    startTransition(async () => {
+      const res = await setDailyTotalShare(friendId, next);
+      if ("error" in res) {
+        setError(res.error);
+        setShareTotal(!next);
+      }
+    });
+  }
 
   // Optimistically flip local state, then fire the server action. On error
   // we surface it and reload the authoritative state.
@@ -204,6 +233,35 @@ function ShareModal({
             edit yours. Turn off <strong>Share my progress</strong> to share
             just the schedule without your completion history.
           </p>
+
+          {/* Daily-total sharing (migration 0079): lets {friendName} see your
+              #/# completion count each day WITHOUT the activities themselves. */}
+          <div className="mb-3 flex items-center justify-between gap-3 rounded-md border border-zinc-200 px-3 py-2.5 dark:border-zinc-800">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Share my daily total</p>
+              <p className="mt-0.5 text-xs text-zinc-500">
+                {friendName} sees your #/# completed each day — not which
+                activities (unless shared above).
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={toggleDailyTotal}
+              disabled={shareTotal === null}
+              role="switch"
+              aria-checked={shareTotal === true}
+              aria-label="Share my daily total"
+              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+                shareTotal ? "bg-emerald-500" : "bg-zinc-300 dark:bg-zinc-700"
+              }`}
+            >
+              <span
+                className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                  shareTotal ? "translate-x-5" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+          </div>
 
           {/* Filter + grouping controls — same shape Total View uses,
               so users don't have to learn a second pattern. */}
