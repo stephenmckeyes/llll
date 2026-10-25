@@ -32,6 +32,9 @@ type Props = {
   friends: SocialEntry[];
   /** Per-friend unread-message count for the badge on Chat. */
   unread: Record<string, number>;
+  /** Per-friend today's shared daily total (#/#), when they shared it
+   *  (migration 0079). Absent friends show no badge. */
+  todayTotals?: Record<string, { completed: number; total: number }>;
 };
 
 // Server components can't pass functions into client components (RSC
@@ -44,7 +47,7 @@ function nameOf(e: SocialEntry): string {
   );
 }
 
-export function FriendsList({ friends, unread }: Props) {
+export function FriendsList({ friends, unread, todayTotals = {} }: Props) {
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState(false);
   // Local copy the user reorders in edit mode. Reset when the server
@@ -191,7 +194,24 @@ export function FriendsList({ friends, unread }: Props) {
               className="flex items-center justify-between gap-3 rounded-md border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-950"
             >
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium">{nameOf(f)}</p>
+                <div className="flex items-center gap-2">
+                  <p className="truncate text-sm font-medium">{nameOf(f)}</p>
+                  {todayTotals[f.otherId] && (
+                    <span
+                      title="Today's completed / scheduled (shared)"
+                      className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-semibold tabular-nums ${
+                        todayTotals[f.otherId].total > 0 &&
+                        todayTotals[f.otherId].completed >=
+                          todayTotals[f.otherId].total
+                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                          : "bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400"
+                      }`}
+                    >
+                      {todayTotals[f.otherId].completed}/
+                      {todayTotals[f.otherId].total}
+                    </span>
+                  )}
+                </div>
                 {f.otherUsername && (
                   <p className="truncate text-xs text-zinc-500">
                     @{f.otherUsername}

@@ -10,6 +10,7 @@ import Link from "next/link";
 
 import { getSocialOverview, type SocialEntry } from "@/app/actions/friends";
 import { getUnreadCounts } from "@/app/actions/messages";
+import { getFriendDailyTotals } from "@/app/actions/sharing";
 import { requireOnboardedUser } from "@/lib/auth/require-onboarded-user";
 
 import { AskForHelpButton } from "./ask-for-help";
@@ -21,8 +22,21 @@ function nameOf(e: SocialEntry): string {
   return e.otherDisplayName || (e.otherUsername ? `@${e.otherUsername}` : "Someone");
 }
 
+function todayInTimeZone(tz: string): string {
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+}
+
 export default async function FriendsPage() {
-  const { supabase, user } = await requireOnboardedUser();
+  const { supabase, user, profile } = await requireOnboardedUser();
   const [entries, unread, { data: activityRows }, { data: shareRows }] =
     await Promise.all([
       getSocialOverview(),
@@ -41,6 +55,22 @@ export default async function FriendsPage() {
     ]);
 
   const friends = entries.filter((e) => e.status === "accepted");
+
+  // Today's shared daily total (#/#) per friend who shared it — aggregate
+  // counts only (migration 0079). One per friend; absent friends simply have
+  // no entry. Degrades to empty if 0079 isn't applied.
+  const todayStr = todayInTimeZone(profile?.timezone ?? "UTC");
+  const totalPairs = await Promise.all(
+    friends.map(async (f) => {
+      const rows = await getFriendDailyTotals(f.otherId, todayStr, todayStr);
+      return [f.otherId, rows[0] ?? null] as const;
+    })
+  );
+  const todayTotals: Record<string, { completed: number; total: number }> = {};
+  for (const [id, row] of totalPairs) {
+    if (row) todayTotals[id] = { completed: row.completed, total: row.total };
+  }
+
   const outgoing = entries.filter(
     (e) => e.status === "pending" && e.direction === "outgoing"
   );
@@ -101,7 +131,7 @@ export default async function FriendsPage() {
       {/* Friends list — client component so it can host the search
           field and the Edit-order mode without a round-trip. */}
       <section className="flex flex-col gap-3">
-        <FriendsList friends={friends} unread={unread} />
+        <FriendsList friends={friends} unread={unread} todayTotals={todayTotals} />
       </section>
 
       {/* Sent (pending) requests */}
