@@ -19,6 +19,7 @@ import { DefaultCalendarFilterPicker } from "./default-calendar-filter-picker";
 import { DefaultStreaksRangePicker } from "./default-streaks-range-picker";
 import { DefaultUntimedOpenPicker } from "./default-untimed-open-picker";
 import { TimeFormatPicker } from "./time-format-picker";
+import { ReplayIntros } from "./replay-intros";
 import { ThemeToggle } from "../theme-toggle";
 
 export default async function AppearanceSettingsPage() {
@@ -138,6 +139,17 @@ export default async function AppearanceSettingsPage() {
       <div className="flex flex-col gap-2">
         <h2 className="text-sm font-medium">Calendar sync</h2>
         <CalendarSync initialToken={initialIcsToken} />
+      </div>
+
+      <hr className="my-2 border-zinc-200 dark:border-zinc-800" />
+
+      <div className="flex flex-col gap-2">
+        <h2 className="text-sm font-medium">Intro tips</h2>
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          Replay the first-time intro popups (e.g. Coaches) that appear when you
+          open a page for the first time.
+        </p>
+        <ReplayIntros />
       </div>
 
       {/* Add Activity density picker removed per user spec — the form
