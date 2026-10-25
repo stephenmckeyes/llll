@@ -19,7 +19,6 @@ import {
   setCoachStatus,
   submitCoachReview,
   type CoachOffer,
-  type CoachTemplate,
   type CoachingParty,
   type MyCoachProfile,
   type PendingCoachApplication,
@@ -31,7 +30,7 @@ import { PendingLink } from "@/app/_components/pending-link";
 
 import { ShareRhythmsButton } from "../share-modal";
 import { CoachStatusBadge, priceLabel } from "./coach-ui";
-import { CoachOffersSection, CoachTemplatesSection } from "./coach-plans";
+import { CoachOffersSection } from "./coach-plans";
 
 export function CoachesTab({
   directoryCount,
@@ -41,7 +40,6 @@ export function CoachesTab({
   myCoaches,
   myClients,
   offers,
-  templates,
   acks,
 }: {
   directoryCount: number;
@@ -51,11 +49,8 @@ export function CoachesTab({
   myCoaches: CoachingParty[];
   myClients: CoachingParty[];
   offers: CoachOffer[];
-  templates: CoachTemplate[];
   acks: Record<string, number>;
 }) {
-  const todayStr = new Date().toISOString().slice(0, 10);
-
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto pb-6">
       <FirstRunPopup
@@ -88,12 +83,12 @@ export function CoachesTab({
       {/* Admin review queue */}
       {isAdmin && <AdminReviewQueue pending={pending} />}
 
-      {/* Plans offered to me by my coaches (client side) */}
-      <CoachOffersSection offers={offers} />
-
-      {/* Your coaches */}
+      {/* Your coaches — the people who coach you, plus the plans they've sent
+          you (slotted here, per spec) so "plans you're using from other
+          coaches" live alongside the coaches themselves. */}
       <section className="flex flex-col gap-2">
         <h2 className="text-lg font-semibold tracking-tight">Your coaches</h2>
+        <CoachOffersSection offers={offers} />
         {myCoaches.length === 0 ? (
           <p className="rounded-md border border-dashed border-zinc-300 p-4 text-center text-xs text-zinc-500 dark:border-zinc-700">
             Chats with your current and past coaches will appear here.
@@ -117,16 +112,6 @@ export function CoachesTab({
             ))}
           </ul>
         </section>
-      )}
-
-      {/* Coach plan library — only for coaches (people who've applied). */}
-      {myProfile && (
-        <CoachTemplatesSection
-          templates={templates}
-          clients={myClients}
-          tagMap={{}}
-          todayStr={todayStr}
-        />
       )}
     </div>
   );

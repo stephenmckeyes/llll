@@ -14,7 +14,6 @@ import {
   getMyClients,
   getMyCoachOffers,
   getMyCoachProfile,
-  getMyCoachTemplates,
   getMyCoaches,
   getPendingCoachApplications,
   isCurrentUserAdmin,
@@ -37,8 +36,6 @@ export default async function CoachesTabPage() {
       getMyCoachOffers("pending"),
       getAcknowledgments(),
     ]);
-  // Only coaches (applicants) have a template library.
-  const templates = myProfile ? await getMyCoachTemplates() : [];
 
   return (
     <CommunityShell active="coaches">
@@ -50,7 +47,6 @@ export default async function CoachesTabPage() {
         myCoaches={myCoaches}
         myClients={myClients}
         offers={offers}
-        templates={templates}
         acks={acks}
       />
     </CommunityShell>
