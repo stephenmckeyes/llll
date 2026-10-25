@@ -212,7 +212,7 @@ export function CommunityTab({
           />
         )}
         {discovering && (
-          <DiscoverModal kind={kind} onClose={() => setDiscovering(false)} />
+          <DiscoverModal kind={kind} acks={acks} onClose={() => setDiscovering(false)} />
         )}
       </div>
     );
@@ -278,7 +278,7 @@ export function CommunityTab({
         />
       )}
       {discovering && (
-        <DiscoverModal kind={kind} onClose={() => setDiscovering(false)} />
+        <DiscoverModal kind={kind} acks={acks} onClose={() => setDiscovering(false)} />
       )}
     </div>
   );
@@ -294,12 +294,20 @@ export function CommunityTab({
 function DiscoverModal({
   kind,
   onClose,
+  acks = {},
 }: {
   kind: CommunityKind;
   onClose: () => void;
+  /** For gating the first join behind the community conduct agreement. */
+  acks?: Record<string, number>;
 }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
+  const [conductAccepted, setConductAccepted] = useState(
+    !needsAck(acks, COMMUNITY_CONDUCT_TERMS)
+  );
+  // The community the user is joining once they accept the conduct terms.
+  const [pendingJoin, setPendingJoin] = useState<DiscoveredCommunity | null>(null);
   const [results, setResults] = useState<DiscoveredCommunity[]>([]);
   const [searched, setSearched] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -347,6 +355,14 @@ function DiscoverModal({
   }
 
   function onJoin(c: DiscoveredCommunity) {
+    if (!conductAccepted) {
+      setPendingJoin(c);
+      return;
+    }
+    doJoin(c);
+  }
+
+  function doJoin(c: DiscoveredCommunity) {
     setError(null);
     setNotice(null);
     startTransition(async () => {
@@ -366,6 +382,7 @@ function DiscoverModal({
   }
 
   return (
+    <>
     <div
       role="dialog"
       aria-modal="true"
@@ -541,6 +558,19 @@ function DiscoverModal({
         </div>
       </div>
     </div>
+    {pendingJoin && (
+      <TermsModal
+        agreement={COMMUNITY_CONDUCT_TERMS}
+        onCancel={() => setPendingJoin(null)}
+        onAccept={() => {
+          const c = pendingJoin;
+          setPendingJoin(null);
+          setConductAccepted(true);
+          if (c) doJoin(c);
+        }}
+      />
+    )}
+    </>
   );
 }
 
