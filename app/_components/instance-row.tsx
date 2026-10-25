@@ -22,6 +22,7 @@ import { coerceCompletionMode } from "@/lib/domain/completion-mode";
 import type { TagMap } from "@/lib/domain/tags";
 import { formatTimeRange } from "@/lib/ui/format-time";
 import { useTimeFormat } from "@/lib/ui/format-time-client";
+import { useConfirmFutureComplete } from "@/lib/ui/confirm-future-client";
 import { dispatchInstanceResolved } from "@/lib/ui/instance-resolved-event";
 import { normalizeReminder } from "@/lib/validators/reminder";
 
@@ -135,6 +136,7 @@ export function InstanceRow({
   const [, startTransition] = useTransition();
   const [commentOpen, setCommentOpen] = useState(false);
   const timeFormat = useTimeFormat();
+  const confirmFuture = useConfirmFutureComplete();
   const activity = instance.activity;
   const isFrequency = activity.rhythm.type === "frequency";
   const scheduledTimes = activity.scheduled_times ?? [];
@@ -238,7 +240,7 @@ export function InstanceRow({
   const isCurrentlyUnlabeled = instance.scheduled_for < todayStr;
 
   function handleComplete() {
-    if (instance.scheduled_for > todayStr) {
+    if (confirmFuture && instance.scheduled_for > todayStr) {
       const ok = window.confirm(
         `This is scheduled for ${instance.scheduled_for}, in the future. Mark complete anyway?`
       );
@@ -271,7 +273,7 @@ export function InstanceRow({
   }
 
   function handleMissed() {
-    if (instance.scheduled_for > todayStr) {
+    if (confirmFuture && instance.scheduled_for > todayStr) {
       const ok = window.confirm(
         `This is scheduled for ${instance.scheduled_for}, in the future. Mark missed anyway?`
       );
@@ -313,7 +315,7 @@ export function InstanceRow({
   // resolved map (onResolve/onUnresolve) as the personal path.
   function handleCollectiveComplete() {
     if (!collective) return;
-    if (instance.scheduled_for > todayStr) {
+    if (confirmFuture && instance.scheduled_for > todayStr) {
       const ok = window.confirm(
         `This is scheduled for ${instance.scheduled_for}, in the future. Mark complete anyway?`
       );
@@ -327,7 +329,7 @@ export function InstanceRow({
   }
   function handleCollectiveMiss() {
     if (!collective) return;
-    if (instance.scheduled_for > todayStr) {
+    if (confirmFuture && instance.scheduled_for > todayStr) {
       const ok = window.confirm(
         `This is scheduled for ${instance.scheduled_for}, in the future. Mark missed anyway?`
       );

@@ -961,10 +961,12 @@ Also still pending from prior rounds (defer until mobile polish):
   worth changing so the dropdown of the day the miss was *decided
   on* surfaces the row (or shows both). Not sure yet — leaving as a
   potential future change.
-- **Future-date complete warning** is currently a hard `window.confirm`
-  every time. Eventually add a per-user setting:
-  `profiles.confirm_future_complete bool default true`. When the user
-  unchecks it in settings, the confirmation is suppressed.
+- **Future-date complete warning** ✅ DONE — now gated by a client preference
+  (localStorage-backed `useConfirmFutureComplete`, default on), toggled in
+  Settings → Appearance → "Completion prompts". Went localStorage-only (like the
+  theme/time-format prefs) instead of a `profiles` column — simpler, no migration;
+  revisit if cross-device persistence is wanted. All four future-date confirm
+  sites in instance-row (complete/missed, personal + collective) respect it.
 - **Uncomplete from Month view** — green ✓ boxes are currently read-only.
   Add a `revertCompletion(instanceId)` server action and make green boxes
   click-to-revert (with `window.confirm("Mark this as not done?")`).
