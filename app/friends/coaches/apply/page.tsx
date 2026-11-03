@@ -4,11 +4,7 @@
 
 import { requireOnboardedUser } from "@/lib/auth/require-onboarded-user";
 import { getAcknowledgments } from "@/app/actions/agreements";
-import {
-  getMyClients,
-  getMyCoachProfile,
-  getMyCoachTemplates,
-} from "@/app/actions/coaches";
+import { getMyCoachPlans, getMyCoachProfile } from "@/app/actions/coaches";
 
 import { ApplyCoachView } from "./apply-view";
 
@@ -18,17 +14,8 @@ export default async function ApplyCoachPage() {
     getMyCoachProfile(),
     getAcknowledgments(),
   ]);
-  // The plan library + client list only matter once you're a coach (applied).
-  const [templates, clients] = myProfile
-    ? await Promise.all([getMyCoachTemplates(), getMyClients()])
-    : [[], []];
+  // The plan library only matters once you're a coach (applied).
+  const plans = myProfile ? await getMyCoachPlans() : [];
 
-  return (
-    <ApplyCoachView
-      myProfile={myProfile}
-      acks={acks}
-      templates={templates}
-      clients={clients}
-    />
-  );
+  return <ApplyCoachView myProfile={myProfile} acks={acks} plans={plans} />;
 }

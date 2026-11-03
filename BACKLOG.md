@@ -4,6 +4,35 @@ Captured ideas and follow-ups for future sessions. Not in priority order.
 Imported by `CLAUDE.md` so every new Claude Code session sees this on
 startup.
 
+## Structured-input activities (asked for)
+
+Asked for. A richer completion type where completing an activity captures
+structured, progressive data — e.g. a **workout**: per-exercise sets × reps (and
+weight), with a built-in **rest timer** that counts down between sets as you
+progress through the session, and logs what you did. Think "guided session"
+rather than a one-tap verdict. Overlaps with the Form-type activities idea
+(structured fields) but is more interactive/stateful (a live session UI + timer
++ per-set logging that persists for charting later). Pick up as its own phase;
+decide shared schema with Form activities (both need per-completion structured
+data: `completion_form_responses`-style jsonb, plus maybe a `session_log` for
+set-by-set entries). Out of scope for v1 of coach plans.
+
+## Richer coach profiles (asked for, upcoming)
+
+Asked for alongside the plans rework. Make a coach more than a "message" button:
+- **Full profile page** (click a coach → `/friends/coaches/[coachId]` public-ish
+  profile) with photo, bio, price, rating summary.
+- **Full reviews page/section** — click through to read all reviews (not just the
+  avg + the small expander). `get_coach_reviews` already returns the list.
+- **A plans section on the profile** showing the coach's plans that they've
+  chosen to make viewable. Access is coach-controlled per plan, NOT automatic
+  from "we're working together": a coach can mark some plans **public/free** so
+  prospective clients can preview them before engaging, keep others private, or
+  grant specific clients access. Needs a per-plan visibility model
+  (`coach_plans.visibility` 'private'|'public' at least; later per-client grants
+  via a `coach_plan_grants` table) + an anon/public-safe read for the free ones.
+- Builds on the plans rework below (coach_plans). Contained phase after plans.
+
 ## Recently done
 
 - ✅ Share daily completion total with friends (migration 0079): a per-friend
@@ -646,6 +675,21 @@ clients (who accept, then execute), with easy per-client tweaks.
 
 Phases 1-5 are all shipped — the Coaches marketplace is feature-complete except
 phase 6 (payments), which is intentionally deferred.
+
+**Plans rework (migration 0081) — ✅ plans are now multi-activity.** A "plan" is
+no longer a single activity template; it's a titled plan with a description and
+MULTIPLE activities, each its own page. `coach_plans` (title, description,
+visibility private|public) + `coach_plan_activities` (ordered activity rows) +
+`coach_plan_offers` / `coach_plan_offer_activities` (a sent plan snapshot). The
+coach's "Your coaching plans" list (on the coach profile page) links each plan to
+`/friends/coaches/plans/[planId]`, which shows the explanation up top + the
+activities below, with add/edit/remove (shared ActivityFormFields) and "Send to
+client" (snapshots all activities). Accepting a plan offer materializes EVERY
+activity on the client's calendar. The old single-activity template tables
+(0074) are left in place but unused. `visibility` is seeded for the richer-
+profile work (public/free plan previews) — only private is honored for now.
+STILL TODO: per-client plan access grants; the public profile plans section
+(see "Richer coach profiles").
 
 ### First-run page intros + terms/disclaimers (asked for)
 

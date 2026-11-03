@@ -18,7 +18,7 @@ import {
   getMyCoachReview,
   setCoachStatus,
   submitCoachReview,
-  type CoachOffer,
+  type CoachPlanOffer,
   type CoachingParty,
   type MyCoachProfile,
   type PendingCoachApplication,
@@ -48,7 +48,7 @@ export function CoachesTab({
   pending: PendingCoachApplication[];
   myCoaches: CoachingParty[];
   myClients: CoachingParty[];
-  offers: CoachOffer[];
+  offers: CoachPlanOffer[];
   acks: Record<string, number>;
 }) {
   return (

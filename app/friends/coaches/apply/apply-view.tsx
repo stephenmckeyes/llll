@@ -10,8 +10,7 @@ import { useRouter } from "next/navigation";
 
 import {
   applyAsCoach,
-  type CoachingParty,
-  type CoachTemplate,
+  type CoachPlanSummary,
   type MyCoachProfile,
 } from "@/app/actions/coaches";
 import { TermsModal } from "@/app/_components/agreement-prompts";
@@ -19,18 +18,16 @@ import { COACH_CONDUCT_TERMS, needsAck } from "@/lib/domain/agreements";
 
 import { PendingLink } from "@/app/_components/pending-link";
 import { CoachStatusBadge } from "../coach-ui";
-import { CoachTemplatesSection } from "../coach-plans";
+import { CoachPlansSection } from "../coach-plans";
 
 export function ApplyCoachView({
   myProfile,
   acks,
-  templates,
-  clients,
+  plans,
 }: {
   myProfile: MyCoachProfile | null;
   acks: Record<string, number>;
-  templates: CoachTemplate[];
-  clients: CoachingParty[];
+  plans: CoachPlanSummary[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -182,16 +179,10 @@ export function ApplyCoachView({
         directory once verified.
       </p>
 
-      {/* Your coaching plans — the coach's reusable template library lives on
-          the profile (only once you've applied / have a profile). */}
-      {myProfile && (
-        <CoachTemplatesSection
-          templates={templates}
-          clients={clients}
-          tagMap={{}}
-          todayStr={new Date().toISOString().slice(0, 10)}
-        />
-      )}
+      {/* Your coaching plans — the coach's plan library lives on the profile
+          (only once you've applied / have a profile). Each plan opens its own
+          page to add activities + send. */}
+      {myProfile && <CoachPlansSection plans={plans} />}
     </main>
   );
 }

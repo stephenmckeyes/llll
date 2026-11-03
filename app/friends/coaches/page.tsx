@@ -12,7 +12,7 @@ import { getAcknowledgments } from "@/app/actions/agreements";
 import {
   getCoachDirectory,
   getMyClients,
-  getMyCoachOffers,
+  getMyCoachPlanOffers,
   getMyCoachProfile,
   getMyCoaches,
   getPendingCoachApplications,
@@ -33,7 +33,7 @@ export default async function CoachesTabPage() {
       isAdmin ? getPendingCoachApplications() : Promise.resolve([]),
       getMyCoaches(),
       getMyClients(),
-      getMyCoachOffers("pending"),
+      getMyCoachPlanOffers("pending"),
       getAcknowledgments(),
     ]);
 

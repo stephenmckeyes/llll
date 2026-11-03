@@ -666,6 +666,535 @@ export async function declineCoachOffer(
 }
 
 // ---------------------------------------------------------------------------
+// Coach PLANS (migration 0081) — a named plan (title + description) containing
+// multiple activities. Supersedes the single-activity template cache (0074).
+// ---------------------------------------------------------------------------
+
+export type CoachPlanActivity = {
+  id: string;
+  name: string;
+  notes: string | null;
+  rhythm: Rhythm;
+  scheduledTimes: string[];
+  scheduledEndTimes: string[];
+  defaultSkillTags: string[];
+  sortOrder: number;
+};
+
+export type CoachPlanSummary = {
+  id: string;
+  title: string;
+  description: string | null;
+  visibility: "private" | "public";
+  activityCount: number;
+};
+
+export type CoachPlanDetail = {
+  id: string;
+  title: string;
+  description: string | null;
+  visibility: "private" | "public";
+  activities: CoachPlanActivity[];
+};
+
+export type CoachPlanOffer = {
+  id: string;
+  coachName: string;
+  planTitle: string;
+  planDescription: string | null;
+  startDate: string;
+  status: "pending" | "accepted" | "declined";
+  createdAt: string;
+  activities: Array<{ name: string; rhythm: Rhythm; scheduledTimes: string[] }>;
+};
+
+export type CoachPlanFormState = { error: string } | { ok: true } | null;
+
+function mapPlanActivityRow(r: {
+  id: string;
+  name: string;
+  notes: string | null;
+  rhythm: Rhythm;
+  scheduled_times: string[] | null;
+  scheduled_end_times: string[] | null;
+  default_skill_tags: string[] | null;
+  sort_order: number;
+}): CoachPlanActivity {
+  return {
+    id: r.id,
+    name: r.name,
+    notes: r.notes,
+    rhythm: r.rhythm,
+    scheduledTimes: r.scheduled_times ?? [],
+    scheduledEndTimes: r.scheduled_end_times ?? [],
+    defaultSkillTags: r.default_skill_tags ?? [],
+    sortOrder: r.sort_order,
+  };
+}
+
+// The caller's (coach's) non-archived plans with activity counts.
+export async function getMyCoachPlans(): Promise<CoachPlanSummary[]> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+  const { data } = await supabase
+    .from("coach_plans")
+    .select("id, title, description, visibility, coach_plan_activities(count)")
+    .eq("coach_user_id", user.id)
+    .is("archived_at", null)
+    .order("created_at", { ascending: false });
+  return ((data ?? []) as Array<{
+    id: string;
+    title: string;
+    description: string | null;
+    visibility: string;
+    coach_plan_activities: Array<{ count: number }>;
+  }>).map((r) => ({
+    id: r.id,
+    title: r.title,
+    description: r.description,
+    visibility: r.visibility === "public" ? "public" : "private",
+    activityCount: r.coach_plan_activities?.[0]?.count ?? 0,
+  }));
+}
+
+// A single plan + its activities (owner), or null.
+export async function getCoachPlan(planId: string): Promise<CoachPlanDetail | null> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+  const { data: plan } = await supabase
+    .from("coach_plans")
+    .select("id, title, description, visibility")
+    .eq("id", planId)
+    .eq("coach_user_id", user.id)
+    .maybeSingle();
+  if (!plan) return null;
+  const p = plan as {
+    id: string;
+    title: string;
+    description: string | null;
+    visibility: string;
+  };
+  const { data: acts } = await supabase
+    .from("coach_plan_activities")
+    .select(
+      "id, name, notes, rhythm, scheduled_times, scheduled_end_times, default_skill_tags, sort_order"
+    )
+    .eq("plan_id", planId)
+    .order("sort_order", { ascending: true });
+  return {
+    id: p.id,
+    title: p.title,
+    description: p.description,
+    visibility: p.visibility === "public" ? "public" : "private",
+    activities: ((acts ?? []) as Parameters<typeof mapPlanActivityRow>[0][]).map(
+      mapPlanActivityRow
+    ),
+  };
+}
+
+export async function createCoachPlan(
+  title: string,
+  description: string
+): Promise<{ error: string } | { ok: true; id: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  const t = title.trim();
+  if (!t) return { error: "Give the plan a title." };
+  if (t.length > 120) return { error: "Title is too long (max 120)." };
+  const { data, error } = await supabase
+    .from("coach_plans")
+    .insert({
+      coach_user_id: user.id,
+      title: t,
+      description: description.trim() || null,
+    })
+    .select("id")
+    .single();
+  if (error || !data) return { error: error?.message ?? "Could not create plan." };
+  revalidatePath("/friends/coaches/apply");
+  return { ok: true, id: (data as { id: string }).id };
+}
+
+export async function updateCoachPlan(
+  planId: string,
+  input: { title: string; description: string; visibility: "private" | "public" }
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  const t = input.title.trim();
+  if (!t) return { error: "Give the plan a title." };
+  const { error } = await supabase
+    .from("coach_plans")
+    .update({
+      title: t,
+      description: input.description.trim() || null,
+      visibility: input.visibility,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", planId)
+    .eq("coach_user_id", user.id);
+  if (error) return { error: error.message };
+  revalidatePath(`/friends/coaches/plans/${planId}`);
+  revalidatePath("/friends/coaches/apply");
+  return { ok: true };
+}
+
+export async function archiveCoachPlan(
+  planId: string
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  const { error } = await supabase
+    .from("coach_plans")
+    .update({ archived_at: new Date().toISOString() })
+    .eq("id", planId)
+    .eq("coach_user_id", user.id);
+  if (error) return { error: error.message };
+  revalidatePath("/friends/coaches/apply");
+  return { ok: true };
+}
+
+// Add an activity to a plan (via the shared ActivityFormFields FormData).
+export async function addPlanActivityFormAction(
+  planId: string,
+  _prev: CoachPlanFormState,
+  formData: FormData
+): Promise<CoachPlanFormState> {
+  const parsed = parseActivityTemplateForm(formData);
+  if ("error" in parsed) return { error: parsed.error };
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  // Confirm the plan is the caller's (RLS also enforces this on insert).
+  const { data: plan } = await supabase
+    .from("coach_plans")
+    .select("id")
+    .eq("id", planId)
+    .eq("coach_user_id", user.id)
+    .maybeSingle();
+  if (!plan) return { error: "Plan not found." };
+  // Append after the current last activity.
+  const { data: last } = await supabase
+    .from("coach_plan_activities")
+    .select("sort_order")
+    .eq("plan_id", planId)
+    .order("sort_order", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const nextOrder = ((last as { sort_order?: number } | null)?.sort_order ?? -1) + 1;
+  const { error } = await supabase.from("coach_plan_activities").insert({
+    plan_id: planId,
+    name: parsed.name,
+    notes: parsed.notes,
+    rhythm: parsed.rhythm,
+    scheduled_times: parsed.scheduledTimes,
+    scheduled_end_times: parsed.scheduledEndTimes,
+    default_skill_tags: parsed.tags,
+    sort_order: nextOrder,
+  });
+  if (error) return { error: error.message };
+  revalidatePath(`/friends/coaches/plans/${planId}`);
+  return { ok: true };
+}
+
+export async function updatePlanActivityFormAction(
+  activityId: string,
+  _prev: CoachPlanFormState,
+  formData: FormData
+): Promise<CoachPlanFormState> {
+  const parsed = parseActivityTemplateForm(formData);
+  if ("error" in parsed) return { error: parsed.error };
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  const { error } = await supabase
+    .from("coach_plan_activities")
+    .update({
+      name: parsed.name,
+      notes: parsed.notes,
+      rhythm: parsed.rhythm,
+      scheduled_times: parsed.scheduledTimes,
+      scheduled_end_times: parsed.scheduledEndTimes,
+      default_skill_tags: parsed.tags,
+    })
+    .eq("id", activityId);
+  if (error) return { error: error.message };
+  revalidatePath("/friends/coaches/plans");
+  return { ok: true };
+}
+
+export async function removePlanActivity(
+  activityId: string
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  void user;
+  const { error } = await supabase
+    .from("coach_plan_activities")
+    .delete()
+    .eq("id", activityId);
+  if (error) return { error: error.message };
+  revalidatePath("/friends/coaches/plans");
+  return { ok: true };
+}
+
+// Send a whole plan to a client (snapshots the plan + all its activities).
+export async function sendCoachPlanOffer(input: {
+  planId: string;
+  clientUserId: string;
+  startDate: string;
+}): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const plan = await getCoachPlan(input.planId);
+  if (!plan) return { error: "Plan not found." };
+  if (plan.activities.length === 0) {
+    return { error: "Add at least one activity to the plan first." };
+  }
+  const { data: me } = await supabase
+    .from("profiles")
+    .select("display_name, username")
+    .eq("id", user.id)
+    .maybeSingle();
+  const prof = (me ?? {}) as { display_name?: string | null; username?: string | null };
+  const coachName =
+    prof.display_name ?? (prof.username ? `@${prof.username}` : "Your coach");
+
+  const { data: offer, error: oerr } = await supabase
+    .from("coach_plan_offers")
+    .insert({
+      coach_user_id: user.id,
+      client_user_id: input.clientUserId,
+      coach_name: coachName,
+      plan_title: plan.title,
+      plan_description: plan.description,
+      start_date: input.startDate,
+    })
+    .select("id")
+    .single();
+  if (oerr || !offer) return { error: oerr?.message ?? "Could not send plan." };
+
+  const offerId = (offer as { id: string }).id;
+  const { error: aerr } = await supabase.from("coach_plan_offer_activities").insert(
+    plan.activities.map((a) => ({
+      offer_id: offerId,
+      name: a.name,
+      notes: a.notes,
+      rhythm: a.rhythm,
+      scheduled_times: a.scheduledTimes,
+      scheduled_end_times: a.scheduledEndTimes,
+      default_skill_tags: a.defaultSkillTags,
+      sort_order: a.sortOrder,
+    }))
+  );
+  if (aerr) return { error: aerr.message };
+  revalidatePath("/friends/coaches");
+  return { ok: true };
+}
+
+// The caller's incoming plan offers (as client), with each plan's activities.
+export async function getMyCoachPlanOffers(
+  status: "pending" | "accepted" | "declined" | "all" = "pending"
+): Promise<CoachPlanOffer[]> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+  let q = supabase
+    .from("coach_plan_offers")
+    .select(
+      "id, coach_name, plan_title, plan_description, start_date, status, created_at"
+    )
+    .eq("client_user_id", user.id)
+    .order("created_at", { ascending: false });
+  if (status !== "all") q = q.eq("status", status);
+  const { data: offers } = await q;
+  const rows = (offers ?? []) as Array<{
+    id: string;
+    coach_name: string | null;
+    plan_title: string;
+    plan_description: string | null;
+    start_date: string;
+    status: string;
+    created_at: string;
+  }>;
+  if (rows.length === 0) return [];
+
+  const { data: acts } = await supabase
+    .from("coach_plan_offer_activities")
+    .select("offer_id, name, rhythm, scheduled_times, sort_order")
+    .in(
+      "offer_id",
+      rows.map((r) => r.id)
+    )
+    .order("sort_order", { ascending: true });
+  const byOffer = new Map<
+    string,
+    Array<{ name: string; rhythm: Rhythm; scheduledTimes: string[] }>
+  >();
+  for (const a of (acts ?? []) as Array<{
+    offer_id: string;
+    name: string;
+    rhythm: Rhythm;
+    scheduled_times: string[] | null;
+  }>) {
+    const arr = byOffer.get(a.offer_id) ?? [];
+    arr.push({ name: a.name, rhythm: a.rhythm, scheduledTimes: a.scheduled_times ?? [] });
+    byOffer.set(a.offer_id, arr);
+  }
+
+  return rows.map((r) => ({
+    id: r.id,
+    coachName: r.coach_name ?? "Your coach",
+    planTitle: r.plan_title,
+    planDescription: r.plan_description,
+    startDate: r.start_date,
+    status:
+      r.status === "accepted" || r.status === "declined" ? r.status : "pending",
+    createdAt: r.created_at,
+    activities: byOffer.get(r.id) ?? [],
+  }));
+}
+
+// Client accepts a plan offer → materialize ALL its activities on their
+// calendar, then mark it accepted.
+export async function acceptCoachPlanOffer(
+  offerId: string
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: offer } = await supabase
+    .from("coach_plan_offers")
+    .select("id, client_user_id, start_date, status")
+    .eq("id", offerId)
+    .maybeSingle();
+  if (!offer) return { error: "Offer not found." };
+  const o = offer as {
+    client_user_id: string;
+    start_date: string;
+    status: string;
+  };
+  if (o.client_user_id !== user.id) return { error: "Not your offer." };
+  if (o.status !== "pending") return { error: "Offer already handled." };
+
+  const { data: acts } = await supabase
+    .from("coach_plan_offer_activities")
+    .select("name, notes, rhythm, scheduled_times, scheduled_end_times, default_skill_tags")
+    .eq("offer_id", offerId)
+    .order("sort_order", { ascending: true });
+  const activities = (acts ?? []) as Array<{
+    name: string;
+    notes: string | null;
+    rhythm: Rhythm;
+    scheduled_times: string[] | null;
+    scheduled_end_times: string[] | null;
+    default_skill_tags: string[] | null;
+  }>;
+
+  const horizon = addDays(
+    new Date(`${o.start_date}T00:00:00`),
+    OFFER_HORIZON_DAYS
+  )
+    .toISOString()
+    .slice(0, 10);
+
+  for (const a of activities) {
+    const tags = a.default_skill_tags ?? [];
+    const { data: activity, error: aerr } = await supabase
+      .from("activities")
+      .insert({
+        user_id: user.id,
+        name: a.name,
+        notes: a.notes,
+        rhythm: a.rhythm,
+        start_date: o.start_date,
+        default_skill_tags: tags,
+        scheduled_times: a.scheduled_times ?? [],
+        scheduled_end_times: a.scheduled_end_times ?? [],
+      })
+      .select("id")
+      .single();
+    if (aerr || !activity) {
+      return { error: aerr?.message ?? "Could not add a plan activity." };
+    }
+    const instances = generateInstances(a.rhythm, {
+      from: o.start_date,
+      to: horizon,
+    });
+    if (instances.length > 0) {
+      await supabase.from("activity_instances").insert(
+        instances.map((i) => ({
+          activity_id: (activity as { id: string }).id,
+          scheduled_for: i.scheduledFor,
+          status: "pending" as const,
+          tags,
+        }))
+      );
+    }
+  }
+
+  await supabase
+    .from("coach_plan_offers")
+    .update({ status: "accepted", responded_at: new Date().toISOString() })
+    .eq("id", offerId)
+    .eq("client_user_id", user.id);
+
+  revalidatePath("/friends/coaches");
+  revalidatePath("/");
+  return { ok: true };
+}
+
+export async function declineCoachPlanOffer(
+  offerId: string
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  const { error } = await supabase
+    .from("coach_plan_offers")
+    .update({ status: "declined", responded_at: new Date().toISOString() })
+    .eq("id", offerId)
+    .eq("client_user_id", user.id)
+    .eq("status", "pending");
+  if (error) return { error: error.message };
+  revalidatePath("/friends/coaches");
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
 // Reviews (migration 0075).
 // ---------------------------------------------------------------------------
 
