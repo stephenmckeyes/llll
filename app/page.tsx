@@ -1145,6 +1145,13 @@ async function DayView({
           streak_goal?: number | null;
         };
         if (modeByActivity.has(act.id)) continue;
+        // Only activities the user set to "On Streaks" (track_on_grid) get a
+        // calendar streak chip — same gate the Grid uses. Everything else is
+        // force-none so the day list stays uncluttered.
+        if (!act.track_on_grid) {
+          modeByActivity.set(act.id, { mode: "none", goal: null });
+          continue;
+        }
         const mode: StreakMode =
           streakCalendar.scope === "independent"
             ? isStreakMode(act.streak_mode)
