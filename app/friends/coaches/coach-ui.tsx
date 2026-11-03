@@ -12,6 +12,7 @@ import {
   type CoachDirectoryEntry,
   type CoachReview,
 } from "@/app/actions/coaches";
+import { PendingLink } from "@/app/_components/pending-link";
 
 export function priceLabel(
   amount: number | null,
@@ -79,7 +80,12 @@ export function CoachCard({
       )}
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
-          <p className="truncate text-sm font-semibold">{name}</p>
+          <PendingLink
+            href={`/friends/coaches/${coach.userId}`}
+            className="truncate text-sm font-semibold underline-offset-2 hover:underline"
+          >
+            {name}
+          </PendingLink>
           <span className="shrink-0 text-xs font-medium text-zinc-600 dark:text-zinc-400">
             {priceLabel(coach.priceAmount, coach.priceUnit)}
           </span>
@@ -102,6 +108,12 @@ export function CoachCard({
           >
             {engaged ? "Message" : "Message coach"}
           </button>
+          <PendingLink
+            href={`/friends/coaches/${coach.userId}`}
+            className="rounded-md border border-zinc-300 px-3 py-1 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+          >
+            View profile
+          </PendingLink>
           {coach.ratingCount > 0 && <ReviewsExpander coach={coach} />}
         </div>
       </div>

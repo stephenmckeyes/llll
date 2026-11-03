@@ -35,21 +35,25 @@ bar rendered ON the calendar (Day/Week/Month) for that activity. Design notes:
   calendar" family) and the structured-input activities (value-based goals).
 Contained phase; pick up after the streak-on-calendar display.
 
-## Richer coach profiles (asked for, upcoming)
+## Richer coach profiles (asked for, mostly done)
 
-Asked for alongside the plans rework. Make a coach more than a "message" button:
-- **Full profile page** (click a coach → `/friends/coaches/[coachId]` public-ish
-  profile) with photo, bio, price, rating summary.
-- **Full reviews page/section** — click through to read all reviews (not just the
-  avg + the small expander). `get_coach_reviews` already returns the list.
-- **A plans section on the profile** showing the coach's plans that they've
-  chosen to make viewable. Access is coach-controlled per plan, NOT automatic
-  from "we're working together": a coach can mark some plans **public/free** so
-  prospective clients can preview them before engaging, keep others private, or
-  grant specific clients access. Needs a per-plan visibility model
-  (`coach_plans.visibility` 'private'|'public' at least; later per-client grants
-  via a `coach_plan_grants` table) + an anon/public-safe read for the free ones.
-- Builds on the plans rework below (coach_plans). Contained phase after plans.
+Asked for alongside the plans rework.
+- ✅ **Full profile page** DONE — `/friends/coaches/[coachId]` shows photo, bio,
+  price, rating summary, Message, all reviews, and the coach's public plans.
+  `getCoachPublicProfile` (reuses the verified-only directory RPC),
+  `getCoachPublicPlans` (coach_plans public + activities, via 0081's public-
+  select RLS — no new migration). Directory cards link to it (name + "View
+  profile"). Engaging from the profile goes through the same client-disclaimer
+  gate. Verified live (profile renders; empty plans/reviews states show).
+- ✅ **Full reviews section** DONE — the profile lists every review (not just the
+  directory card's avg + small expander), via the existing `get_coach_reviews`.
+- ✅ **Public plans section** DONE for the public/free case — a coach marks a plan
+  `visibility='public'` (toggle already in the plan editor) and it appears on
+  their profile, expandable to preview its activities (read-only).
+- STILL TODO: **per-client plan grants** — letting a coach grant specific clients
+  access to an otherwise-private plan (needs a `coach_plan_grants` table + a read
+  that unions public plans with granted-to-me plans). The public/free previews
+  cover the "see plans before joining" ask; grants are the finer-grained layer.
 
 ## Recently done
 

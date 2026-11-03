@@ -1262,6 +1262,55 @@ export async function getMyCoachReview(
 }
 
 // ---------------------------------------------------------------------------
+// Public coach PROFILE page reads (richer-profiles work). A verified coach has
+// a public-ish profile at /friends/coaches/[coachId] showing photo/bio/price/
+// rating, full reviews, and the plans they chose to make public.
+// ---------------------------------------------------------------------------
+
+// One verified coach's public directory entry (photo/bio/price/rating), or null
+// if they aren't a verified/listed coach. Sourced from the same SECURITY
+// DEFINER directory RPC so no extra RLS surface is needed.
+export async function getCoachPublicProfile(
+  coachUserId: string
+): Promise<CoachDirectoryEntry | null> {
+  const directory = await getCoachDirectory();
+  return directory.find((c) => c.userId === coachUserId) ?? null;
+}
+
+// A coach's PUBLIC (free-to-preview) plans + their activities. Readable by
+// anyone via the coach_plans / coach_plan_activities public-select policies
+// (migration 0081). Private plans never appear here.
+export async function getCoachPublicPlans(
+  coachUserId: string
+): Promise<CoachPlanDetail[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("coach_plans")
+    .select(
+      "id, title, description, visibility, coach_plan_activities(id, name, notes, rhythm, scheduled_times, scheduled_end_times, default_skill_tags, sort_order)"
+    )
+    .eq("coach_user_id", coachUserId)
+    .eq("visibility", "public")
+    .is("archived_at", null)
+    .order("created_at", { ascending: false });
+  return ((data ?? []) as Array<{
+    id: string;
+    title: string;
+    description: string | null;
+    visibility: string;
+    coach_plan_activities: Parameters<typeof mapPlanActivityRow>[0][] | null;
+  }>).map((p) => ({
+    id: p.id,
+    title: p.title,
+    description: p.description,
+    visibility: "public" as const,
+    activities: (p.coach_plan_activities ?? [])
+      .map(mapPlanActivityRow)
+      .sort((a, b) => a.sortOrder - b.sortOrder),
+  }));
+}
+
+// ---------------------------------------------------------------------------
 // Share activities with a coach (migration 0076) — read side. The share action
 // itself is the existing shareActivity (activity_shares); its INSERT policy now
 // permits coaching pairs. This returns activities a specific user shared WITH
