@@ -38,7 +38,7 @@ import {
 } from "react";
 
 import { summarizeRhythm } from "@/lib/domain/rhythm-summary";
-import type { StreakMode } from "@/lib/domain/streak";
+import { formatStreakDisplay, type StreakMode } from "@/lib/domain/streak";
 import { tagDotClasses, type TagMap } from "@/lib/domain/tags";
 
 import { ActivityModal } from "./activity-modal";
@@ -1301,28 +1301,8 @@ function SuccessCell({
 }
 
 // Render the streak/accumulation value for a mode, or null to show nothing.
-function formatStreak(
-  mode: StreakMode,
-  value: number,
-  goal: number | null
-): string | null {
-  switch (mode) {
-    case "perfect_weeks":
-      return `🔥${value}w`;
-    case "perfect_months":
-      return `🔥${value}mo`;
-    case "total":
-      return `Σ${value}`;
-    case "countdown": {
-      if (!goal || goal <= 0) return null;
-      const remaining = Math.max(0, goal - value);
-      return remaining === 0 ? "✓ goal" : `${remaining} to go`;
-    }
-    case "none":
-    default:
-      return null;
-  }
-}
+// Shared with the calendar day list via lib/domain/streak.
+const formatStreak = formatStreakDisplay;
 
 function UnlabeledBadge({ count }: { count: number }) {
   return (

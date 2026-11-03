@@ -160,6 +160,33 @@ export function computeStreakValue(
   }
 }
 
+// Render a streak/accumulation VALUE as the short label shown on the Grid
+// Success column AND (opt-in) the calendar day list. Returns null when there's
+// nothing to show (mode "none", or a countdown with no goal). One source of
+// truth so the two surfaces never drift.
+export function formatStreakDisplay(
+  mode: StreakMode,
+  value: number,
+  goal: number | null
+): string | null {
+  switch (mode) {
+    case "perfect_weeks":
+      return `🔥${value}w`;
+    case "perfect_months":
+      return `🔥${value}mo`;
+    case "total":
+      return `Σ${value}`;
+    case "countdown": {
+      if (!goal || goal <= 0) return null;
+      const remaining = Math.max(0, goal - value);
+      return remaining === 0 ? "✓ goal" : `${remaining} to go`;
+    }
+    case "none":
+    default:
+      return null;
+  }
+}
+
 export function computeStreak(
   instances: ReadonlyArray<StreakInstance>,
   rhythm: Rhythm,

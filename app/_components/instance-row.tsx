@@ -393,7 +393,17 @@ export function InstanceRow({
           <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
             {rhythmCategory}
           </p>
-          <p className="truncate font-medium">{effectiveName}</p>
+          <div className="flex items-center gap-1.5">
+            <p className="truncate font-medium">{effectiveName}</p>
+            {instance.streakDisplay && (
+              <span
+                title="Current streak (Settings → Streaks)"
+                className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+              >
+                {instance.streakDisplay}
+              </span>
+            )}
+          </div>
           {effectiveNotes && (
             <p className="truncate text-sm text-zinc-500 dark:text-zinc-500">
               {effectiveNotes}

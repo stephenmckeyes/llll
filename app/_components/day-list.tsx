@@ -93,6 +93,11 @@ export type DayInstance = {
    *  the modal. NULL / empty = no comment. Shared with friends who have
    *  share_progress on the parent activity. */
   comment: string | null;
+  /** Opt-in streak label for the calendar day list (Settings → Streaks →
+   *  "Show streaks on the calendar"). Pre-formatted server-side via
+   *  formatStreakDisplay (🔥5w / Σ12 / "3 to go"); null / undefined = show
+   *  nothing. Only the personal day view sets it. */
+  streakDisplay?: string | null;
   activity: {
     id: string;
     name: string;

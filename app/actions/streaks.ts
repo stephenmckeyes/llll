@@ -22,6 +22,8 @@ export type StreakSettingsInput = {
   /** When stats is on: true → "X/Y · Z%" (accuracy), false → just the
    *  completed count. */
   statsAccuracy: boolean;
+  /** Show each activity's streak on the calendar day view (migration 0082). */
+  onCalendar: boolean;
   perActivity: Array<{ id: string; mode: StreakMode; goal: number | null }>;
 };
 
@@ -51,6 +53,7 @@ export async function updateStreakSettings(
       streak_mode: globalMode,
       streak_stats: Boolean(input.stats),
       streak_stats_accuracy: Boolean(input.statsAccuracy),
+      streak_on_calendar: Boolean(input.onCalendar),
       streak_goal: globalMode === "countdown" ? cleanGoal(input.globalGoal) : null,
     })
     .eq("id", user.id);

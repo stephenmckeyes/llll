@@ -47,6 +47,7 @@ import {
 import { rhythmCategoryLabel } from "@/lib/domain/rhythm-summary";
 import {
   computeStreakValue,
+  formatStreakDisplay,
   isStreakMode,
   type StreakMode,
 } from "@/lib/domain/streak";
@@ -292,6 +293,40 @@ export default async function HomePage({
       ?.default_untimed_open ?? false
   );
 
+  // Streak-on-calendar display (Settings → Streaks, migration 0082). When ON,
+  // the Day view annotates each row with its current streak value, using the
+  // same scope/mode/goal the Grid uses. OFF → DayView skips the extra history
+  // fetch entirely, so there's no cost for users who don't opt in.
+  //
+  // Fetched in its OWN tolerant query (not the onboarding-gating profile read
+  // above): `streak_on_calendar` is new in 0082, so before the migration is
+  // applied this select errors — isolating it here keeps that error from
+  // nulling the main profile read (which would bounce everyone to onboarding).
+  const { data: streakRow } =
+    view === "day"
+      ? await supabase
+          .from("profiles")
+          .select("streak_on_calendar, streak_scope, streak_mode, streak_goal")
+          .eq("id", user.id)
+          .maybeSingle()
+      : { data: null };
+  const streakProfile = (streakRow ?? {}) as {
+    streak_on_calendar?: boolean;
+    streak_scope?: string;
+    streak_mode?: string;
+    streak_goal?: number | null;
+  };
+  const streakCalendar = {
+    on: Boolean(streakProfile.streak_on_calendar ?? false),
+    scope: (streakProfile.streak_scope === "independent"
+      ? "independent"
+      : "same") as "same" | "independent",
+    globalMode: (isStreakMode(streakProfile.streak_mode)
+      ? streakProfile.streak_mode
+      : "none") as StreakMode,
+    globalGoal: streakProfile.streak_goal ?? null,
+  };
+
   // Add Activity form density — shapes every "Add / Edit activity"
   // surface that renders under this page. Threaded into DayView (and
   // its DayList/modal children) so a user who picked Compact sees the
@@ -368,6 +403,7 @@ export default async function HomePage({
           hiddenTags={hiddenTagsSet}
           timelineMode={timelineOn}
           untimedOpenDefault={untimedOpenDefault}
+          streakCalendar={streakCalendar}
           chipsNode={
             <CalendarModifierChips
               currentView={view}
@@ -860,6 +896,7 @@ async function DayView({
   chipsNode,
   timelineMode = false,
   untimedOpenDefault = false,
+  streakCalendar,
 }: {
   startDate: string;
   todayStr: string;
@@ -869,6 +906,16 @@ async function DayView({
   density: AddActivityDensity;
   hiddenTags: ReadonlySet<string>;
   chipsNode?: React.ReactNode;
+  /** Streak-on-calendar display settings (Settings → Streaks, migration
+   *  0082). When `on`, each pending day-list row is annotated with its
+   *  current streak value using this scope/mode/goal. Omitted / off → no
+   *  extra history fetch, no annotation. */
+  streakCalendar?: {
+    on: boolean;
+    scope: "same" | "independent";
+    globalMode: StreakMode;
+    globalGoal: number | null;
+  };
   /** Timeline overlay on/off. Same fetch either way — DayList swaps
    *  the per-day middle render (hour grid for timed pending + row
    *  list for untimed) via its own `timelineMode` prop. */
@@ -934,7 +981,9 @@ async function DayView({
         rollover_change_rhythm,
         auto_archive,
         auto_resolve,
-        completion_mode
+        completion_mode,
+        streak_mode,
+        streak_goal
       ),
       completion_instances (
         completion_id,
@@ -1053,6 +1102,76 @@ async function DayView({
         instanceId: r.id,
         instance: toInstance(r),
       });
+    }
+  }
+
+  // ---- Streak-on-calendar annotation (opt-in; migration 0082) -----------
+  // Only when the setting is ON. Fetch each shown activity's completed/missed
+  // history (≤ today) and compute its streak value with the same scope/mode/
+  // goal the Grid uses, then stamp a pre-formatted label onto each pending row
+  // (InstanceRow renders it). Off → this whole block is skipped (no query).
+  if (streakCalendar?.on) {
+    const shownActivityIds = Array.from(
+      new Set(instances.map((i) => i.activity.id))
+    );
+    if (shownActivityIds.length > 0) {
+      type StreakRow = {
+        activity_id: string;
+        scheduled_for: string;
+        status: string;
+      };
+      const { data: streakData } = await supabase
+        .from("activity_instances")
+        .select("activity_id, scheduled_for, status")
+        .in("activity_id", shownActivityIds)
+        .lte("scheduled_for", todayStr)
+        .order("scheduled_for", { ascending: false });
+      const historyByActivity = new Map<string, StreakRow[]>();
+      for (const row of (streakData ?? []) as StreakRow[]) {
+        const arr = historyByActivity.get(row.activity_id) ?? [];
+        arr.push(row); // already DESC from the query
+        historyByActivity.set(row.activity_id, arr);
+      }
+      // Per-activity streak mode/goal (independent scope) from the joined
+      // activity payload; the base DayInstance activity type omits these
+      // columns, so read them off the raw rows.
+      const modeByActivity = new Map<
+        string,
+        { mode: StreakMode; goal: number | null }
+      >();
+      for (const r of live) {
+        const act = r.activities as DayInstance["activity"] & {
+          streak_mode?: string | null;
+          streak_goal?: number | null;
+        };
+        if (modeByActivity.has(act.id)) continue;
+        const mode: StreakMode =
+          streakCalendar.scope === "independent"
+            ? isStreakMode(act.streak_mode)
+              ? act.streak_mode
+              : streakCalendar.globalMode
+            : streakCalendar.globalMode;
+        const goal =
+          mode === "countdown"
+            ? streakCalendar.scope === "independent"
+              ? act.streak_goal ?? streakCalendar.globalGoal
+              : streakCalendar.globalGoal
+            : null;
+        modeByActivity.set(act.id, { mode, goal });
+      }
+      for (const inst of instances) {
+        const cfg = modeByActivity.get(inst.activity.id);
+        if (!cfg || cfg.mode === "none") {
+          inst.streakDisplay = null;
+          continue;
+        }
+        const value = computeStreakValue(
+          cfg.mode,
+          historyByActivity.get(inst.activity.id) ?? [],
+          todayStr
+        );
+        inst.streakDisplay = formatStreakDisplay(cfg.mode, value, cfg.goal);
+      }
     }
   }
 

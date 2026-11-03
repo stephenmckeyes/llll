@@ -17,6 +17,24 @@ decide shared schema with Form activities (both need per-completion structured
 data: `completion_form_responses`-style jsonb, plus maybe a `session_log` for
 set-by-set entries). Out of scope for v1 of coach plans.
 
+## Goals with progress bars on the calendar (asked for)
+
+Asked for. Let a user set a **goal** on an activity/rhythm and show a **progress
+bar on the calendar view** reflecting how far along the goal is. E.g. "run 100
+miles this month" or "meditate 20 times" → a bar that fills as occurrences
+complete / a metric accumulates. Distinct from the existing streak modes
+(countdown/total are number-only in the grid Success column) — this is a visual
+bar rendered ON the calendar (Day/Week/Month) for that activity. Design notes:
+- A goal on the activity (e.g. `activities.goal_target int`, `goal_unit text`,
+  `goal_period` 'week'|'month'|'total', maybe `goal_metric` for value-based once
+  structured-input activities land). Progress = completed-count (or summed
+  metric) in the period ÷ target.
+- Render a thin progress bar on the calendar banner/row for goal activities,
+  colored by tag, filling with progress; tooltip shows "X / target".
+- Ties into the streak-on-calendar display toggle (same "show extra info on the
+  calendar" family) and the structured-input activities (value-based goals).
+Contained phase; pick up after the streak-on-calendar display.
+
 ## Richer coach profiles (asked for, upcoming)
 
 Asked for alongside the plans rework. Make a coach more than a "message" button:
@@ -35,6 +53,20 @@ Asked for alongside the plans rework. Make a coach more than a "message" button:
 
 ## Recently done
 
+- ✅ Show streaks on the calendar (migration 0082): a per-user "Show streaks on
+  the calendar" toggle (Settings → Streaks) annotates each personal Day-view row
+  with its current streak value (🔥5w / 🔥2mo / Σ12 / "3 to go"), using the same
+  scope/mode/goal the Grid uses. `profiles.streak_on_calendar` (default false);
+  DayView fetches each shown activity's history (≤ today) + `computeStreakValue`
+  only when ON (no cost otherwise) and stamps a pre-formatted label onto the
+  pending DayInstances; `InstanceRow` renders an amber chip next to the name.
+  `formatStreakDisplay` extracted to `lib/domain/streak.ts` so Grid + calendar
+  share one formatter. Deploy-safe: the new column is read in its OWN tolerant
+  query (not the onboarding-gating profile read), so pre-migration it reads as
+  OFF rather than breaking the dashboard. FRIEND-VIEW PARITY DEFERRED (per the
+  standing rule's escape hatch): showing a friend's streak on their shared
+  calendar would need the friend's streak config + history (their data, not the
+  viewer's setting) — flagged here rather than forced; revisit if wanted.
 - ✅ Share daily completion total with friends (migration 0079): a per-friend
   "Share my daily total" toggle (in the Share modal) lets a friend see your #/#
   completed each day WITHOUT the activities themselves (individual activities

@@ -33,6 +33,7 @@ export function StreaksForm({
   initialMode,
   initialStats,
   initialStatsAccuracy,
+  initialOnCalendar,
   initialGoal,
   activities,
 }: {
@@ -40,6 +41,7 @@ export function StreaksForm({
   initialMode: StreakMode;
   initialStats: boolean;
   initialStatsAccuracy: boolean;
+  initialOnCalendar: boolean;
   initialGoal: number | null;
   activities: ActivityCfg[];
 }) {
@@ -54,6 +56,7 @@ export function StreaksForm({
   );
   const [stats, setStats] = useState(initialStats);
   const [statsAccuracy, setStatsAccuracy] = useState(initialStatsAccuracy);
+  const [onCalendar, setOnCalendar] = useState(initialOnCalendar);
   const [perActivity, setPerActivity] = useState<ActivityCfg[]>(
     // Same back-compat: hide legacy "total" mode from the per-activity
     // selects (treat as none in the UI).
@@ -78,6 +81,7 @@ export function StreaksForm({
         globalGoal: goal.trim() === "" ? null : Number(goal),
         stats,
         statsAccuracy,
+        onCalendar,
         perActivity: perActivity.map((a) => ({
           id: a.id,
           mode: a.mode,
@@ -118,6 +122,23 @@ export function StreaksForm({
             />
           </div>
         )}
+      </fieldset>
+
+      {/* Show streaks on the calendar (migration 0082) */}
+      <fieldset className="flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={onCalendar}
+            onChange={(e) => setOnCalendar(e.target.checked)}
+            className="h-4 w-4"
+          />
+          <span>
+            <span className="font-medium">Show streaks on the calendar</span> —
+            display each activity&rsquo;s current streak next to it in the Day
+            view.
+          </span>
+        </label>
       </fieldset>
 
       {/* Scope */}

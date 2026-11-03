@@ -16,7 +16,7 @@ export default async function StreaksSettingsPage() {
     supabase
       .from("profiles")
       .select(
-        "streak_scope, streak_mode, streak_stats, streak_stats_accuracy, streak_goal"
+        "streak_scope, streak_mode, streak_stats, streak_stats_accuracy, streak_on_calendar, streak_goal"
       )
       .eq("id", user.id)
       .maybeSingle(),
@@ -33,6 +33,7 @@ export default async function StreaksSettingsPage() {
     streak_mode?: string;
     streak_stats?: boolean;
     streak_stats_accuracy?: boolean;
+    streak_on_calendar?: boolean;
     streak_goal?: number | null;
   };
 
@@ -64,6 +65,7 @@ export default async function StreaksSettingsPage() {
         initialMode={isStreakMode(p.streak_mode) ? p.streak_mode : "none"}
         initialStats={p.streak_stats ?? true}
         initialStatsAccuracy={p.streak_stats_accuracy ?? true}
+        initialOnCalendar={p.streak_on_calendar ?? false}
         initialGoal={p.streak_goal ?? null}
         activities={activities}
       />
