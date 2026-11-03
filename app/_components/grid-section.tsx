@@ -138,7 +138,7 @@ export function GridSection({
           and forced a horizontal scrollbar on the Streaks view. The
           GridTable is w-full/table-fixed so it fits the width without
           any sideways scroll. */}
-      <div className="sticky top-[5rem] z-20 bg-white py-2 dark:bg-zinc-950">
+      <div className="sticky top-0 z-20 bg-white py-2 dark:bg-zinc-950">
         <GridNavigator
           range={range}
           currentDate={currentDate}

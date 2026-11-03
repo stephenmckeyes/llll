@@ -137,12 +137,14 @@ const TOTAL_CELL_GAP_PX = 1;
 const WEEK_CELL_ASPECT = "aspect-square";
 const MONTH_CELL_ASPECT = "aspect-[2/1]"; // 2:1, wider than tall
 
-// Sticky-thead offset. ViewSwitcher (top-0, ~80px tall incl. py-2)
-// + Navigator (top-[5rem], ~72px tall) stack at the top of the
-// viewport. The grid's thead pins just below them at ~152px. If
-// either of those layouts changes height, adjust this offset to
-// match.
-const STICKY_THEAD_TOP = "top-[9.5rem]";
+// Sticky-thead offset. Since the app-shell refactor the DashboardHeader +
+// ViewSwitcher live OUTSIDE the scroll container (the ViewSwitcher is pinned
+// at the BOTTOM now), so the only thing stacked above the thead inside the
+// scroll region is the GridSection's sticky navigator (pinned at top-0,
+// ~70px / 4.4rem tall incl. its py-2). The thead pins just below it. If the
+// navigator's height changes, retune this to match (keep it ≥ the nav height
+// so the top activity row isn't hidden behind the header).
+const STICKY_THEAD_TOP = "top-[4.5rem]";
 
 // ---------------------------------------------------------------------------
 
