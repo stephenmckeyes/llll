@@ -649,7 +649,12 @@ export function DayList({
         <p className="text-center text-sm font-medium text-zinc-700 dark:text-zinc-300">
           {labelLong(currentDate)}
         </p>
-        <div className="flex items-center gap-2">
+        {/* Wrap on narrow screens so nothing (date input, Today, the
+            Unlabeled chip, the Timeline/Filters chips) gets pushed off the
+            right edge on a phone — a no-wrap row overflowed horizontally,
+            which both hid the chips and made the whole page look "zoomed".
+            Mirrors the shared DateNavigator's flex-wrap fix. */}
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => shiftDays(-1)}
