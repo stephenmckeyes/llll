@@ -115,6 +115,10 @@ export type ActivityFormInitial = {
   /** Migration 0065 — completion mode: 'mark' (must mark), 'auto' (comment-
    *  only, auto-completes when past), 'both'. Defaults 'mark'. */
   completion_mode?: CompletionMode;
+  /** Migration 0083 — calendar progress-bar goal. goal_target NULL = no goal.
+   *  goal_period is the window the target counts in. */
+  goal_target?: number | null;
+  goal_period?: string | null;
 };
 
 export function ActivityFormFields({
@@ -132,6 +136,7 @@ export function ActivityFormFields({
   showSelection = false,
   showCompletionMode = true,
   showAutoResolve = false,
+  showGoal = true,
 }: {
   initialValues: ActivityFormInitial;
   /** When true, render the start-date input empty regardless of the
@@ -170,6 +175,10 @@ export function ActivityFormFields({
    *  without the collective nag. Drives the same hidden autoResolve input
    *  (effectiveMode === 'auto'), so the multi-day default still applies. */
   showAutoResolve?: boolean;
+  /** Show the calendar progress-bar Goal field (migration 0083). Default true
+   *  (personal calendar). Off for community-owned + coach-template forms,
+   *  which don't surface per-activity goals. */
+  showGoal?: boolean;
   /** Add Activity form density (migration 0023). "compact" swaps in a
    *  stripped-down JSX that hides all section labels, drops Priority,
    *  turns the rhythm picker into inline text chips, collapses Tags to
@@ -248,6 +257,17 @@ export function ActivityFormFields({
   const [extraDates, setExtraDates] = useState<string[]>([]);
   const [pinned, setPinned] = useState<boolean>(
     initialValues.pinned ?? false
+  );
+  // Calendar progress-bar goal (0083). Empty target = no goal.
+  const [goalTarget, setGoalTarget] = useState<string>(
+    initialValues.goal_target != null ? String(initialValues.goal_target) : ""
+  );
+  const [goalPeriod, setGoalPeriod] = useState<"week" | "month" | "total">(
+    initialValues.goal_period === "month"
+      ? "month"
+      : initialValues.goal_period === "total"
+        ? "total"
+        : "week"
   );
   // Uncontrolled end-date input needs a ref so the Clear button can
   // reset it to "" (which the server treats as "no end date" →
@@ -361,6 +381,9 @@ export function ActivityFormFields({
         value={pinned ? "true" : "false"}
       />
       <input type="hidden" name="completionMode" value={effectiveMode} />
+      {/* Calendar progress-bar goal (0083). Empty target → server stores NULL. */}
+      <input type="hidden" name="goalTarget" value={showGoal ? goalTarget : ""} />
+      <input type="hidden" name="goalPeriod" value={goalPeriod} />
       {/* Legacy field kept so any server still reading autoResolve maps
           Auto-Complete → the old auto-drop bit; new code reads completionMode. */}
       <input
@@ -1023,6 +1046,45 @@ export function ActivityFormFields({
           </div>
         </fieldset>
       ))}
+
+      {/* --- Calendar goal + progress bar (migration 0083) ------------- */}
+      {/* Optional: complete this N times per week / per month / in total, and
+          the Day-view row shows a progress bar toward it. Blank target = no
+          goal (bar hidden). */}
+      {showGoal && (
+        <fieldset className="mt-4 flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+          <legend className="px-1 text-sm font-medium">Goal</legend>
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="text-zinc-600 dark:text-zinc-400">Complete</span>
+            <input
+              type="number"
+              min={1}
+              inputMode="numeric"
+              value={goalTarget}
+              onChange={(e) => setGoalTarget(e.target.value)}
+              placeholder="—"
+              aria-label="Goal target"
+              className="w-20 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            />
+            <span className="text-zinc-600 dark:text-zinc-400">times</span>
+            <select
+              value={goalPeriod}
+              onChange={(e) =>
+                setGoalPeriod(e.target.value as "week" | "month" | "total")
+              }
+              aria-label="Goal period"
+              className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            >
+              <option value="week">per week</option>
+              <option value="month">per month</option>
+              <option value="total">in total</option>
+            </select>
+          </div>
+          <p className="px-1 text-[11px] leading-tight text-zinc-500 dark:text-zinc-400">
+            Shows a progress bar on the calendar. Leave blank for no goal.
+          </p>
+        </fieldset>
+      )}
 
       {/* --- Pinned (migration 0035) ---------------------------------- */}
       {/* Replaces the old Keep-on-Active / Auto-archive toggle per user

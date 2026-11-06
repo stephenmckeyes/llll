@@ -459,6 +459,9 @@ export function InstanceRow({
               {hint.text}
             </p>
           )}
+          {instance.goalProgress && instance.goalProgress.target > 0 && (
+            <GoalBar progress={instance.goalProgress} />
+          )}
         </div>
       </button>
 
@@ -711,4 +714,47 @@ function daysBetween(fromYmd: string, toYmd: string): number {
   const a = Date.UTC(y1, m1 - 1, d1);
   const b = Date.UTC(y2, m2 - 1, d2);
   return Math.round((b - a) / 86_400_000);
+}
+
+// ---------------------------------------------------------------------------
+// GoalBar — a thin progress bar on the day row for an activity with a goal
+// (migration 0083). Fills by completed ÷ target in the current period.
+// ---------------------------------------------------------------------------
+
+const GOAL_PERIOD_LABEL: Record<"week" | "month" | "total", string> = {
+  week: "this week",
+  month: "this month",
+  total: "total",
+};
+
+function GoalBar({
+  progress,
+}: {
+  progress: { completed: number; target: number; period: "week" | "month" | "total" };
+}) {
+  const { completed, target, period } = progress;
+  const pct = Math.min(100, Math.round((completed / target) * 100));
+  const done = completed >= target;
+  return (
+    <div
+      className="mt-1.5"
+      title={`${completed} of ${target} ${GOAL_PERIOD_LABEL[period]}`}
+    >
+      <div className="flex items-center justify-between text-[10px] font-medium text-zinc-500 dark:text-zinc-400">
+        <span>Goal · {GOAL_PERIOD_LABEL[period]}</span>
+        <span className="tabular-nums">
+          {completed}/{target}
+          {done ? " ✓" : ""}
+        </span>
+      </div>
+      <div className="mt-0.5 h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+        <div
+          className={`h-full rounded-full transition-all ${
+            done ? "bg-emerald-500" : "bg-zinc-900 dark:bg-zinc-100"
+          }`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
 }

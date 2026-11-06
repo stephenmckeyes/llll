@@ -983,7 +983,9 @@ async function DayView({
         auto_resolve,
         completion_mode,
         streak_mode,
-        streak_goal
+        streak_goal,
+        goal_target,
+        goal_period
       ),
       completion_instances (
         completion_id,
@@ -1182,6 +1184,85 @@ async function DayView({
     }
   }
 
+  // ---- Goal progress bars (migration 0083) ------------------------------
+  // Activities with a goal_target get a progress bar on their day row: how
+  // many completed occurrences they have in the current period (week / month
+  // / all-time) vs the target. Only runs when a shown activity actually has a
+  // goal, so there's no cost otherwise.
+  {
+    const goalActs = new Map<
+      string,
+      { target: number; period: "week" | "month" | "total" }
+    >();
+    for (const r of live) {
+      const act = r.activities as DayInstance["activity"] & {
+        goal_target?: number | null;
+        goal_period?: string | null;
+      };
+      if (goalActs.has(act.id)) continue;
+      const target = act.goal_target ?? null;
+      if (!target || target < 1) continue;
+      const period: "week" | "month" | "total" =
+        act.goal_period === "month"
+          ? "month"
+          : act.goal_period === "total"
+            ? "total"
+            : "week";
+      goalActs.set(act.id, { target, period });
+    }
+    if (goalActs.size > 0) {
+      const today = parseDate(todayStr);
+      const wkStart = format(startOfWeek(today, { weekStartsOn: 1 }), "yyyy-MM-dd");
+      const wkEnd = format(endOfWeek(today, { weekStartsOn: 1 }), "yyyy-MM-dd");
+      const moStart = format(startOfMonth(today), "yyyy-MM-dd");
+      const moEnd = format(endOfMonth(today), "yyyy-MM-dd");
+      const ids = Array.from(goalActs.keys());
+      const anyTotal = Array.from(goalActs.values()).some(
+        (g) => g.period === "total"
+      );
+      // Lower bound keeps the query small for week/month goals; a 'total' goal
+      // needs all-time completions, so drop the bound when any is present.
+      const lowerBound = anyTotal ? null : wkStart < moStart ? wkStart : moStart;
+      let q = supabase
+        .from("activity_instances")
+        .select("activity_id, scheduled_for")
+        .eq("status", "completed")
+        .in("activity_id", ids);
+      if (lowerBound) q = q.gte("scheduled_for", lowerBound);
+      const { data: gdata } = await q;
+      const completedDates = new Map<string, string[]>();
+      for (const row of (gdata ?? []) as Array<{
+        activity_id: string;
+        scheduled_for: string;
+      }>) {
+        const arr = completedDates.get(row.activity_id) ?? [];
+        arr.push(row.scheduled_for);
+        completedDates.set(row.activity_id, arr);
+      }
+      for (const inst of instances) {
+        const cfg = goalActs.get(inst.activity.id);
+        if (!cfg) {
+          inst.goalProgress = null;
+          continue;
+        }
+        const dates = completedDates.get(inst.activity.id) ?? [];
+        let completed = 0;
+        for (const d of dates) {
+          if (cfg.period === "total") completed++;
+          else if (cfg.period === "week" && d >= wkStart && d <= wkEnd)
+            completed++;
+          else if (cfg.period === "month" && d >= moStart && d <= moEnd)
+            completed++;
+        }
+        inst.goalProgress = {
+          completed,
+          target: cfg.target,
+          period: cfg.period,
+        };
+      }
+    }
+  }
+
   // Only fetch the ack set when timeline is on; wasted round-trip
   // otherwise (non-timeline mode ignores it).
   const acknowledgedPairKeys = timelineMode
@@ -1281,7 +1362,9 @@ async function TimelineWeekView({
         rollover_change_rhythm,
         auto_archive,
         auto_resolve,
-        completion_mode
+        completion_mode,
+        goal_target,
+        goal_period
       ),
       completion_instances (
         completion_id,
@@ -1946,7 +2029,7 @@ async function GridView({
     supabase
       .from("activities")
       .select(
-        "id, name, notes, rhythm, priority, scheduled_times, scheduled_end_times, default_skill_tags, start_date, end_date, archived_at, reminders, streak_mode, streak_goal, track_on_grid, rollover_missed_days, rollover_change_rhythm, auto_resolve, completion_mode"
+        "id, name, notes, rhythm, priority, scheduled_times, scheduled_end_times, default_skill_tags, start_date, end_date, archived_at, reminders, streak_mode, streak_goal, track_on_grid, rollover_missed_days, rollover_change_rhythm, auto_resolve, completion_mode, goal_target, goal_period"
       )
       .eq("user_id", userId)
       .is("archived_at", null)
@@ -1980,6 +2063,8 @@ async function GridView({
     rollover_change_rhythm: boolean;
     auto_resolve: boolean;
     completion_mode: string | null;
+    goal_target: number | null;
+    goal_period: string | null;
   };
   // Grid only DISPLAYS activities the user opted into (track_on_grid).
   // Everything is still tracked elsewhere; this is a display filter.
@@ -2515,6 +2600,8 @@ function toDayInstance(
     auto_archive?: boolean;
     auto_resolve?: boolean;
     completion_mode?: string | null;
+    goal_target?: number | null;
+    goal_period?: string | null;
   }
 ): DayInstance {
   return {
@@ -2555,6 +2642,8 @@ function toDayInstance(
       auto_archive: act.auto_archive ?? false,
       auto_resolve: act.auto_resolve ?? false,
       completion_mode: coerceCompletionMode(act.completion_mode),
+      goal_target: act.goal_target ?? null,
+      goal_period: act.goal_period ?? null,
     },
   };
 }

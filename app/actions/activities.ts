@@ -28,6 +28,24 @@ export type ActivityFormState = { error: string } | null;
 // don't strand many "stale" future instances.
 const INSTANCE_HORIZON_DAYS = 30;
 
+// Parse the calendar-goal fields (migration 0083) from FormData into the
+// activities-row shape. Blank / invalid target → no goal (both NULL). Local
+// (non-exported) so this "use server" file stays async-exports-only.
+function parseGoalFromForm(formData: FormData): {
+  goal_target: number | null;
+  goal_period: string | null;
+} {
+  const raw = String(formData.get("goalTarget") ?? "").trim();
+  const n = raw === "" ? NaN : Number(raw);
+  if (!Number.isFinite(n) || n < 1) {
+    return { goal_target: null, goal_period: null };
+  }
+  const period = String(formData.get("goalPeriod") ?? "week");
+  const goal_period =
+    period === "month" || period === "total" ? period : "week";
+  return { goal_target: Math.min(Math.floor(n), 100000), goal_period };
+}
+
 // Parse the two parallel form arrays scheduledTime + scheduledEndTime,
 // filter to slots whose START is a valid "HH:MM", and keep the end at
 // the same index (or "" when the slot has no valid end). Both arrays
@@ -279,6 +297,7 @@ export async function createActivity(
         pinned,
         auto_resolve: autoResolve,
         completion_mode: completionMode,
+        ...parseGoalFromForm(formData),
       })
       .select("id")
       .single();
@@ -426,6 +445,7 @@ export async function createDraftActivity(
     pinned: String(formData.get("pinned")) === "true",
     auto_resolve: coerceCompletionMode(formData.get("completionMode")) === "auto",
     completion_mode: coerceCompletionMode(formData.get("completionMode")),
+    ...parseGoalFromForm(formData),
     // The whole point: parked in the archive, generating no instances.
     archived_at: new Date().toISOString(),
   });
@@ -767,6 +787,7 @@ export async function updateActivityRhythm(
       pinned: String(formData.get("pinned")) === "true",
       auto_resolve: completionMode === "auto",
       completion_mode: completionMode,
+      ...parseGoalFromForm(formData),
     })
     .eq("id", activityId);
   if (uerr) return { error: uerr.message };

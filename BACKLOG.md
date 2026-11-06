@@ -19,21 +19,28 @@ set-by-set entries). Out of scope for v1 of coach plans.
 
 ## Goals with progress bars on the calendar (asked for)
 
-Asked for. Let a user set a **goal** on an activity/rhythm and show a **progress
-bar on the calendar view** reflecting how far along the goal is. E.g. "run 100
-miles this month" or "meditate 20 times" → a bar that fills as occurrences
-complete / a metric accumulates. Distinct from the existing streak modes
-(countdown/total are number-only in the grid Success column) — this is a visual
-bar rendered ON the calendar (Day/Week/Month) for that activity. Design notes:
-- A goal on the activity (e.g. `activities.goal_target int`, `goal_unit text`,
-  `goal_period` 'week'|'month'|'total', maybe `goal_metric` for value-based once
-  structured-input activities land). Progress = completed-count (or summed
-  metric) in the period ÷ target.
-- Render a thin progress bar on the calendar banner/row for goal activities,
-  colored by tag, filling with progress; tooltip shows "X / target".
-- Ties into the streak-on-calendar display toggle (same "show extra info on the
-  calendar" family) and the structured-input activities (value-based goals).
-Contained phase; pick up after the streak-on-calendar display.
+- ✅ **v1 DONE (migration 0083) — DAY VIEW.** `activities.goal_target int` +
+  `goal_period` ('week'|'month'|'total'). A "Goal" field in the Add/Edit
+  Activity form ("Complete N times per week/month/total"; blank = no goal),
+  parsed via `parseGoalFromForm` and persisted in create/draft/edit. The
+  personal **Day view** row shows a thin progress bar (`GoalBar` in
+  instance-row) filled by completed-occurrence-count in the current period ÷
+  target (turns emerald + ✓ when met). DayView computes the count in its own
+  query (only when a shown activity has a goal → no cost otherwise). Threaded
+  through the Day/Timeline/Grid activity selects + `DayInstance.goalProgress`
+  so editing from those surfaces doesn't wipe the goal. Hidden in the
+  community + coach-template forms (`showGoal={false}`). NOTE: 0083 is a hard
+  dependency (columns are in the main activity selects, like completion_mode) —
+  apply it or the day view / create / edit error.
+- STILL TODO:
+  - **Week/Month/Total calendar surfaces** — the bar is Day-view only so far.
+    Add it to the Week banner / Month cell (and the Grid row) for parity.
+  - **Value-based goals** (e.g. "100 miles") — waits for structured-input
+    activities (sum a per-completion metric instead of counting occurrences).
+  - **Color by tag** — the bar is currently neutral/emerald; could tint by the
+    activity's first tag like the calendar banners.
+  - Friend-view parity (the friend's goals on their shared calendar) — deferred
+    like the streak-on-calendar chip; needs the friend's goal data.
 
 ## Richer coach profiles (asked for, mostly done)
 
@@ -57,6 +64,12 @@ Asked for alongside the plans rework.
 
 ## Recently done
 
+- ✅ Goals with progress bars on the calendar — v1, Day view (migration 0083):
+  `activities.goal_target` + `goal_period` (week/month/total); a "Goal" field in
+  the Add/Edit form; a thin `GoalBar` on each personal Day-view row filled by
+  completed-count-in-period ÷ target (emerald + ✓ when met). See the "Goals with
+  progress bars on the calendar" section for the remaining surfaces (Week/Month,
+  value-based, tag color). Hard dep: apply 0083.
 - ✅ Show streaks on the calendar (migration 0082): a per-user "Show streaks on
   the calendar" toggle (Settings → Streaks) annotates each personal Day-view row
   with its current streak value (🔥5w / 🔥2mo / Σ12 / "3 to go"), using the same

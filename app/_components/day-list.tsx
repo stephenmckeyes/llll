@@ -98,6 +98,14 @@ export type DayInstance = {
    *  formatStreakDisplay (🔥5w / Σ12 / "3 to go"); null / undefined = show
    *  nothing. Only the personal day view sets it. */
   streakDisplay?: string | null;
+  /** Calendar goal progress (migration 0083). Present only on the personal
+   *  Day view when the activity has a goal; drives a thin progress bar on the
+   *  row. null / undefined = no bar. */
+  goalProgress?: {
+    completed: number;
+    target: number;
+    period: "week" | "month" | "total";
+  } | null;
   activity: {
     id: string;
     name: string;
@@ -142,6 +150,10 @@ export type DayInstance = {
     /** Completion mode (migration 0065): 'mark' (must mark), 'auto'
      *  (comment-only; auto-completes once past), 'both'. Undefined = 'mark'. */
     completion_mode?: "mark" | "auto" | "both";
+    /** Calendar progress-bar goal (migration 0083). goal_target null/undefined
+     *  = no goal. goal_period is the window the target counts in. */
+    goal_target?: number | null;
+    goal_period?: string | null;
   };
 };
 

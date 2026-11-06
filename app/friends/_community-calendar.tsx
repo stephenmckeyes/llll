@@ -896,6 +896,7 @@ function ActivityFormModal({
           showSelection={!existing}
           showCompletionMode={false}
           showAutoResolve
+          showGoal={false}
         />
 
         {state && "error" in state && (
