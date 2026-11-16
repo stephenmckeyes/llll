@@ -42,6 +42,61 @@ set-by-set entries). Out of scope for v1 of coach plans.
   - Friend-view parity (the friend's goals on their shared calendar) — deferred
     like the streak-on-calendar chip; needs the friend's goal data.
 
+## Calendar UX fixes (asked for)
+
+1. **"Missed" triggers an instant refresh that blocks Unlabel / fast marking.**
+   On the calendar (Day view), marking an occurrence **Completed** marks it in
+   place (dimmed row + status pill, Unlabel still reachable) — good. But marking
+   **Missed** triggers an instant page refresh / re-render, so the row moves
+   (into the Completed/Missed dropdown) before you can press **Unlabel**, and it
+   gets in the way of marking several activities quickly. Make Missed behave like
+   Completed: mark-in-place, keep Unlabel on the row, and DON'T force an eager
+   `router.refresh()` / revalidate on the miss. Likely cause: the miss path
+   reschedules (rollover) or calls refresh, which changes DayList's `instancesKey`
+   and clears the `resolved` map (see day-list.tsx `resolved` + the comment about
+   `missInstance` rescheduling clearing the map). Investigate the miss action +
+   InstanceRow's onResolve('missed') path; defer any refresh until the user
+   navigates, matching the complete path. Keep rollover semantics intact (a
+   rolled-forward miss still appears on the later day) — just don't yank the row
+   out from under the user's finger.
+
+2. **Setting: wrap / shrink activity titles instead of truncating with "…".**
+   Long activity names get cut off with an ellipsis (the `truncate` on the name
+   in instance-row / banners), which is hard to read. Add an appearance setting
+   (Settings → Appearance, localStorage-backed like the other display prefs, or a
+   `profiles` column if cross-device wanted) to either **wrap** the title onto
+   multiple lines OR render it at a **smaller font** so the whole title fits. Apply
+   to the Day-list rows first (instance-row name `<p className="truncate …">`),
+   then the Week/Month banners where names also truncate. Default = current
+   (truncate) so nothing changes unless opted in.
+
+## Design direction — sandbox / maximize customization (asked for)
+
+Guiding principle, not a single feature: make Mission a **sandbox** — sensible
+preset defaults that work out of the box, but deep customization so it can be
+bent to many uses. The user's analogies: Minecraft has a "correct" way to play
+but tons of options; Excel is "meant for" data but people build calendars, trackers
+and apps in it. The more the core is kept **as basic as possible with the ability
+to customize on top**, the more utility it has.
+
+Concretely, bias future work toward:
+- **Defaults that just work** for a first-run user (don't force config), with
+  every behavior overridable in settings (per-user, and where it makes sense
+  per-activity / per-community).
+- **Composable primitives** over bespoke features: activities, rhythms, tags,
+  completion types, goals, streak modes, calendar display toggles are all "knobs"
+  — keep adding knobs rather than hard-coding one workflow.
+- **Repurposability**: the same calendar/grid/data should support habit tracking,
+  plain scheduling, workout logging (structured-input), group coordination,
+  coaching, etc. — already trending this way (completion modes, auto-resolve for
+  scheduling-only, community vs personal, form/structured activities on the
+  roadmap).
+- When adding a feature, prefer exposing it as an **opt-in setting** with a
+  conservative default over changing everyone's baseline. (The recent
+  streak-on-calendar + goals work follows this: off/blank by default, opt-in.)
+Review the existing settings surface periodically and surface more of the
+hard-coded choices as user options.
+
 ## Richer coach profiles (asked for, mostly done)
 
 Asked for alongside the plans rework.
