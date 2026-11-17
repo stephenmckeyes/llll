@@ -45,13 +45,48 @@ import postgres from "postgres";
 loadEnv({ path: ".env.local" });
 loadEnv();
 
-const url = process.env.DATABASE_URL;
-if (!url) {
+const rawUrl = process.env.DATABASE_URL;
+if (!rawUrl) {
   console.error(
     "DATABASE_URL is not set. Add it to .env.local (Supabase → Project " +
       "Settings → Database → Connection string). See .env.example."
   );
   process.exit(1);
+}
+
+// Optional: supply the DB password as its OWN value so special characters
+// (@ : / # ? & …) don't have to be percent-encoded inside the URL — a very
+// common cause of "password authentication failed". Keep the full Supabase URI
+// in DATABASE_URL (even with its [YOUR-PASSWORD] placeholder) and put the raw
+// password in DATABASE_PASSWORD; it's injected (URL-encoded) here.
+const rawPassword = process.env.DATABASE_PASSWORD;
+let url = rawUrl;
+if (rawPassword) {
+  const enc = encodeURIComponent(rawPassword);
+  // userinfo already has a password slot: scheme://user:SOMETHING@host
+  const withPw = rawUrl.replace(
+    /^(\w+(?::\w+)?:\/\/[^:@/?#]+:)[^@]*(@)/,
+    `$1${enc}$2`
+  );
+  // or userinfo has only a user: scheme://user@host  → insert a password
+  url =
+    withPw !== rawUrl
+      ? withPw
+      : rawUrl.replace(/^(\w+(?::\w+)?:\/\/[^:@/?#]+)(@)/, `$1:${enc}$2`);
+}
+
+// Print the user + host it will try (never the password) — makes a 28P01
+// "wrong user/password" mistake obvious.
+try {
+  const u = new URL(url);
+  console.log(
+    `Connecting as user "${decodeURIComponent(u.username)}" to ${u.host}${
+      rawPassword ? " (password from DATABASE_PASSWORD)" : ""
+    }`
+  );
+} catch {
+  /* URL may be unparseable if a raw password slipped into DATABASE_URL — the
+     connection attempt below will still surface the real error. */
 }
 
 // --- flags ---------------------------------------------------------------
@@ -167,7 +202,20 @@ async function main() {
 main()
   .then(() => sql.end())
   .catch(async (err) => {
-    console.error(err);
+    if (err?.code === "28P01") {
+      console.error(
+        "\npassword authentication failed (28P01). Check in .env.local:\n" +
+          "  • the password is correct (reset it: Supabase → Settings → " +
+          "Database → Reset database password), and\n" +
+          "  • the USERNAME matches the host — a '...pooler.supabase.com' host " +
+          "needs user 'postgres.<project-ref>', while the direct " +
+          "'db.<ref>.supabase.co' host uses just 'postgres'.\n" +
+          "  • if the password has symbols, put it in DATABASE_PASSWORD instead " +
+          "of inside the URL (see .env.example)."
+      );
+    } else {
+      console.error(err);
+    }
     await sql.end();
     process.exit(1);
   });
