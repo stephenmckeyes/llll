@@ -22,7 +22,8 @@ export type FriendsTabKind =
   | "groups"
   | "clubs"
   | "guilds"
-  | "coaches";
+  | "coaches"
+  | "invitations";
 
 export function FriendsTabs({
   active,
@@ -45,6 +46,11 @@ export function FriendsTabs({
       <FriendsTab label="Groups" href="/friends/groups" active={active === "groups"} />
       <FriendsTab label="Clubs" href="/friends/clubs" active={active === "clubs"} />
       <FriendsTab label="Coaches" href="/friends/coaches" active={active === "coaches"} />
+      <FriendsTab
+        label="Invitations"
+        href="/friends/invitations"
+        active={active === "invitations"}
+      />
       {/* Guilds are closed for now — being reworked into certified groups that
           create adventures + achievement diaries. Tab hidden; route redirects. */}
     </nav>
@@ -63,7 +69,7 @@ function FriendsTab({
   return (
     <Link
       href={href}
-      className={`flex flex-1 items-center justify-center rounded px-3 py-1 text-center text-sm font-semibold transition-colors ${
+      className={`flex flex-auto items-center justify-center whitespace-nowrap rounded px-1 py-1 text-center text-xs font-semibold transition-colors sm:flex-1 sm:px-3 sm:text-sm ${
         active
           ? "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
           : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"

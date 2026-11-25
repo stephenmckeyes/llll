@@ -4,6 +4,53 @@ Captured ideas and follow-ups for future sessions. Not in priority order.
 Imported by `CLAUDE.md` so every new Claude Code session sees this on
 startup.
 
+## Reminders are broken — and need a real app to matter (asked for)
+
+Per user: the **reminders function is broken**. Reminders can be configured
+per activity (`activities.reminders` jsonb, RemindersField in the Add/Edit
+form, and now the Invitations "Add to my calendar" modal) but nothing reliably
+fires them. Investigate what's actually wired (any cron / scheduled function,
+in-app delivery, the /notifications surface) vs. what the UI implies, and fix
+or clearly label it.
+- **Bigger point: it needs to be an actual app for reminders to matter much.**
+  Browser-tab reminders are near-useless — you need OS-level push
+  notifications that arrive when the app isn't open. Options: (a) a proper
+  PWA with a service worker + Web Push (works on Android/desktop; iOS only
+  for home-screen-installed PWAs, iOS 16.4+), or (b) a native wrapper
+  (Capacitor / Expo) with APNs/FCM. Either way needs a push-subscription
+  table, a scheduler that expands `reminders` × `scheduled_times` per
+  occurrence (see "Multi-time reminders verification"), and a sender.
+  Treat this as its own phase; email (Resend) is a cheaper interim channel.
+
+## Invitations — follow-ups (v1 DONE, migration 0084)
+
+v1: Community → **Invitations** tab (`/friends/invitations`). A person or a
+community (creator needs `can_add_activities`) posts an activity-shaped
+invitation (shared ActivityFormFields; time + location REQUIRED) targeting
+Friends / a Community / Nearby (radius around a pinned browser location) /
+Anyone, with a skill level (All/Beginner/Intermediate/Advanced) and optional
+spots. Viewers filter (search, source, community, skill, tag, date range,
+distance; sort soonest/nearest/newest) and "+ Add to my calendar" copies it as
+a personal activity with their own reminders + RSVPs (`invitation_attendees`,
+capacity enforced in `join_invitation`). Leave archives the copy. Hosts can
+Edit / Cancel / see Attendees. STILL TODO:
+- **Geocode typed addresses / map pin.** Coordinates currently come only from
+  "Use my current location" (browser geolocation), so you can't pin a place
+  you aren't standing at. Add geocoding (Mapbox / Google / Nominatim — needs a
+  key + ToS check) or a map picker.
+- **Real skill levels.** Skill level is a self-declared label + filter; there's
+  no per-user skill. Tie to Levels / guild tracks when those land so
+  "Intermediate+" invitations can be audience-gated, not just filtered.
+- **Nearby is a discovery filter, not a security boundary** — the viewer's
+  coords are client-supplied per query (never stored). Fine for v1; revisit if
+  hosts need truly location-restricted visibility.
+- **Notifications** — notify the invited audience of a new invitation, and the
+  host when someone joins/leaves. Changes to an invitation don't propagate to
+  attendees' calendar copies yet.
+- **Surface inside a community** — an Invitations section/tab on the community
+  page itself (page_layout key) filtered to that community.
+- **Multiple audiences** (e.g. friends + a community at once).
+
 ## Structured-input activities (asked for)
 
 Asked for. A richer completion type where completing an activity captures
@@ -119,6 +166,14 @@ Asked for alongside the plans rework.
 
 ## Recently done
 
+- ✅ Invitations tab (migrations 0084 + 0085): Community → Invitations. People
+  or communities post activity-shaped invitations (time + location required) to
+  Friends / a Community / Nearby (radius) / Anyone with a skill level + spots;
+  viewers filter and "+ Add to my calendar" (with reminders) to RSVP. Verified
+  live (create → RSVP with reminder → filter → leave) + RLS/RPC tested in a
+  rolled-back transaction. 0085 fixes 0084's SELECT policy (row lookup by id
+  failed for INSERT…RETURNING). The Community tab strip now sizes tabs to
+  content on mobile so all 5 fit. Follow-ups: see "Invitations — follow-ups".
 - ✅ Goals with progress bars on the calendar — v1, Day view (migration 0083):
   `activities.goal_target` + `goal_period` (week/month/total); a "Goal" field in
   the Add/Edit form; a thin `GoalBar` on each personal Day-view row filled by
