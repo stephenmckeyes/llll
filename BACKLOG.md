@@ -106,21 +106,20 @@ set-by-set entries). Out of scope for v1 of coach plans.
 
 ## Calendar UX fixes (asked for)
 
-1. **"Missed" triggers an instant refresh that blocks Unlabel / fast marking.**
-   On the calendar (Day view), marking an occurrence **Completed** marks it in
-   place (dimmed row + status pill, Unlabel still reachable) — good. But marking
-   **Missed** triggers an instant page refresh / re-render, so the row moves
-   (into the Completed/Missed dropdown) before you can press **Unlabel**, and it
-   gets in the way of marking several activities quickly. Make Missed behave like
-   Completed: mark-in-place, keep Unlabel on the row, and DON'T force an eager
-   `router.refresh()` / revalidate on the miss. Likely cause: the miss path
-   reschedules (rollover) or calls refresh, which changes DayList's `instancesKey`
-   and clears the `resolved` map (see day-list.tsx `resolved` + the comment about
-   `missInstance` rescheduling clearing the map). Investigate the miss action +
-   InstanceRow's onResolve('missed') path; defer any refresh until the user
-   navigates, matching the complete path. Keep rollover semantics intact (a
-   rolled-forward miss still appears on the later day) — just don't yank the row
-   out from under the user's finger.
+1. ✅ **"Missed" instant refresh** DONE. Cause: `missInstance` called
+   `revalidatePath("/")` when it rolled something forward (a one-off moved to
+   the next day, or a make-up occurrence), and a revalidating server action
+   re-renders the page at once → DayList's `resolved` map reset and the row
+   jumped away. It now only persists, like `completeInstance` (the activity
+   modal still `router.refresh()`es itself). Rollover is unchanged — it shows on
+   the later day after the next navigation. In-place **Unlabel** now also UNDOES
+   the rollover: InstanceRow keeps the miss result and passes it to
+   `unlabelInstance(id, undo)`, which moves a rescheduled one-off back to its
+   original day and deletes an untouched make-up occurrence (a "rollover and
+   change rhythm" shift is NOT undone). Verified live on a one-off: Miss keeps
+   the row (Comment/Unlabel), Unlabel restores today (also when tapped
+   immediately). Community collective Miss still auto-revalidates (separate
+   server action) — fine for now.
 
 2. **Setting: wrap / shrink activity titles instead of truncating with "…".**
    Long activity names get cut off with an ellipsis (the `truncate` on the name

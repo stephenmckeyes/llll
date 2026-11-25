@@ -1360,13 +1360,20 @@ export async function updateInstanceComment(
 // the legacy behavior: status flips to 'missed', no reschedule. The next
 // scheduled occurrence is already on the calendar for those.
 //
-// Return shape lets the caller router.refresh() when a reschedule happened
-// (so the row disappears from its old day and reappears on its new day).
+// Like completeInstance, this action ONLY persists — no revalidatePath. A
+// revalidation from a server action re-renders the calling page at once,
+// which reset the Day list's mark-in-place state and yanked the "✗ Missed"
+// row away before the user could Unlabel it (or tap the next row). Callers
+// that need fresh data (the activity modal) router.refresh() themselves;
+// the Day list picks up the reschedule on the next navigation.
+//
+// The return shape says what the miss rolled forward so an in-place Unlabel
+// can undo it (see unlabelInstance's `undo`).
 // ---------------------------------------------------------------------------
 
 export type MissInstanceResult =
-  | { rescheduled: false }
-  | { rescheduled: true; newDate: string };
+  | { rescheduled: false; makeupInstanceId?: string }
+  | { rescheduled: true; newDate: string; fromDate: string };
 
 function ymdInUserTz(tz: string): string {
   try {
@@ -1496,8 +1503,7 @@ export async function missInstance(
         .eq("id", activity.id),
     ]);
     invalidateBackfillCache(user.id);
-    revalidatePath("/");
-    return { rescheduled: true, newDate };
+    return { rescheduled: true, newDate, fromDate: inst.scheduled_for };
   }
 
   // ---------- Recurring: mark missed, then apply rollover toggles ------
@@ -1508,6 +1514,7 @@ export async function missInstance(
 
   const nextDay = ymdPlusDays(inst.scheduled_for, 1);
   let anySchemaChange = false;
+  let makeupInstanceId: string | undefined;
 
   // "Rollover and change rhythm" runs FIRST so the schedule-shift's
   // regen defines a clean canvas; "Rollover missed days" then either
@@ -1529,8 +1536,9 @@ export async function missInstance(
   if (activity.rollover_missed_days) {
     // Idempotent via the (activity_id, scheduled_for) unique index —
     // any collision (e.g. daily activity where tomorrow already exists)
-    // is silently ignored.
-    await supabase
+    // is silently ignored. The returned row (only present when one was
+    // actually inserted) is the make-up an Unlabel should remove.
+    const { data: inserted } = await supabase
       .from("activity_instances")
       .upsert(
         {
@@ -1540,15 +1548,14 @@ export async function missInstance(
           tags: [],
         },
         { onConflict: "activity_id,scheduled_for", ignoreDuplicates: true }
-      );
+      )
+      .select("id");
+    makeupInstanceId = (inserted as Array<{ id: string }> | null)?.[0]?.id;
     anySchemaChange = true;
   }
 
-  if (anySchemaChange) {
-    invalidateBackfillCache(user.id);
-    revalidatePath("/");
-  }
-  return { rescheduled: false };
+  if (anySchemaChange) invalidateBackfillCache(user.id);
+  return { rescheduled: false, makeupInstanceId };
 }
 
 // ---------------------------------------------------------------------------
@@ -1689,7 +1696,13 @@ export async function skipInstance(instanceId: string) {
 // completions to clean up.
 // ---------------------------------------------------------------------------
 
-export async function unlabelInstance(instanceId: string) {
+/** What an in-place Unlabel should undo from the miss it reverts (the
+ *  MissInstanceResult the row got back): move a rescheduled one-off back to
+ *  its original day, and/or drop the make-up occurrence the miss inserted.
+ *  A "rollover and change rhythm" shift is NOT undone. */
+export type UnlabelUndo = { restoreDate?: string; makeupInstanceId?: string };
+
+export async function unlabelInstance(instanceId: string, undo?: UnlabelUndo) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -1714,6 +1727,40 @@ export async function unlabelInstance(instanceId: string) {
     .from("activity_instances")
     .update({ status: "pending" })
     .eq("id", instanceId);
+
+  if (undo?.makeupInstanceId) {
+    // Only an untouched make-up (still pending) is removed.
+    await supabase
+      .from("activity_instances")
+      .delete()
+      .eq("id", undo.makeupInstanceId)
+      .eq("status", "pending");
+    invalidateBackfillCache(user.id);
+  }
+
+  if (undo?.restoreDate && /^\d{4}-\d{2}-\d{2}$/.test(undo.restoreDate)) {
+    // Undo a one-off's miss-reschedule: back to its original day. Only
+    // singles are ever rescheduled, so guard on the rhythm.
+    const { data: row } = await supabase
+      .from("activity_instances")
+      .select("activity_id, activities ( rhythm )")
+      .eq("id", instanceId)
+      .maybeSingle();
+    const r = row as { activity_id: string; activities: { rhythm: Rhythm } | null } | null;
+    if (r && r.activities?.rhythm.type === "single") {
+      await Promise.all([
+        supabase
+          .from("activity_instances")
+          .update({ scheduled_for: undo.restoreDate })
+          .eq("id", instanceId),
+        supabase
+          .from("activities")
+          .update({ start_date: undo.restoreDate, end_date: undo.restoreDate })
+          .eq("id", r.activity_id),
+      ]);
+      invalidateBackfillCache(user.id);
+    }
+  }
 
   // Per-occurrence change, no future-generation impact → no backfill
   // invalidation. The modal calls router.refresh() so the day view moves

@@ -10,12 +10,14 @@
 // own onClick, no event-bubbling games required.
 // ---------------------------------------------------------------------------
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 
 import {
   completeInstance,
   missInstance,
   unlabelInstance,
+  type MissInstanceResult,
+  type UnlabelUndo,
 } from "@/app/actions/activities";
 import { rhythmCategoryLabel } from "@/lib/domain/rhythm-summary";
 import { coerceCompletionMode } from "@/lib/domain/completion-mode";
@@ -272,6 +274,12 @@ export function InstanceRow({
     });
   }
 
+  // The in-flight / finished missInstance call from THIS row, so an in-place
+  // Unlabel can undo what the miss rolled forward (a one-off moved to a later
+  // day, a make-up occurrence) — waiting for the miss to land first if the
+  // user taps Unlabel right away.
+  const missResultRef = useRef<Promise<MissInstanceResult> | null>(null);
+
   function handleMissed() {
     if (confirmFuture && instance.scheduled_for > todayStr) {
       const ok = window.confirm(
@@ -289,8 +297,10 @@ export function InstanceRow({
     if (isCurrentlyUnlabeled) {
       dispatchInstanceResolved({ wasUnlabeled: true });
     }
+    const pending = missInstance(instance.id);
+    missResultRef.current = pending;
     startTransition(async () => {
-      await missInstance(instance.id);
+      await pending;
     });
   }
 
@@ -305,8 +315,16 @@ export function InstanceRow({
     if (isCurrentlyUnlabeled) {
       dispatchInstanceResolved({ wasUnlabeled: true, delta: 1 });
     }
+    const missed = missResultRef.current;
+    missResultRef.current = null;
     startTransition(async () => {
-      await unlabelInstance(instance.id);
+      let undo: UnlabelUndo | undefined;
+      if (missed) {
+        const r = await missed.catch(() => null);
+        if (r?.rescheduled) undo = { restoreDate: r.fromDate };
+        else if (r?.makeupInstanceId) undo = { makeupInstanceId: r.makeupInstanceId };
+      }
+      await unlabelInstance(instance.id, undo);
     });
   }
 
