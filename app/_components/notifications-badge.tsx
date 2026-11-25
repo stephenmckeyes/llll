@@ -16,7 +16,10 @@ import {
 } from "@/app/actions/communities";
 import { getUnacknowledgedConflictsForDate } from "@/app/actions/conflicts";
 import { getPendingCoachApplications } from "@/app/actions/coaches";
-import { getMyInvitationChangeNotices } from "@/app/actions/invitations";
+import {
+  getMyInvitationActivityNotices,
+  getMyInvitationChangeNotices,
+} from "@/app/actions/invitations";
 import { getSocialOverview } from "@/app/actions/friends";
 import { getUnreadCounts } from "@/app/actions/messages";
 
@@ -35,6 +38,7 @@ export async function NotificationsBadge() {
     autoAddEvents,
     coachApps,
     invitationNotices,
+    invitationActivity,
   ] = await Promise.all([
     getUnreadCounts(),
     getSocialOverview(),
@@ -47,6 +51,7 @@ export async function NotificationsBadge() {
     // contribution for everyone except platform admins.
     getPendingCoachApplications(),
     getMyInvitationChangeNotices(),
+    getMyInvitationActivityNotices(),
   ]);
   const messages = Object.values(unread).reduce((s, n) => s + n, 0);
   const requests = social.filter(
@@ -61,7 +66,8 @@ export async function NotificationsBadge() {
     outcomes.length +
     autoAddEvents.length +
     coachApps.length +
-    invitationNotices.length;
+    invitationNotices.length +
+    invitationActivity.length;
   if (total <= 0) return null;
   return (
     <span

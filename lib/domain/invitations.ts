@@ -279,3 +279,22 @@ export const CHANGE_FIELD_LABEL: Record<keyof InvitationChanges, string> = {
   notes: "Notes",
   tags: "Tags",
 };
+
+// --- activity notices (migration 0088) -------------------------------------------
+
+/** 'new' = an invitation was posted to you; 'joined' / 'left' = someone
+ *  added / removed YOUR invitation. */
+export type InvitationActivityNotice = {
+  id: string;
+  invitationId: string;
+  kind: "new" | "joined" | "left";
+  createdAt: string;
+  invitationName: string;
+  startDate: string;
+  locationName: string;
+  /** 'new': the host (community name, else person); joined/left: the attendee. */
+  actorLabel: string;
+  attendeeCount: number;
+  capacity: number | null;
+  cancelled: boolean;
+};

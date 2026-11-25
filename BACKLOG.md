@@ -53,8 +53,15 @@ Edit / Cancel / see Attendees. STILL TODO:
   occurrences, keeps the attendee's reminders + history), **Edit my copy**
   (opens the copy's next day), or **Keep mine**; cancellations offer
   **Remove from my calendar** / **Keep it**. Counted in the nav badge.
-- **Notifications** (still TODO) — notify the invited audience of a NEW
-  invitation, and the host when someone joins/leaves.
+- ✅ **Notifications** DONE (migration 0088): `invitation_activity_notices`.
+  A new invitation fans out a 'new' notice to the host's friends (audience
+  friends) or the community's members (audience community) — public/nearby
+  don't fan out. Joining clears your 'new' notice and tells the host
+  ('joined'); leaving tells the host ('left'); a join→leave (or leave→rejoin)
+  before the host looks cancels out. /notifications → "Invitations" (View /
+  Dismiss / Dismiss all), counted in the nav badge. STILL TODO (optional):
+  notify a newly added audience when the host CHANGES the audience on edit
+  (fan-out is insert-only), and a per-user mute for new-invitation notices.
 - **Surface inside a community** — an Invitations section/tab on the community
   page itself (page_layout key) filtered to that community.
 - **Multiple audiences** (e.g. friends + a community at once).

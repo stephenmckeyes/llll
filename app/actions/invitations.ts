@@ -24,6 +24,7 @@ import {
   invitationCopyNotes,
   mapInvitationRow,
   type Invitation,
+  type InvitationActivityNotice,
   type InvitationChangeNotice,
   type InvitationCommunity,
 } from "@/lib/domain/invitations";
@@ -685,6 +686,59 @@ export async function removeCancelledInvitation(noticeId: string): Promise<Resul
   const res = await leaveInvitation(notice.invitation_id);
   if ("error" in res) return res;
   await resolveNotice(supabase, noticeId, "removed");
+  revalidatePath("/notifications");
+  return { ok: true };
+}
+
+// --- activity notices (migration 0088) ----------------------------------------
+// "New invitation for you" (fanned out to friends / community members on
+// create) and "someone joined / left your invitation" (to the host).
+
+export async function getMyInvitationActivityNotices(): Promise<InvitationActivityNotice[]> {
+  const { supabase } = await authed();
+  const { data, error } = await supabase.rpc("get_invitation_activity_notices");
+  // Degrades to empty if 0088 isn't applied.
+  if (error || !data) return [];
+  return (
+    data as Array<{
+      id: string;
+      invitation_id: string;
+      kind: InvitationActivityNotice["kind"];
+      created_at: string;
+      invitation_name: string;
+      start_date: string;
+      location_name: string;
+      actor_label: string;
+      attendee_count: number;
+      capacity: number | null;
+      cancelled: boolean;
+    }>
+  ).map((r) => ({
+    id: r.id,
+    invitationId: r.invitation_id,
+    kind: r.kind,
+    createdAt: r.created_at,
+    invitationName: r.invitation_name,
+    startDate: r.start_date,
+    locationName: r.location_name,
+    actorLabel: r.actor_label,
+    attendeeCount: r.attendee_count ?? 0,
+    capacity: r.capacity,
+    cancelled: !!r.cancelled,
+  }));
+}
+
+/** Dismiss one notice, or (no id) all of the caller's notices. */
+export async function dismissInvitationActivityNotices(noticeId?: string): Promise<Result> {
+  const { supabase, user } = await authed();
+  let q = supabase
+    .from("invitation_activity_notices")
+    .update({ dismissed_at: new Date().toISOString() })
+    .eq("user_id", user.id)
+    .is("dismissed_at", null);
+  if (noticeId) q = q.eq("id", noticeId);
+  const { error } = await q;
+  if (error) return { error: error.message };
   revalidatePath("/notifications");
   return { ok: true };
 }
