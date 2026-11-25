@@ -633,7 +633,7 @@ function InvitationCard({
               type="button"
               disabled={isPending}
               onClick={() => {
-                if (!window.confirm(`Cancel "${inv.name}"? People who joined keep it on their calendars.`))
+                if (!window.confirm(`Cancel "${inv.name}"? People who joined will be notified and can remove it from their calendars.`))
                   return;
                 run(() => cancelInvitation(inv.id));
               }}

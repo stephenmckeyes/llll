@@ -17,6 +17,7 @@ import {
 } from "@/app/actions/communities";
 import { getUnacknowledgedConflictsForDate } from "@/app/actions/conflicts";
 import { getPendingCoachApplications } from "@/app/actions/coaches";
+import { getMyInvitationChangeNotices } from "@/app/actions/invitations";
 import { getSocialOverview, type SocialEntry } from "@/app/actions/friends";
 import { getUnreadCounts } from "@/app/actions/messages";
 import { getSharedInstancesWithMe, getSharedWithMe } from "@/app/actions/sharing";
@@ -38,6 +39,7 @@ import { CoachApplicationsNotifications } from "./coach-applications";
 import { CommunityRequestOutcomes } from "./community-request-outcomes";
 import { ConflictsList } from "./conflicts-list";
 import { FriendActivityNotifications } from "./friend-activity-notifications";
+import { InvitationChanges } from "./invitation-changes";
 import { RequestActions } from "./request-actions";
 import { SharedNotifications } from "./shared-notifications";
 
@@ -95,6 +97,7 @@ export default async function NotificationsPage() {
     requestOutcomes,
     autoAddEvents,
     coachApplications,
+    invitationNotices,
   ] = await Promise.all([
     getSocialOverview(),
     getSharedWithMe(),
@@ -108,6 +111,7 @@ export default async function NotificationsPage() {
     getMyAutoAddEvents(),
     // Admin-gated — [] for non-admins.
     getPendingCoachApplications(),
+    getMyInvitationChangeNotices(),
   ]);
   const incoming = entries.filter(
     (e) => e.status === "pending" && e.direction === "incoming"
@@ -252,6 +256,9 @@ export default async function NotificationsPage() {
           </ul>
         )}
       </section>
+
+      {/* 1a. Invitations you joined that the host changed / cancelled (0086) */}
+      <InvitationChanges notices={invitationNotices} />
 
       {/* 1a. Community invites (to you) */}
       <CommunityInvites invites={invites} />

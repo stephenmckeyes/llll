@@ -44,9 +44,17 @@ Edit / Cancel / see Attendees. STILL TODO:
 - **Nearby is a discovery filter, not a security boundary** — the viewer's
   coords are client-supplied per query (never stored). Fine for v1; revisit if
   hosts need truly location-restricted visibility.
-- **Notifications** — notify the invited audience of a new invitation, and the
-  host when someone joins/leaves. Changes to an invitation don't propagate to
-  attendees' calendar copies yet.
+- ✅ **Change notices to attendees** DONE (migrations 0086/0087): a trigger on
+  invitations writes a pending `invitation_change_notices` row per attendee
+  (not the editor) when the host changes name/notes/schedule/times/tags/
+  location (repeat edits merge, keeping the original "from") or cancels it.
+  /notifications → "Invitation updates" shows from → to with **Apply changes**
+  (syncs only the changed fields onto the copy; regenerates future pending
+  occurrences, keeps the attendee's reminders + history), **Edit my copy**
+  (opens the copy's next day), or **Keep mine**; cancellations offer
+  **Remove from my calendar** / **Keep it**. Counted in the nav badge.
+- **Notifications** (still TODO) — notify the invited audience of a NEW
+  invitation, and the host when someone joins/leaves.
 - **Surface inside a community** — an Invitations section/tab on the community
   page itself (page_layout key) filtered to that community.
 - **Multiple audiences** (e.g. friends + a community at once).

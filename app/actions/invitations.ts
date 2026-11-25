@@ -21,12 +21,16 @@ import { parseActivityTemplateForm } from "@/lib/domain/activity-template-parse"
 import {
   isAudience,
   isSkillLevel,
+  invitationCopyNotes,
   mapInvitationRow,
   type Invitation,
+  type InvitationChangeNotice,
   type InvitationCommunity,
 } from "@/lib/domain/invitations";
+import { invalidateBackfillCache } from "@/lib/domain/backfill";
 import { generateInstances } from "@/lib/domain/rhythms";
 import { remindersSchema, type Reminder } from "@/lib/validators/reminder";
+import type { Rhythm } from "@/lib/validators/rhythm";
 
 const HORIZON_DAYS = 400;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -322,7 +326,7 @@ export async function addInvitationToCalendarFormAction(
   }
 
   const tags = i.default_skill_tags ?? [];
-  const notes = [`📍 ${i.location_name}`, i.notes].filter(Boolean).join("\n");
+  const notes = invitationCopyNotes(i.location_name, i.notes);
 
   const { data: activity, error: aerr } = await supabase
     .from("activities")
@@ -403,5 +407,284 @@ export async function leaveInvitation(invitationId: string): Promise<Result> {
   if (activityId) await archiveActivity(activityId);
   revalidatePath("/friends/invitations");
   revalidatePath("/");
+  return { ok: true };
+}
+
+// --- change notices (migration 0086) ------------------------------------------
+// When a host edits / cancels an invitation, a DB trigger writes a pending
+// notice for each attendee. These actions list them and let the attendee apply
+// the changes to their calendar copy, remove a cancelled one, or keep theirs.
+
+export async function getMyInvitationChangeNotices(): Promise<InvitationChangeNotice[]> {
+  const { supabase, user } = await authed();
+  const { data: notices, error } = await supabase
+    .from("invitation_change_notices")
+    .select("id, invitation_id, kind, changes, updated_at")
+    .is("resolved_at", null)
+    .order("updated_at", { ascending: false });
+  // Degrades to empty if 0086 isn't applied.
+  if (error || !notices || notices.length === 0) return [];
+  const rows = notices as Array<{
+    id: string;
+    invitation_id: string;
+    kind: "updated" | "cancelled";
+    changes: InvitationChangeNotice["changes"];
+    updated_at: string;
+  }>;
+  const invIds = Array.from(new Set(rows.map((r) => r.invitation_id)));
+
+  const [{ data: invs }, { data: atts }] = await Promise.all([
+    supabase
+      .from("invitations")
+      .select("id, name")
+      .in("id", invIds),
+    supabase
+      .from("invitation_attendees")
+      .select("invitation_id, activity_id")
+      .eq("user_id", user.id)
+      .in("invitation_id", invIds),
+  ]);
+  const invById = new Map(
+    ((invs ?? []) as Array<{ id: string; name: string }>).map((i) => [i.id, i])
+  );
+  const actByInv = new Map(
+    ((atts ?? []) as Array<{ invitation_id: string; activity_id: string | null }>).map(
+      (a) => [a.invitation_id, a.activity_id]
+    )
+  );
+
+  // Host labels (community name, else the person) — via a SECURITY DEFINER
+  // read (0087), since the attendee may not be allowed to read the host profile.
+  const { data: labels } = await supabase.rpc("get_invitation_host_labels", {
+    p_ids: invIds,
+  });
+  const hostLabelById = new Map(
+    ((labels ?? []) as Array<{ invitation_id: string; host_label: string }>).map(
+      (l) => [l.invitation_id, l.host_label]
+    )
+  );
+
+  // Each live copy's next upcoming occurrence → "Open on my calendar" target.
+  const activityIds = [...actByInv.values()].filter(Boolean) as string[];
+  const today = new Date().toISOString().slice(0, 10);
+  const nextByActivity = new Map<string, string>();
+  const liveActivities = new Set<string>();
+  if (activityIds.length) {
+    const [{ data: acts }, { data: next }] = await Promise.all([
+      supabase.from("activities").select("id").in("id", activityIds).is("archived_at", null),
+      supabase
+        .from("activity_instances")
+        .select("activity_id, scheduled_for")
+        .in("activity_id", activityIds)
+        .gte("scheduled_for", today)
+        .order("scheduled_for", { ascending: true }),
+    ]);
+    for (const a of (acts ?? []) as Array<{ id: string }>) liveActivities.add(a.id);
+    for (const n of (next ?? []) as Array<{ activity_id: string; scheduled_for: string }>) {
+      if (!nextByActivity.has(n.activity_id)) nextByActivity.set(n.activity_id, n.scheduled_for);
+    }
+  }
+
+  return rows.map((r) => {
+    const inv = invById.get(r.invitation_id);
+    const activityId = actByInv.get(r.invitation_id) ?? null;
+    const live = activityId !== null && liveActivities.has(activityId);
+    return {
+      id: r.id,
+      invitationId: r.invitation_id,
+      kind: r.kind,
+      changes: r.changes ?? {},
+      updatedAt: r.updated_at,
+      invitationName: inv?.name ?? "An invitation",
+      hostLabel: hostLabelById.get(r.invitation_id) ?? "The host",
+      activityId: live ? activityId : null,
+      nextDate: live && activityId ? nextByActivity.get(activityId) ?? null : null,
+    };
+  });
+}
+
+async function loadPendingNotice(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  noticeId: string
+) {
+  const { data } = await supabase
+    .from("invitation_change_notices")
+    .select("id, invitation_id, kind, changes, resolved_at")
+    .eq("id", noticeId)
+    .maybeSingle();
+  const n = data as {
+    id: string;
+    invitation_id: string;
+    kind: "updated" | "cancelled";
+    changes: Record<string, unknown>;
+    resolved_at: string | null;
+  } | null;
+  if (!n || n.resolved_at) return null;
+  return n;
+}
+
+async function resolveNotice(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  noticeId: string,
+  resolution: "applied" | "removed" | "kept"
+) {
+  await supabase
+    .from("invitation_change_notices")
+    .update({ resolved_at: new Date().toISOString(), resolution })
+    .eq("id", noticeId);
+}
+
+/** Copy the invitation's CHANGED fields onto the attendee's calendar copy.
+ *  Untouched fields (and their reminders) stay as the attendee set them. If
+ *  the schedule changed, future pending occurrences are regenerated; past
+ *  history is never touched. */
+export async function applyInvitationChange(noticeId: string): Promise<Result> {
+  const { supabase, user } = await authed();
+  const notice = await loadPendingNotice(supabase, noticeId);
+  if (!notice) return { error: "This update was already handled." };
+  if (notice.kind !== "updated") return { error: "Nothing to apply." };
+
+  const [{ data: invData }, { data: att }] = await Promise.all([
+    supabase
+      .from("invitations")
+      .select(
+        "name, notes, rhythm, start_date, end_date, scheduled_times, scheduled_end_times, default_skill_tags, location_name"
+      )
+      .eq("id", notice.invitation_id)
+      .maybeSingle(),
+    supabase
+      .from("invitation_attendees")
+      .select("activity_id")
+      .eq("invitation_id", notice.invitation_id)
+      .eq("user_id", user.id)
+      .maybeSingle(),
+  ]);
+  const inv = invData as {
+    name: string;
+    notes: string | null;
+    rhythm: Rhythm;
+    start_date: string;
+    end_date: string | null;
+    scheduled_times: string[];
+    scheduled_end_times: string[];
+    default_skill_tags: string[];
+    location_name: string;
+  } | null;
+  const activityId = (att as { activity_id: string | null } | null)?.activity_id ?? null;
+  if (!inv) return { error: "Invitation not found." };
+  if (!activityId) return { error: "It's no longer on your calendar." };
+
+  const { data: actData } = await supabase
+    .from("activities")
+    .select("id, start_date, default_skill_tags, archived_at")
+    .eq("id", activityId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  const act = actData as {
+    id: string;
+    start_date: string;
+    default_skill_tags: string[];
+    archived_at: string | null;
+  } | null;
+  if (!act || act.archived_at) return { error: "It's no longer on your calendar." };
+
+  const changed = new Set(Object.keys(notice.changes ?? {}));
+  const patch: Record<string, unknown> = {};
+  if (changed.has("name")) patch.name = inv.name;
+  if (changed.has("notes") || changed.has("location")) {
+    patch.notes = invitationCopyNotes(inv.location_name, inv.notes);
+  }
+  if (changed.has("tags")) patch.default_skill_tags = inv.default_skill_tags ?? [];
+  if (changed.has("times")) {
+    patch.scheduled_times = inv.scheduled_times ?? [];
+    patch.scheduled_end_times = inv.scheduled_end_times ?? [];
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  const scheduleChanged =
+    changed.has("rhythm") || changed.has("start_date") || changed.has("end_date");
+  let startDate = act.start_date;
+  if (scheduleChanged) {
+    const isSingle = inv.rhythm.type === "single";
+    startDate = !isSingle && inv.start_date < today ? today : inv.start_date;
+    patch.rhythm = inv.rhythm;
+    patch.start_date = startDate;
+    patch.end_date = inv.end_date;
+  }
+
+  if (Object.keys(patch).length > 0) {
+    const { error } = await supabase.from("activities").update(patch).eq("id", activityId);
+    if (error) return { error: error.message };
+  }
+
+  if (scheduleChanged || changed.has("tags")) {
+    const tags = (patch.default_skill_tags as string[] | undefined) ?? act.default_skill_tags ?? [];
+    await supabase
+      .from("activity_instances")
+      .delete()
+      .eq("activity_id", activityId)
+      .eq("status", "pending")
+      .gte("scheduled_for", today);
+
+    const from = startDate > today ? startDate : today;
+    const horizon = addDays(new Date(`${from}T00:00:00Z`), HORIZON_DAYS)
+      .toISOString()
+      .slice(0, 10);
+    const end = inv.end_date;
+    const isSpan = inv.rhythm.type === "single" && end !== null && end > inv.start_date;
+    const generated =
+      end !== null && end < from
+        ? []
+        : isSpan
+          ? generateInstances({ type: "daily" }, { from, to: end as string })
+          : inv.rhythm.type === "single"
+            ? inv.start_date >= today
+              ? [{ scheduledFor: inv.start_date }]
+              : []
+            : generateInstances(inv.rhythm, { from, to: end && end < horizon ? end : horizon });
+
+    // Don't duplicate a day that already has a (completed/missed) occurrence.
+    const { data: kept } = await supabase
+      .from("activity_instances")
+      .select("scheduled_for")
+      .eq("activity_id", activityId)
+      .gte("scheduled_for", today);
+    const taken = new Set(((kept ?? []) as Array<{ scheduled_for: string }>).map((k) => k.scheduled_for));
+    const rows = generated
+      .filter((g) => !taken.has(g.scheduledFor))
+      .map((g) => ({
+        activity_id: activityId,
+        scheduled_for: g.scheduledFor,
+        status: "pending" as const,
+        tags,
+      }));
+    if (rows.length > 0) await supabase.from("activity_instances").insert(rows);
+    invalidateBackfillCache(user.id);
+  }
+
+  await resolveNotice(supabase, noticeId, "applied");
+  revalidatePath("/notifications");
+  revalidatePath("/");
+  return { ok: true };
+}
+
+/** Keep the calendar copy as-is (ignore the host's change / cancellation). */
+export async function keepInvitationCopy(noticeId: string): Promise<Result> {
+  const { supabase } = await authed();
+  const notice = await loadPendingNotice(supabase, noticeId);
+  if (!notice) return { error: "This update was already handled." };
+  await resolveNotice(supabase, noticeId, "kept");
+  revalidatePath("/notifications");
+  return { ok: true };
+}
+
+/** Remove a cancelled invitation from the calendar (archives the copy). */
+export async function removeCancelledInvitation(noticeId: string): Promise<Result> {
+  const { supabase } = await authed();
+  const notice = await loadPendingNotice(supabase, noticeId);
+  if (!notice) return { error: "This update was already handled." };
+  const res = await leaveInvitation(notice.invitation_id);
+  if ("error" in res) return res;
+  await resolveNotice(supabase, noticeId, "removed");
+  revalidatePath("/notifications");
   return { ok: true };
 }

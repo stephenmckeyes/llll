@@ -221,3 +221,61 @@ export function formatDistance(km: number): string {
   if (km < 10) return `${km.toFixed(1)} km`;
   return `${Math.round(km)} km`;
 }
+
+/** Notes for an attendee's calendar copy: the location line, then the
+ *  invitation's own notes. */
+export function invitationCopyNotes(locationName: string, notes: string | null): string {
+  return [`📍 ${locationName}`, notes].filter(Boolean).join("\n");
+}
+
+// --- change notices (migration 0086) -------------------------------------------
+
+export type InvitationTimesValue = { starts: string[]; ends: string[] };
+
+/** Field → { from, to } as written by the notify_invitation_attendees trigger. */
+export type InvitationChanges = Partial<{
+  name: { from: string; to: string };
+  notes: { from: string | null; to: string | null };
+  rhythm: { from: Rhythm; to: Rhythm };
+  start_date: { from: string; to: string };
+  end_date: { from: string | null; to: string | null };
+  times: { from: InvitationTimesValue; to: InvitationTimesValue };
+  tags: { from: string[]; to: string[] };
+  location: { from: string; to: string };
+}>;
+
+export type InvitationChangeNotice = {
+  id: string;
+  invitationId: string;
+  kind: "updated" | "cancelled";
+  changes: InvitationChanges;
+  updatedAt: string;
+  invitationName: string;
+  hostLabel: string;
+  /** The attendee's live (unarchived) calendar copy, if any. */
+  activityId: string | null;
+  /** Next upcoming occurrence of that copy (for "Open on my calendar"). */
+  nextDate: string | null;
+};
+
+export const CHANGE_FIELD_ORDER: Array<keyof InvitationChanges> = [
+  "name",
+  "start_date",
+  "end_date",
+  "rhythm",
+  "times",
+  "location",
+  "notes",
+  "tags",
+];
+
+export const CHANGE_FIELD_LABEL: Record<keyof InvitationChanges, string> = {
+  name: "Name",
+  start_date: "Date",
+  end_date: "End date",
+  rhythm: "Repeats",
+  times: "Time",
+  location: "Location",
+  notes: "Notes",
+  tags: "Tags",
+};
