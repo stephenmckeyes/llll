@@ -121,15 +121,16 @@ set-by-set entries). Out of scope for v1 of coach plans.
    immediately). Community collective Miss still auto-revalidates (separate
    server action) — fine for now.
 
-2. **Setting: wrap / shrink activity titles instead of truncating with "…".**
-   Long activity names get cut off with an ellipsis (the `truncate` on the name
-   in instance-row / banners), which is hard to read. Add an appearance setting
-   (Settings → Appearance, localStorage-backed like the other display prefs, or a
-   `profiles` column if cross-device wanted) to either **wrap** the title onto
-   multiple lines OR render it at a **smaller font** so the whole title fits. Apply
-   to the Day-list rows first (instance-row name `<p className="truncate …">`),
-   then the Week/Month banners where names also truncate. Default = current
-   (truncate) so nothing changes unless opted in.
+2. ✅ **Activity-title display setting** DONE. Settings → Appearance →
+   "Activity titles": Cut off (…) [default] / Wrap / Smaller text (smaller
+   font, still wraps if needed). localStorage (`mission-title-display`,
+   `lib/ui/title-display-client.ts`), applied as `data-title-display` on <html>
+   (pre-paint in the layout <head> script, re-asserted by ThemeApplier) and
+   styled in globals.css on `.activity-title` — CSS-driven so server-rendered
+   banners + friend/community calendars all honor it. Tagged: Day-list row name
+   (InstanceRow), Week banner (non-span), Month banner (non-span). NOT tagged:
+   multi-day span bars (name spans several cells) and Timeline blocks (fixed
+   height). Possible follow-up: a `profiles` column if cross-device is wanted.
 
 ## Design direction — sandbox / maximize customization (asked for)
 

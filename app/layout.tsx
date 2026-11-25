@@ -76,6 +76,9 @@ const themeScript = `
     if (!localStorage.getItem("mission-time-format")) {
       localStorage.setItem("mission-time-format", "auto");
     }
+    // Activity-title display (wrap / shrink); "truncate" = no attribute.
+    var td = localStorage.getItem("mission-title-display");
+    if (td === "wrap" || td === "shrink") root.setAttribute("data-title-display", td);
   } catch (e) {}
 })();
 `;

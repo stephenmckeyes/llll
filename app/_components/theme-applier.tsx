@@ -17,6 +17,8 @@
 
 import { useEffect } from "react";
 
+import { applyTitleDisplay } from "@/lib/ui/title-display-client";
+
 const STORAGE_KEY = "mission-theme";
 const THEME_CHANGE_EVENT = "mission-theme-changed";
 
@@ -39,6 +41,9 @@ function applySavedTheme() {
     // localStorage blocked (privacy mode) — leave whatever the <head>
     // script applied.
   }
+  // Same reason as the theme classes: a full client render can reset
+  // <html>, so re-assert the activity-title display attribute too.
+  applyTitleDisplay();
 }
 
 export function ThemeApplier() {
@@ -47,9 +52,11 @@ export function ThemeApplier() {
     // Keep in sync if the theme changes in another tab (storage) or this
     // tab (the picker's custom event).
     window.addEventListener("storage", applySavedTheme);
+    window.addEventListener("mission:title-display-changed", applySavedTheme);
     window.addEventListener(THEME_CHANGE_EVENT, applySavedTheme);
     return () => {
       window.removeEventListener("storage", applySavedTheme);
+      window.removeEventListener("mission:title-display-changed", applySavedTheme);
       window.removeEventListener(THEME_CHANGE_EVENT, applySavedTheme);
     };
   }, []);

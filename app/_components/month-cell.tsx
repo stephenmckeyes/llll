@@ -167,7 +167,7 @@ export function MonthBannerPill({
   return (
     <span
       title={banner.name}
-      className={`pointer-events-none truncate rounded-sm px-1 py-0.5 text-[10px] font-medium leading-tight ${colorCls}${extraCls}`}
+      className={`activity-title pointer-events-none truncate rounded-sm px-1 py-0.5 text-[10px] font-medium leading-tight ${colorCls}${extraCls}`}
     >
       {glyph}
       {banner.name}

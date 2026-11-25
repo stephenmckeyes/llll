@@ -20,6 +20,7 @@ import { DefaultStreaksRangePicker } from "./default-streaks-range-picker";
 import { DefaultUntimedOpenPicker } from "./default-untimed-open-picker";
 import { TimeFormatPicker } from "./time-format-picker";
 import { ConfirmFuturePicker } from "./confirm-future-picker";
+import { TitleDisplayPicker } from "./title-display-picker";
 import { ReplayIntros } from "./replay-intros";
 import { ThemeToggle } from "../theme-toggle";
 
@@ -140,6 +141,18 @@ export default async function AppearanceSettingsPage() {
       <div className="flex flex-col gap-2">
         <h2 className="text-sm font-medium">Calendar sync</h2>
         <CalendarSync initialToken={initialIcsToken} />
+      </div>
+
+      <hr className="my-2 border-zinc-200 dark:border-zinc-800" />
+
+      <div className="flex flex-col gap-2">
+        <h2 className="text-sm font-medium">Activity titles</h2>
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          How long activity names show on the calendar (Day list and
+          Week/Month banners): cut off with &ldquo;…&rdquo;, wrapped onto more
+          lines, or in smaller text so more of the name fits.
+        </p>
+        <TitleDisplayPicker />
       </div>
 
       <hr className="my-2 border-zinc-200 dark:border-zinc-800" />

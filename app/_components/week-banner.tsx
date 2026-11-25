@@ -67,7 +67,7 @@ export function WeekBannerPill({
         tags.length > 0 ? ` · ${tags.join(", ")}` : ""
       }`}
     >
-      <span className="block line-clamp-2 break-words font-medium">{name}</span>
+      <span className="activity-title block line-clamp-2 break-words font-medium">{name}</span>
       {firstTime && <span className="block opacity-75">{firstTime}</span>}
       {tags.length > 0 && (
         <TagDotRow names={tags} tags={tagMap} dotClassName="h-1 w-1" max={4} />

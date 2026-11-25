@@ -435,3 +435,21 @@ details:not([class*="border-"]):not([class*="bg-"]) > summary {
   border-color: rgb(39 39 42); /* zinc-800 */
   background-color: rgb(24 24 27); /* zinc-900 */
 }
+
+/* Activity-title display preference (Settings → Appearance → Activity
+   titles; lib/ui/title-display-client.ts). Elements tagged `.activity-title`
+   are truncated by default via their own Tailwind classes; these rules
+   override that when the user opts into wrapping or smaller text. */
+html[data-title-display="wrap"] .activity-title,
+html[data-title-display="shrink"] .activity-title {
+  display: block;
+  overflow: visible;
+  white-space: normal;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  -webkit-line-clamp: unset;
+}
+html[data-title-display="shrink"] .activity-title {
+  font-size: 0.82em;
+  line-height: 1.2;
+}

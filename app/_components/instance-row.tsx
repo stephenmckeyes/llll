@@ -412,7 +412,7 @@ export function InstanceRow({
             {rhythmCategory}
           </p>
           <div className="flex items-center gap-1.5">
-            <p className="truncate font-medium">{effectiveName}</p>
+            <p className="activity-title min-w-0 truncate font-medium">{effectiveName}</p>
             {instance.streakDisplay && (
               <span
                 title="Current streak (Settings → Streaks)"
